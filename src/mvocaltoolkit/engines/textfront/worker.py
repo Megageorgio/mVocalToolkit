@@ -57,9 +57,40 @@ def zh(text: str) -> list[str]:
     return [s for s in (x.strip().lower() for x in syllables) if s]
 
 
+CMUDICT_URL = "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/corpora/cmudict.zip"
+
+
+def _ensure_cmudict() -> None:
+    """g2pk2 needs NLTK's cmudict (English words inside Korean text). NLTK's own downloader refuses to work
+    through proxies, so the corpus is fetched directly into the toolkit cache."""
+    import os  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    import nltk  # noqa: PLC0415
+
+    root = Path(os.environ.get("MVT_CACHE", ".")) / "nltk"
+    if str(root) not in nltk.data.path:
+        nltk.data.path.insert(0, str(root))
+    try:
+        nltk.data.find("corpora/cmudict.zip")
+        return
+    except LookupError:
+        pass
+    target = root / "corpora" / "cmudict.zip"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    rt.progress(message="Downloading cmudict for Korean G2P")
+    with urllib.request.urlopen(CMUDICT_URL, timeout=120) as response:
+        data = response.read()
+    tmp = target.with_suffix(".part")
+    tmp.write_bytes(data)
+    tmp.replace(target)
+
+
 def ko(text: str) -> list[str]:
     global _g2pk
     if _g2pk is None:
+        _ensure_cmudict()
         from g2pk2 import G2p  # noqa: PLC0415
 
         _g2pk = G2p()

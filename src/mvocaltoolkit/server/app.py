@@ -28,6 +28,7 @@ from ..api_models import (
     TextRequest,
     TranscribeRequest,
 )
+from ..engines.manager import EngineError
 from ..jobs import FINISHED, Job, JobInfo
 from ..models.catalog import ENGINE_TASKS, TASKS
 from ..models.store import ModelNotFound, model_listing
@@ -333,8 +334,7 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
 
     @app.post("/text/normalize", tags=["text"], dependencies=[Depends(auth)])
     async def text_normalize(req: TextRequest, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
-        result = await run_text(tk, None, TextRequest(texts=req.texts, language=req.language, model=None))
-        return result
+        return await _guard(run_text(tk, None, TextRequest(texts=req.texts, language=req.language, model=None)))
 
     @app.post("/text/g2p", tags=["text"], dependencies=[Depends(auth)])
     async def text_g2p(req: TextRequest, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
@@ -451,6 +451,8 @@ async def _guard(coro):
         raise HTTPException(404, str(e)) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    except EngineError as e:
+        raise HTTPException(502, str(e)) from e
 
 
 def _allowed_download(tk: Toolkit, target: Path) -> bool:
