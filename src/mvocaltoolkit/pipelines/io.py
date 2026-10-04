@@ -37,7 +37,7 @@ def resolve_inputs(spec: InputSpec, home: Home) -> list[Item]:
         if entry.file_id:
             audio = _uploaded(home, entry.file_id)
         elif entry.path:
-            audio = Path(entry.path).expanduser()
+            audio = Path(entry.path).expanduser().absolute()  # engines run in another working directory
         else:
             raise ValueError("Each input item needs path or file_id")
         if not audio.is_file():
@@ -55,7 +55,7 @@ def resolve_inputs(spec: InputSpec, home: Home) -> list[Item]:
             item.text = read_sidecar_text(audio, spec.sidecar_text)
         items.append(item)
     if spec.folder:
-        root = Path(spec.folder).expanduser()
+        root = Path(spec.folder).expanduser().absolute()
         if not root.is_dir():
             raise FileNotFoundError(f"Folder not found: {root}")
         seen = {i.audio.resolve() for i in items}

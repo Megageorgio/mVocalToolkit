@@ -12,6 +12,7 @@ requirements = [
     "onnxruntime>=1.21; sys_platform == 'darwin'",
     "numpy~=1.26.4",
     "librosa>=0.9,<0.10",
+    "setuptools<81",  # librosa 0.9 imports pkg_resources
     "soundfile",
     "pyyaml",
     "tqdm",
@@ -24,6 +25,7 @@ cpu_requirements = [
     "onnxruntime>=1.21",
     "numpy~=1.26.4",
     "librosa>=0.9,<0.10",
+    "setuptools<81",  # librosa 0.9 imports pkg_resources
     "soundfile",
     "pyyaml",
     "tqdm",

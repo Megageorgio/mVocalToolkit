@@ -144,18 +144,20 @@ class ModelStore:
             target.mkdir(parents=True, exist_ok=True)
             return [self._register(entry, target, {}, source=entry.id)]
 
+        # downloaded files (and .part files of interrupted downloads) are kept until the model is installed,
+        # so an interrupted download resumes
         work = self.home.cache / "work" / _safe(entry.id)
-        shutil.rmtree(work, ignore_errors=True)
-        work.mkdir(parents=True)
+        work.mkdir(parents=True, exist_ok=True)
         files = await self._fetch(entry.source, work, progress)
         progress(None, "Extracting")
         content = work / "content"
+        shutil.rmtree(content, ignore_errors=True)
         content.mkdir()
         for file in files:
             if entry.source.extract and file.name.lower().endswith(ARCHIVE_SUFFIXES):
                 _extract(file, content / _strip_archive_suffix(file.name))
             else:
-                shutil.move(str(file), str(content / file.name))
+                shutil.copy2(str(file), str(content / file.name))
         root = _flatten(content)
         if entry.source.subpath:
             matches = sorted(root.glob(entry.source.subpath))
@@ -294,6 +296,9 @@ class ModelStore:
         for index, (url, filename, size) in enumerate(urls):
             target = work / filename
             target.parent.mkdir(parents=True, exist_ok=True)
+            if target.is_file() and (size is None or target.stat().st_size == size):
+                files.append(target)  # downloaded before (e.g. extraction was interrupted)
+                continue
 
             def file_progress(done: int, length: int | None, i=index, name=filename):
                 fraction = (done / length) if length else None
