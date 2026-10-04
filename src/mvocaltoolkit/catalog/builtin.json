@@ -106,6 +106,59 @@
         "zh",
         "ja",
         "ko"
+      ],
+      "size_hint": "1.9 GB (all five models)",
+      "models": [
+        {
+          "id": "labelmakr-tgm_sofa_en",
+          "folder": "tgm_sofa_en",
+          "name": "English SOFA (tgm, LabelMakr)",
+          "languages": [
+            "en"
+          ],
+          "text_frontend": "en",
+          "defaults": {
+            "rule_sets": [
+              "en_fixes"
+            ]
+          }
+        },
+        {
+          "id": "labelmakr-millefeuille_fr",
+          "folder": "millefeuille_fr",
+          "name": "French SOFA (millefeuille, LabelMakr)",
+          "languages": [
+            "fr"
+          ],
+          "text_frontend": "fr"
+        },
+        {
+          "id": "labelmakr-suco_zh",
+          "folder": "suco_zh",
+          "name": "Mandarin SOFA (suco, LabelMakr)",
+          "languages": [
+            "zh"
+          ],
+          "text_frontend": "zh"
+        },
+        {
+          "id": "labelmakr-colstone_jp",
+          "folder": "colstone_jp",
+          "name": "Japanese SOFA (colstone, LabelMakr)",
+          "languages": [
+            "ja"
+          ],
+          "text_frontend": "ja"
+        },
+        {
+          "id": "labelmakr-colstone_ko",
+          "folder": "colstone_ko",
+          "name": "Korean SOFA (colstone, LabelMakr)",
+          "languages": [
+            "ko"
+          ],
+          "text_frontend": "ko"
+        }
       ]
     },
     {
