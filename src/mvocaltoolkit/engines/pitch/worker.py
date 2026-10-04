@@ -43,12 +43,14 @@ def _rmvpe(model_path: str, device: str):
     errors = []
     for cls in (E2E0, E2E):
         candidate = cls(4, 1, (2, 2))
-        try:
-            candidate.load_state_dict(state, strict=True)
+        missing, unexpected = candidate.load_state_dict(state, strict=False)
+        # E2E0 (the model of rmvpe.pt from RVC) has an unused TimbreFilter: unet.tf.* is never loaded
+        if cls is E2E0:
+            missing = [k for k in missing if not k.startswith("unet.tf.")]
+        if not missing and not unexpected:
             model = candidate
             break
-        except RuntimeError as e:
-            errors.append(str(e).splitlines()[0])
+        errors.append(f"{cls.__name__}: missing {missing[:3]}, unexpected {unexpected[:3]}")
     if model is None:
         raise RuntimeError("Unknown RMVPE checkpoint format: " + "; ".join(errors))
     model.eval()
