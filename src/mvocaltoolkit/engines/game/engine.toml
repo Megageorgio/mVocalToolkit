@@ -1,32 +1,19 @@
 name = "game"
 title = "GAME note extractor"
-description = "Generative Adaptive MIDI Extractor: notes (MIDI) from singing, robust to noise and reverb; successor of SOME."
+description = "Generative Adaptive MIDI Extractor: notes (MIDI) from singing, robust to noise and reverb; successor of SOME. Runs the official ONNX models."
 capabilities = ["midi"]
-python = "3.12"
-torch = true
-size_hint = "~2.5 GB with CUDA"
+python = "3.11"
+torch = false
+size_hint = "~400 MB (onnxruntime with CUDA libraries), models 45-350 MB"
 homepage = "https://github.com/openvpi/GAME"
 license = "MIT"
 requirements = [
-    "torch",
-    "click",
-    "colorednoise",
-    "einops>=0.7.0",
-    "h5py",
+    "onnxruntime-gpu[cuda,cudnn]>=1.21; sys_platform != 'darwin'",
+    "onnxruntime>=1.21; sys_platform == 'darwin'",
+    "numpy",
     "librosa",
-    "lightning",
-    "loguru",
-    "matplotlib",
-    "mido",
-    "numpy<2.0.0",
-    "omegaconf",
-    "pydantic>=2.11,<3.0",
-    "resampy",
-    "scipy>=1.10.0",
-    "sympy",
-    "torchmetrics",
-    "tqdm",
     "soundfile",
+    "mido",
 ]
 
 [source]

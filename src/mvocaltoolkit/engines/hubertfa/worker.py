@@ -139,6 +139,8 @@ def build_sequence(model: LoadedModel, item: dict[str, Any], language: str | Non
         if token == "SP":
             continue
         phones = [token] if mode == "phonemes" else model.lookup(table, token)
+        if phones is None and model.phone_id(language, token) is not None:
+            phones = [token]  # the text frontend already produced phonemes (e.g. Japanese via pyopenjtalk)
         if phones is None:
             if token not in unknown:
                 unknown.append(token)

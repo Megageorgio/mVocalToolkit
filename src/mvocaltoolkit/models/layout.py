@@ -68,15 +68,17 @@ def detect_wfl_asr(root: Path) -> dict[str, Any] | None:
 
 
 def detect_game(root: Path) -> dict[str, Any] | None:
-    # GAME loads a checkpoint file with config.yaml (and lang_map.json) in the same folder
-    if not (root / "config.yaml").exists():
+    """A GAME ONNX model (official releases): config.json + encoder/segmenter/estimator/dur2bd/bd2dur .onnx."""
+    names = ("encoder", "segmenter", "estimator", "dur2bd", "bd2dur")
+    if not (root / "config.json").exists() or not all((root / f"{n}.onnx").exists() for n in names):
         return None
-    ckpt = next(iter(_files(root, "*.ckpt", "*.pt", "*.pth", "*.safetensors")), None)
-    if ckpt is None:
-        return None
-    layout: dict[str, Any] = {"model": ckpt.name, "config": "config.yaml"}
-    if (root / "lang_map.json").exists():
-        layout["lang_map"] = "lang_map.json"
+    layout: dict[str, Any] = {"format": "onnx", "config": "config.json", **{n: f"{n}.onnx" for n in names}}
+    try:
+        config = json.loads((root / "config.json").read_text(encoding="utf-8"))
+        if config.get("languages"):
+            layout["languages"] = [k for k in config["languages"] if config["languages"][k]]
+    except (OSError, ValueError):
+        pass
     return layout
 
 

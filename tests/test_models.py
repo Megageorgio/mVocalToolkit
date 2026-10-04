@@ -131,3 +131,17 @@ def test_pack_members_are_listed_and_downloaded_on_use(tmp_path):
         assert listed["person1-ru"]["installed"] and listed["my-other_model"]["installed"]
     finally:
         server.shutdown()
+
+
+def test_game_onnx_layout(tmp_path):
+    from mvocaltoolkit.models.layout import detect_game, find_model_dirs  # noqa: PLC0415
+
+    folder = tmp_path / "GAME-1.0.3-small-onnx"
+    folder.mkdir()
+    for name in ("encoder", "segmenter", "estimator", "dur2bd", "bd2dur"):
+        (folder / f"{name}.onnx").write_bytes(b"\0")
+    (folder / "config.json").write_text(json.dumps({"samplerate": 44100, "timestep": 0.01,
+                                                    "languages": {"en": 1, "ja": 2, "zh": 3}}), encoding="utf-8")
+    layout = detect_game(folder)
+    assert layout["format"] == "onnx" and layout["languages"] == ["en", "ja", "zh"]
+    assert find_model_dirs("game", tmp_path) == [folder]

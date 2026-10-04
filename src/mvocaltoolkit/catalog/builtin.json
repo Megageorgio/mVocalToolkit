@@ -128,28 +128,31 @@
         "type": "github_release",
         "repo": "spicytigermeat/LabelMakr",
         "tag": "tgm_en_v100",
-        "asset": "*.zip"
-      }
+        "asset": "tgm_en_v100.zip"
+      },
+      "size_hint": "362 MB"
     },
     {
-      "id": "hubertfa-zh-ja-en-latest",
+      "id": "hubertfa-zh-ja-en-v0.0.7",
       "engine": "hubertfa",
-      "name": "HubertFA (Mandarin, Japanese, English)",
+      "name": "HubertFA v0.0.7 (Mandarin, Japanese, English)",
       "languages": [
         "zh",
         "ja",
         "en"
       ],
-      "description": "Multilingual HubertFA ONNX model from the official releases; detects breaths (AP) and other non-lexical sounds (EP). The languages are read from the model's vocab.json after download.",
+      "description": "Multilingual singing aligner (dictionaries: ds-zh-pinyin-lite, japanese_dict_full romaji, ds_cmudict-07b); detects breaths (AP) and other non-lexical sounds (EP).",
       "author": "wolfgitpr",
       "license": "MIT",
       "homepage": "https://github.com/wolfgitpr/HubertFA/releases",
       "source": {
         "type": "github_release",
         "repo": "wolfgitpr/HubertFA",
-        "tag": "latest",
-        "asset": "*.zip"
-      }
+        "tag": "v0.0.7",
+        "asset": "*hfa_model*.zip"
+      },
+      "version": "0.0.7",
+      "size_hint": "245 MB"
     },
     {
       "id": "wfl-asr-test1",
@@ -160,8 +163,9 @@
         "type": "github_release",
         "repo": "MLo7Ghinsan/WFL-ASR",
         "tag": "model_release",
-        "asset": "*"
-      }
+        "asset": "model_1.0.zip"
+      },
+      "size_hint": "357 MB"
     },
     {
       "id": "game-large",
@@ -179,8 +183,9 @@
         "type": "github_release",
         "repo": "openvpi/GAME",
         "tag": "v1.0.3",
-        "asset": "*large*"
-      }
+        "asset": "*-large-onnx.zip"
+      },
+      "size_hint": "345 MB"
     },
     {
       "id": "game-medium",
@@ -197,8 +202,9 @@
         "type": "github_release",
         "repo": "openvpi/GAME",
         "tag": "v1.0.3",
-        "asset": "*medium*"
-      }
+        "asset": "*-medium-onnx.zip"
+      },
+      "size_hint": "171 MB"
     },
     {
       "id": "game-small",
@@ -216,8 +222,9 @@
         "type": "github_release",
         "repo": "openvpi/GAME",
         "tag": "v1.0.3",
-        "asset": "*small*"
-      }
+        "asset": "*-small-onnx.zip"
+      },
+      "size_hint": "44 MB"
     },
     {
       "id": "deeprhythm",
