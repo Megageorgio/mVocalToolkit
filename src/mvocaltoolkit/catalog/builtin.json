@@ -155,17 +155,22 @@
       "size_hint": "245 MB"
     },
     {
-      "id": "wfl-asr-test1",
+      "id": "wfl-asr-ft-en-ja",
       "engine": "wfl_asr",
-      "name": "WFL-ASR Test 1.0",
+      "name": "WFL-ASR fine-tuned (English, Japanese)",
       "homepage": "https://github.com/MLo7Ghinsan/WFL-ASR/releases/tag/model_release",
       "source": {
         "type": "github_release",
         "repo": "MLo7Ghinsan/WFL-ASR",
         "tag": "model_release",
-        "asset": "model_1.0.zip"
+        "asset": "ft_model.zip"
       },
-      "size_hint": "357 MB"
+      "size_hint": "178 MB",
+      "languages": [
+        "en",
+        "ja"
+      ],
+      "description": "Phoneme recognition without text (Whisper-base encoder). The release's model_1.0.zip needs older WFL-ASR code and is not used."
     },
     {
       "id": "game-large",

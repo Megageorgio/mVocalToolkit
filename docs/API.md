@@ -184,7 +184,7 @@ Built-in sets: `en_fixes` (LabelMakr's English fixes), `cleanup` (`pau`/`sil` â†
 `POST /segment` â€” WFL-ASR. `phonemes` of an item, if given, are used as the expected phoneme list.
 
 ```json
-{"input": {"folder": "D:/voice"}, "model": "wfl-asr-test1", "lang_id": null, "confidence_threshold": 0.3}
+{"input": {"folder": "D:/voice"}, "model": "wfl-asr-ft-en-ja", "lang_id": null, "confidence_threshold": 0.3}
 ```
 
 ## Notes

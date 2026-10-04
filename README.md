@@ -57,7 +57,7 @@ mvt label ./corpus -m sofa-ru-hhskt-v0.0.1 -f htk,textgrid,ds_csv
 mvt label ./corpus -m hubertfa-zh-ja-en-v0.0.7 -l ja                # a multilingual HubertFA model
 mvt label ./corpus -m labelmakr-<model> --rules en_fixes           # English, LabelMakr fixes
 mvt transcribe ./corpus -l ja                                       # writes .txt next to the audio
-mvt segment ./corpus -m wfl-asr-test1
+mvt segment ./corpus -m wfl-asr-ft-en-ja
 mvt midi song.wav --tempo auto
 mvt pitch ./corpus -m rmvpe -f csv
 mvt separate song.mp3 --stems vocals                                # only when the audio needs it
