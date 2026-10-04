@@ -269,14 +269,15 @@ def _align(loaded: "LoadedModel", items: list[dict[str, Any]], mode: str, g2p: s
 def _predict(loaded: LoadedModel, wav_path: Path, ph_seq, word_seq, ph_map):
     """Same as LitForcedAlignmentTask.predict_step, without Lightning's Trainer."""
     import torch  # noqa: PLC0415
+    import librosa  # noqa: PLC0415
     from einops import repeat  # noqa: PLC0415
-
-    from modules.utils.load_wav import load_wav  # noqa: PLC0415
 
     task = loaded.task
     sr = task.melspec_config["sample_rate"]
     with torch.no_grad():
-        waveform = load_wav(wav_path, loaded.device, sr)
+        # SOFA's load_wav prefers torchaudio.load, which needs torchcodec (and ffmpeg) since torchaudio 2.9
+        audio, _ = librosa.load(str(wav_path), sr=sr, mono=True)
+        waveform = torch.from_numpy(audio).to(loaded.device)
         wav_length = waveform.shape[0] / sr
         melspec = task.get_melspec(waveform).detach().unsqueeze(0)
         melspec = (melspec - melspec.mean()) / melspec.std()
