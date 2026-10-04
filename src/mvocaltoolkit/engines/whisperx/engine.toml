@@ -8,9 +8,10 @@ size_hint = "~3 GB with CUDA (+ Whisper model 0.8-3 GB downloaded on first use)"
 homepage = "https://github.com/m-bain/whisperX"
 license = "BSD-2-Clause"
 requirements = [
-    "torch",
-    "torchaudio",
-    "whisperx>=3.4,<4",
+    # pyannote-audio 3.x (whisperx 3.4-3.7) needs torchaudio.AudioMetaData, removed in torchaudio 2.9
+    "torch<2.9",
+    "torchaudio<2.9",
+    "whisperx>=3.4,<3.8",
     "librosa>=0.10",
     "soundfile",
 ]
