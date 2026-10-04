@@ -15,3 +15,10 @@ requirements = [
     "soundfile",
     "static-ffmpeg",
 ]
+cpu_requirements = [
+    "torch",
+    "torchaudio",
+    "audio-separator[cpu]>=0.30",
+    "soundfile",
+    "static-ffmpeg",
+]

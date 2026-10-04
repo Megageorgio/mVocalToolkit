@@ -15,6 +15,13 @@ requirements = [
     "soundfile",
     "mido",
 ]
+cpu_requirements = [
+    "onnxruntime>=1.21",
+    "numpy",
+    "librosa",
+    "soundfile",
+    "mido",
+]
 
 [source]
 repo = "openvpi/GAME"

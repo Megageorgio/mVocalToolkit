@@ -103,7 +103,10 @@ class EnvManager:
                 await self._download_source(spec, log)
             log(f"Creating Python {spec.python} environment for {spec.name}")
             await _run([uv, "venv", "--python", spec.python, str(env_dir)], log)
-            requirements = list(spec.requirements)
+            cpu_only = spec.cpu_requirements is not None and _cpu_only(self.settings.torch_backend)
+            requirements = list(spec.cpu_requirements if cpu_only else spec.requirements)
+            if cpu_only:
+                log(f"No NVIDIA GPU (or torch_backend=cpu): installing the CPU variant of {spec.name}")
             if requirements:
                 cmd = [uv, "pip", "install", "--python", str(self.python(spec))]
                 if spec.torch:
@@ -155,6 +158,27 @@ class EnvManager:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(root), str(target))
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _cpu_only(torch_backend: str | None) -> bool:
+    backend = (torch_backend or "auto").lower()
+    if backend == "cpu":
+        return True
+    if backend != "auto":
+        return False  # an explicit CUDA / ROCm backend
+    return not has_nvidia_gpu()
+
+
+def has_nvidia_gpu() -> bool:
+    if os.environ.get("MVT_FORCE_GPU"):
+        return True
+    if sys.platform == "darwin":
+        return False
+    smi = shutil.which("nvidia-smi")
+    if smi is None and os.name == "nt":
+        candidate = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "nvidia-smi.exe"
+        smi = str(candidate) if candidate.exists() else None
+    return smi is not None
 
 
 async def _run(cmd: list[str], log: LogFunc) -> None:

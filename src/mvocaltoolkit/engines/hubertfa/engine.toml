@@ -20,6 +20,18 @@ requirements = [
     "pandas",
     "click",
 ]
+cpu_requirements = [
+    "onnxruntime>=1.21",
+    "numpy~=1.26.4",
+    "librosa>=0.9,<0.10",
+    "soundfile",
+    "pyyaml",
+    "tqdm",
+    "matplotlib",
+    "textgrid~=1.5",
+    "pandas",
+    "click",
+]
 
 [source]
 repo = "wolfgitpr/HubertFA"

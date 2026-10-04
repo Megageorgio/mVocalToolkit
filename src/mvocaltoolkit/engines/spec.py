@@ -27,6 +27,9 @@ class EngineSpec(BaseModel):
     # Python version for the engine's environment, or "system" to run with the server's interpreter (dev/tests)
     python: str = "3.11"
     requirements: list[str] = Field(default_factory=list)
+    # used instead of requirements on machines without an NVIDIA GPU (or torch_backend = "cpu"),
+    # e.g. plain onnxruntime instead of onnxruntime-gpu with ~2 GB of CUDA libraries
+    cpu_requirements: list[str] | None = None
     # install torch with the toolkit's torch backend (cpu / cuda auto-detection)
     torch: bool = False
     worker: str = "worker.py"
@@ -50,6 +53,7 @@ class EngineSpec(BaseModel):
             [
                 self.python,
                 ",".join(self.requirements),
+                ",".join(self.cpu_requirements or []),
                 str(self.torch),
                 self.source.repo + "@" + self.source.commit if self.source else "",
             ]
