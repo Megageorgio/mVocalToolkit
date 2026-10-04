@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..settings import Home, Settings
-from .env import EnvManager
+from .env import NO_WINDOW, EnvManager
 from .spec import ENGINES_DIR, EngineSpec, load_engine_specs
 
 RUNTIME_DIR = Path(__file__).parent / "_runtime"
@@ -89,6 +89,7 @@ class WorkerProcess:
             cwd=str(cwd),
             env=env,
             limit=64 * 1024 * 1024,
+            **NO_WINDOW,
         )
         loop = asyncio.get_running_loop()
         self._ready = loop.create_future()
@@ -236,7 +237,15 @@ class EngineManager:
         on_progress: ProgressFunc | None = None,
         log: Callable[[str], None] | None = None,
     ) -> Any:
-        spec = await self.ensure_installed(engine, log=log)
+        install_log = log
+        if on_progress is not None and not self.envs.is_ready(self.spec(engine)):
+            # the first use installs the engine (minutes, GBs for torch): show it as the job's progress
+            def install_log(line: str) -> None:
+                if log is not None:
+                    log(line)
+                on_progress({"stage": "install", "message": f"{engine}: {line.strip()[:120]}"})
+
+        spec = await self.ensure_installed(engine, log=install_log)
         worker = self.workers.get(engine)
         if worker is None:
             worker = self.workers[engine] = WorkerProcess(spec, self.envs, self.settings)

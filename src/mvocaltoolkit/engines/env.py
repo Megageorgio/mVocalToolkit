@@ -25,6 +25,9 @@ from .spec import EngineSpec
 
 LogFunc = Callable[[str], None]
 
+# child processes of a GUI app must not open console windows on Windows
+NO_WINDOW: dict = {"creationflags": 0x08000000} if os.name == "nt" else {}  # CREATE_NO_WINDOW
+
 
 def find_uv() -> str:
     try:
@@ -187,7 +190,7 @@ async def _run(cmd: list[str], log: LogFunc) -> None:
     env = dict(os.environ)
     env.setdefault("UV_LINK_MODE", "hardlink" if os.name != "nt" else "copy")
     process = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=env
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=env, **NO_WINDOW
     )
     assert process.stdout is not None
     tail: list[str] = []

@@ -58,6 +58,12 @@ async def transcribe_items(
         chunk = items[start : start + CHUNK]
 
         def on_progress(data: dict[str, Any], offset=start, size=len(chunk)) -> None:
+
+            if data.get("stage") == "install":  # first use of the engine
+
+                job.progress(None, stage="install", message=data.get("message"))
+
+                return
             inner = float(data.get("progress", 0.0))
             report((offset + inner * size) / total, data.get("message", "Transcribing"))
 
@@ -235,6 +241,12 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
         chunk = to_align[start : start + CHUNK]
 
         def on_progress(data: dict[str, Any], offset=start, size=len(chunk)) -> None:
+
+            if data.get("stage") == "install":  # first use of the engine
+
+                job.progress(None, stage="install", message=data.get("message"))
+
+                return
             report((offset + float(data.get("progress", 0.0)) * size) / total, data.get("message", "Aligning"))
 
         results = await tk.engines.call(

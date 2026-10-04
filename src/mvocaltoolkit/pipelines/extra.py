@@ -37,6 +37,12 @@ async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, A
         chunk = items[start : start + CHUNK]
 
         def on_progress(data: dict[str, Any], offset=start, size=len(chunk)) -> None:
+
+            if data.get("stage") == "install":  # first use of the engine
+
+                job.progress(None, stage="install", message=data.get("message"))
+
+                return
             report((offset + float(data.get("progress", 0.0)) * size) / total, data.get("message", "Segmenting"))
 
         results = await tk.engines.call(
@@ -149,6 +155,12 @@ async def run_separate(tk: Toolkit, job: Job, req: SeparateRequest) -> dict[str,
         job.check_cancelled()
 
         def on_progress(data: dict[str, Any], offset=index) -> None:
+
+            if data.get("stage") == "install":  # first use of the engine
+
+                job.progress(None, stage="install", message=data.get("message"))
+
+                return
             report((offset + float(data.get("progress", 0.0))) / total, data.get("message", "Separating"))
 
         res = await tk.engines.call(
@@ -219,6 +231,12 @@ async def run_pitch(tk: Toolkit, job: Job, req: PitchRequest) -> dict[str, Any]:
         chunk = items[start : start + CHUNK]
 
         def on_progress(data: dict[str, Any], offset=start, size=len(chunk)) -> None:
+
+            if data.get("stage") == "install":  # first use of the engine
+
+                job.progress(None, stage="install", message=data.get("message"))
+
+                return
             report((offset + float(data.get("progress", 0.0)) * size) / total, data.get("message", "Pitch"))
 
         results = await tk.engines.call(
