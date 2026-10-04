@@ -297,6 +297,22 @@ def cmd_pitch(args) -> None:
         print(f"{item['name']}: {item.get('files') if item.get('ok') else 'ERROR ' + str(item.get('error'))}")
 
 
+def cmd_fix(args) -> None:
+    from .api_models import FixLabelsRequest  # noqa: PLC0415
+    from .pipelines.fix import fix_labels  # noqa: PLC0415
+
+    target = Path(args.path)
+    req = FixLabelsRequest(folder=str(target) if target.is_dir() else None,
+                           paths=[] if target.is_dir() else [str(target)],
+                           rule_sets=args.rules.split(","), backup=not args.no_backup, dry_run=args.dry_run)
+    result = fix_labels(req)
+    print(f"Changed {result['changed']} of {len(result['files'])} files" + (f", backup: {result['backup']}"
+                                                                           if result["backup"] else ""))
+    for item in result["files"]:
+        if not item["ok"]:
+            print(f"  failed {item['path']}: {item['error']}")
+
+
 def cmd_convert(args) -> None:
     label = formats.read(Path(args.input), args.from_format)
     fmt = args.to_format or formats.detect_format(Path(args.output))
@@ -425,6 +441,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--formats", "-f", default="csv")
     p.add_argument("--out", "-o")
     p.set_defaults(func=cmd_pitch)
+
+    p = sub.add_parser("fix", help="Apply fixes to existing label files (in place, with a backup)")
+    p.add_argument("path", help="label file or folder")
+    p.add_argument("--rules", "-r", required=True, help="rule sets, e.g. dx,merge_uh_r,merge_duplicates")
+    p.add_argument("--no-backup", action="store_true")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=cmd_fix)
 
     p = sub.add_parser("convert", help="Convert label formats")
     p.add_argument("input")

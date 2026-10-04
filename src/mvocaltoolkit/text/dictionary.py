@@ -23,6 +23,10 @@ class Dictionary:
     def __contains__(self, word: str) -> bool:
         return self.lookup(word) is not None
 
+    def with_extra(self, extra: dict[str, list[str]]) -> "Dictionary":
+        """A copy with extra words (they win over the dictionary's own entries)."""
+        return Dictionary({**self.entries, **{w: list(p) for w, p in extra.items() if w and p}})
+
     def phonemes(self) -> set[str]:
         return {ph for phs in self.entries.values() for ph in phs}
 

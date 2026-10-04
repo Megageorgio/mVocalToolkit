@@ -35,6 +35,16 @@ RULE_SETS: dict[str, dict[str, Any]] = {
             {"op": "merge_duplicates"},
         ],
     },
+    # the same fixes one by one (for GUIs with a checkbox per fix)
+    "dx": {
+        "vowels": ARPABET_VOWELS,
+        "rules": [
+            {"op": "contextual", "phones": ["t", "d"], "prev": "vowel", "next": "vowel", "max_dur": 0.05, "to": "dx"},
+            {"op": "contextual", "phones": ["t", "d"], "prev": ["r"], "next": "vowel", "max_dur": 0.05, "to": "dx"},
+        ],
+    },
+    "merge_uh_r": {"rules": [{"op": "merge_pair", "first": "uh", "second": "r", "into": "er"}]},
+    "merge_short_h": {"rules": [{"op": "merge_short", "phones": ["hh", "h"], "max_dur": 0.009}]},
     "merge_duplicates": {"rules": [{"op": "merge_duplicates"}]},
     "cleanup": {"rules": [{"op": "replace", "from": "pau", "to": "SP"}, {"op": "replace", "from": "sil", "to": "SP"},
                           {"op": "replace", "from": "br", "to": "AP"}, {"op": "merge_duplicates", "phones": ["SP"]}]},

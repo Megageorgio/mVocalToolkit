@@ -106,6 +106,10 @@ class AlignRequest(BaseModel):
     pad_times: int = Field(1, description="HubertFA: number of passes with different padding (more = steadier)")
     pad_length: float = Field(5.0, description="HubertFA: max padding in seconds for the extra passes")
     dictionary: str | None = Field(None, description="Custom dictionary file instead of the model's one")
+    extra_words: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="Words added to the model's dictionary for this request: {\"word\": [\"ph\", ...]}",
+    )
     # transcribe items without text (None = fail for such items)
     transcribe: TranscribeOptions | None = Field(default_factory=TranscribeOptions)
     # pause after transcription so that a GUI can show and edit the texts (POST /jobs/{id}/resume)
@@ -184,6 +188,7 @@ class TextRequest(BaseModel):
     language: str | None = None
     model: str | None = Field(None, description="Aligner model (SOFA / HubertFA) whose dictionary / G2P is used")
     g2p: Literal["auto", "dictionary"] = "auto"
+    extra_words: dict[str, list[str]] = Field(default_factory=dict, description="Words added to the dictionary")
 
 
 class ConvertRequest(BaseModel):
@@ -192,6 +197,20 @@ class ConvertRequest(BaseModel):
     from_format: str | None = None
     to_format: str
     tier: str = "phones"
+
+
+class FixLabelsRequest(BaseModel):
+    """Applies post-processing rules to existing label files (in place, with a backup)."""
+
+    folder: str | None = None
+    paths: list[str] = Field(default_factory=list)
+    recursive: bool = True
+    formats: list[str] = Field(default_factory=lambda: ["htk", "textgrid", "json"],
+                               description="Which label files to process (by extension)")
+    rule_sets: list[str] = Field(default_factory=list)
+    rules: list[dict[str, Any]] = Field(default_factory=list)
+    backup: bool = Field(True, description="Copy the original files to <folder>/_backup/<time>/ first")
+    dry_run: bool = False
 
 
 class ItemResult(BaseModel):

@@ -211,11 +211,13 @@ def build_sequence(model: LoadedModel, item: dict[str, Any], g2p: str, skip_unkn
 @rt.method()
 def align(model: dict[str, Any], items: list[dict[str, Any]], mode: str = "force", g2p: str = "auto",
           ap_detector: str = "loudness_spectral_centroid", skip_unknown_words: bool = False,
-          dictionary: str | None = None) -> list[dict[str, Any]]:
+          dictionary: str | None = None, extra_words: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
     loaded = _get_model(model)
     original = loaded.dictionary
     if dictionary:
         loaded.dictionary = _load_dictionary(Path(dictionary))
+    if extra_words:
+        loaded.dictionary = {**loaded.dictionary, **{w: list(p) for w, p in extra_words.items() if w and p}}
     try:
         return _align(loaded, items, mode, g2p, ap_detector, skip_unknown_words)
     finally:

@@ -230,3 +230,34 @@ def test_separate_and_pitch(tmp_path):
         assert item["data"]["f0"][:2] == [0.0, 220.0] and item["data"]["hop"] == 0.01
         csv_lines = (tmp_path / "song" / "s.f0.csv").read_text().splitlines()
         assert csv_lines[0] == "time,f0" and csv_lines[2] == "0.0100,220.000"
+
+
+def test_extra_words_and_fix_labels(tmp_path):
+    make_wav(tmp_path / "e.wav")
+    (tmp_path / "e.txt").write_text("hello bakery", encoding="utf-8")
+    with _client(tmp_path) as client:
+        model = _import_model(client, tmp_path)
+        check = client.post("/text/validate", json={"texts": ["hello bakery"], "model": model,
+                                                     "extra_words": {"bakery": ["b", "ey", "k", "er", "iy"]}}).json()
+        assert check["items"][0]["unknown_words"] == []
+        job = client.post("/align", json={
+            "input": {"items": [{"path": str(tmp_path / "e.wav")}]}, "model": model,
+            "extra_words": {"bakery": ["b", "ey", "k", "er", "iy"]},
+            "output": {"formats": ["htk"], "dir": str(tmp_path / "labels"), "layout": "beside"},
+        }).json()
+        info = _wait(client, job["id"])
+        assert info["status"] == "done", info
+        lab = tmp_path / "labels" / "e.lab"
+        assert "ey" in lab.read_text()
+        # duplicate phonemes are merged by the fix, the original goes to _backup
+        lab.write_text("0 1000000 a\n1000000 2000000 a\n2000000 3000000 b\n", encoding="utf-8")
+        result = client.post("/labels/fix", json={"folder": str(tmp_path / "labels"),
+                                                  "rule_sets": ["merge_duplicates"]}).json()
+        assert result["changed"] == 1 and result["backup"]
+        assert [l.split()[2] for l in lab.read_text().splitlines()] == ["a", "b"]
+        backups = list((tmp_path / "labels" / "_backup").rglob("e.lab"))
+        assert len(backups) == 1 and backups[0].read_text().count("a") == 2
+        # the backup folder is not processed again
+        again = client.post("/labels/fix", json={"folder": str(tmp_path / "labels"),
+                                                 "rule_sets": ["merge_duplicates"]}).json()
+        assert again["changed"] == 0 and len(again["files"]) == 1

@@ -19,6 +19,7 @@ from ..api_models import (
     AlignRequest,
     CatalogAddRequest,
     ConvertRequest,
+    FixLabelsRequest,
     MidiRequest,
     ModelImportRequest,
     PitchRequest,
@@ -335,6 +336,18 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
     @app.post("/text/normalize", tags=["text"], dependencies=[Depends(auth)])
     async def text_normalize(req: TextRequest, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
         return await _guard(run_text(tk, None, TextRequest(texts=req.texts, language=req.language, model=None)))
+
+    @app.post("/labels/fix", tags=["text"], dependencies=[Depends(auth)])
+    async def labels_fix(req: FixLabelsRequest) -> dict[str, Any]:
+        """Applies fixes (rule sets / rules) to existing label files in place, keeping a backup."""
+        from ..pipelines.fix import fix_labels  # noqa: PLC0415
+
+        try:
+            return await asyncio.to_thread(fix_labels, req)
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e)) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
 
     @app.post("/text/g2p", tags=["text"], dependencies=[Depends(auth)])
     async def text_g2p(req: TextRequest, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:

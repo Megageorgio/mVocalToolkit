@@ -9,7 +9,7 @@ import mvt_engine as rt
 
 @rt.method()
 def align(model, items, language=None, g2p="auto", non_lexical_phonemes=None, pad_times=1, pad_length=5.0,
-          skip_unknown_words=False, dictionary=None):
+          skip_unknown_words=False, dictionary=None, extra_words=None):
     root = Path(model["path"])
     vocab = json.loads((root / "vocab.json").read_text(encoding="utf-8"))
     dictionaries = vocab["dictionaries"]
@@ -19,6 +19,7 @@ def align(model, items, language=None, g2p="auto", non_lexical_phonemes=None, pa
     for line in (root / dictionaries[language]).read_text(encoding="utf-8").splitlines():
         word, phones = line.split("\t")
         table[word] = phones.split()
+    table.update(extra_words or {})
     results = []
     for item in items:
         with wave.open(item["audio"]) as w:

@@ -280,6 +280,8 @@ async def run_text(tk: Toolkit, job: Job | None, req: TextRequest, validate_only
     dictionary_path = _dictionary_path(model, language) if model is not None else None
     if dictionary_path is not None:
         dictionary = Dictionary.load(dictionary_path)
+    if req.extra_words:
+        dictionary = (dictionary or Dictionary({})).with_extra(req.extra_words)
     for text, toks in zip(req.texts, tokens):
         entry: dict[str, Any] = {"text": text, "tokens": toks}
         if dictionary is not None:

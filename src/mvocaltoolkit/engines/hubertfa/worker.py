@@ -126,7 +126,7 @@ def _get_model(model: dict[str, Any]) -> LoadedModel:
 
 
 def build_sequence(model: LoadedModel, item: dict[str, Any], language: str | None, g2p: str,
-                   skip_unknown: bool, dictionary: str | None):
+                   skip_unknown: bool, dictionary: str | None, extra_words: dict[str, list[str]] | None = None):
     """words/phonemes -> (ph_seq, word_seq, ph_idx_to_word_idx, unknown) in HubertFA conventions."""
     if item.get("phonemes"):
         tokens, mode = [p for p in item["phonemes"] if p != "SP"], "phonemes"
@@ -134,6 +134,8 @@ def build_sequence(model: LoadedModel, item: dict[str, Any], language: str | Non
         tokens = list(item.get("words") or [])
         mode = "phonemes" if g2p == "none" else "words"
     table = model.dictionary(language, dictionary) if mode == "words" else {}
+    if extra_words and mode == "words":
+        table = {**table, **{w: list(p) for w, p in extra_words.items() if w and p}}
     ph_seq, ph_map, word_seq, unknown = ["SP"], [-1], [], []
     for token in tokens:
         if token == "SP":
@@ -204,7 +206,8 @@ def _infer_item(model: LoadedModel, wav_path: Path, ph_seq, word_seq, ph_map, no
 @rt.method()
 def align(model: dict[str, Any], items: list[dict[str, Any]], language: str | None = None, g2p: str = "auto",
           non_lexical_phonemes: list[str] | None = None, pad_times: int = 1, pad_length: float = 5.0,
-          skip_unknown_words: bool = False, dictionary: str | None = None) -> list[dict[str, Any]]:
+          skip_unknown_words: bool = False, dictionary: str | None = None,
+          extra_words: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
     loaded = _get_model(model)
     lang = loaded.resolve_language(language)
     allowed = set(loaded.vocab.get("non_lexical_phonemes") or [])
@@ -216,7 +219,7 @@ def align(model: dict[str, Any], items: list[dict[str, Any]], language: str | No
         rt.progress(index / total, f"Aligning {name}")
         try:
             ph_seq, word_seq, ph_map, unknown = build_sequence(loaded, item, lang, g2p, skip_unknown_words,
-                                                               dictionary)
+                                                               dictionary, extra_words)
             if ph_seq is None:
                 results.append({"ok": False, "error": "Unknown words: " + " ".join(unknown), "unknown_words": unknown})
                 continue

@@ -158,6 +158,8 @@ def _align_params(model, req: AlignRequest, chunk: list[Item], language: str | N
         "g2p": req.g2p,
         "skip_unknown_words": req.skip_unknown_words,
     }
+    if req.extra_words:
+        params["extra_words"] = req.extra_words
     if model.engine == "hubertfa":
         params.update({
             "language": language,

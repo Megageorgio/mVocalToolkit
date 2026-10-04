@@ -74,9 +74,11 @@ class EnvManager:
         if not marker.exists() or not self.python(spec).exists():
             return {"installed": False, "outdated": False}
         data = json.loads(marker.read_text(encoding="utf-8"))
+        backend_changed = spec.torch and (data.get("torch_backend") or "auto") != (self.settings.torch_backend or "auto")
         return {
             "installed": True,
-            "outdated": data.get("fingerprint") != spec.fingerprint(),
+            # a changed torch backend (e.g. cu128 for RTX 50 GPUs, or cpu) needs a reinstall too
+            "outdated": data.get("fingerprint") != spec.fingerprint() or bool(backend_changed),
             "installed_at": data.get("installed_at"),
             "torch_backend": data.get("torch_backend"),
             "size_mb": round(_dir_size(self.env_dir(spec)) / 2**20, 1),
