@@ -81,6 +81,9 @@ class TranscribeRequest(TranscribeOptions):
 class PostprocessOptions(BaseModel):
     rule_sets: list[str] = Field(default_factory=list, description="Built-in rule sets, e.g. en_fixes, cleanup")
     rules: list[dict[str, Any]] = Field(default_factory=list, description="Custom rules, see docs/API.md")
+    use_model_defaults: bool = Field(
+        True, description="Apply the model's default rule sets when rule_sets is empty (false: no fixes)"
+    )
 
 
 class AlignRequest(BaseModel):

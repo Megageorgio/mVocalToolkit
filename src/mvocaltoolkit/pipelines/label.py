@@ -247,7 +247,9 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
                 item.data["error"] = res.get("error", "alignment failed")
                 continue
             label = _label_from_engine(res)
-            rule_sets = list(req.postprocess.rule_sets) or list(model.defaults.get("rule_sets", []))
+            rule_sets = list(req.postprocess.rule_sets)
+            if not rule_sets and req.postprocess.use_model_defaults:
+                rule_sets = list(model.defaults.get("rule_sets", []))
             if rule_sets or req.postprocess.rules:
                 label = apply_rule_sets(label, rule_sets, req.postprocess.rules)
             item.data["label"] = label

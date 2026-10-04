@@ -205,7 +205,8 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
         universal: list[dict[str, Any]] = []
         for model in model_listing(tk.models, task=task):
             short = {k: model.get(k) for k in ("id", "name", "engine", "type", "version", "description", "author",
-                                                "size_hint", "installed", "languages", "pack", "tags")}
+                                                "size_hint", "installed", "languages", "pack", "tags",
+                                                "defaults", "text_frontend")}
             langs = [lang for lang in model.get("languages") or [] if lang != "*"]
             if not langs:
                 universal.append(short)
