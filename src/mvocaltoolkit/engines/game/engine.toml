@@ -1,0 +1,34 @@
+name = "game"
+title = "GAME note extractor"
+description = "Generative Adaptive MIDI Extractor: notes (MIDI) from singing, robust to noise and reverb; successor of SOME."
+capabilities = ["midi"]
+python = "3.12"
+torch = true
+size_hint = "~2.5 GB with CUDA"
+homepage = "https://github.com/openvpi/GAME"
+license = "MIT"
+requirements = [
+    "torch",
+    "click",
+    "colorednoise",
+    "einops>=0.7.0",
+    "h5py",
+    "librosa",
+    "lightning",
+    "loguru",
+    "matplotlib",
+    "mido",
+    "numpy<2.0.0",
+    "omegaconf",
+    "pydantic>=2.11,<3.0",
+    "resampy",
+    "scipy>=1.10.0",
+    "sympy",
+    "torchmetrics",
+    "tqdm",
+    "soundfile",
+]
+
+[source]
+repo = "openvpi/GAME"
+commit = "f4239345f0fed21890d362c74a35fd857724aa82"

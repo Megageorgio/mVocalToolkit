@@ -1,0 +1,4 @@
+name = "whisperx"
+title = "fake whisperx"
+python = "system"
+capabilities = ["test"]

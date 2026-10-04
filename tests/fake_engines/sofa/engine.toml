@@ -1,0 +1,4 @@
+name = "sofa"
+title = "fake sofa"
+python = "system"
+capabilities = ["test"]

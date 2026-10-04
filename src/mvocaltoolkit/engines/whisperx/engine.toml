@@ -1,0 +1,16 @@
+name = "whisperx"
+title = "WhisperX recognizer"
+description = "Lyrics/speech recognition with faster-whisper: batched inference, VAD (Silero) to skip silence and noise, automatic batch reduction on GPU out-of-memory."
+capabilities = ["transcribe"]
+python = "3.11"
+torch = true
+size_hint = "~3 GB with CUDA (+ Whisper model 0.8-3 GB downloaded on first use)"
+homepage = "https://github.com/m-bain/whisperX"
+license = "BSD-2-Clause"
+requirements = [
+    "torch",
+    "torchaudio",
+    "whisperx>=3.4,<4",
+    "librosa>=0.10",
+    "soundfile",
+]

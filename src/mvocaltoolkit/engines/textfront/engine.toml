@@ -1,0 +1,14 @@
+name = "textfront"
+title = "Text frontends (Japanese, Chinese, Korean)"
+description = "Lyrics normalization that needs extra libraries: Japanese kana/kanji to phonemes (OpenJTalk), Chinese to pinyin, Korean pronunciation (g2pk). No GPU, small."
+capabilities = ["text"]
+python = "3.11"
+torch = false
+size_hint = "~150 MB"
+requirements = [
+    "pyopenjtalk-plus",
+    "pypinyin",
+    "g2pk2",
+    "python-mecab-ko",
+    "ftfy",
+]

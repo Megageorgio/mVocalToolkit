@@ -1,0 +1,120 @@
+{
+  "name": "builtin",
+  "version": 1,
+  "models": [
+    {
+      "id": "whisper-large-v3-turbo",
+      "engine": "whisperx",
+      "name": "Whisper large-v3-turbo",
+      "description": "Fast and accurate multilingual recognizer (recommended).",
+      "languages": ["*"],
+      "size_hint": "1.6 GB",
+      "source": {"type": "engine"},
+      "params": {"model": "large-v3-turbo"}
+    },
+    {
+      "id": "whisper-large-v3",
+      "engine": "whisperx",
+      "name": "Whisper large-v3",
+      "description": "Most accurate, slower than turbo.",
+      "languages": ["*"],
+      "size_hint": "3 GB",
+      "source": {"type": "engine"},
+      "params": {"model": "large-v3"}
+    },
+    {
+      "id": "whisper-medium",
+      "engine": "whisperx",
+      "name": "Whisper medium",
+      "languages": ["*"],
+      "size_hint": "1.5 GB",
+      "source": {"type": "engine"},
+      "params": {"model": "medium"}
+    },
+    {
+      "id": "whisper-small",
+      "engine": "whisperx",
+      "name": "Whisper small",
+      "description": "For weak GPUs / CPU.",
+      "languages": ["*"],
+      "size_hint": "0.5 GB",
+      "source": {"type": "engine"},
+      "params": {"model": "small"}
+    },
+    {
+      "id": "sofa-ru-hhskt-v0.0.1",
+      "engine": "sofa",
+      "name": "Russian SOFA (hhskt)",
+      "version": "0.0.1",
+      "languages": ["ru"],
+      "text_frontend": "ru",
+      "author": "Megageorgio",
+      "description": "Russian singing aligner, modified cmusphinx-ru-5.2 dictionary, with G2P for unknown words.",
+      "homepage": "https://github.com/Megageorgio/SOFA-Models/releases/tag/Russian_v0.0.1",
+      "source": {"type": "github_release", "repo": "Megageorgio/SOFA-Models", "tag": "Russian_v0.0.1", "asset": "*safetensors*.zip"}
+    },
+    {
+      "id": "labelmakr-pack-v030",
+      "type": "pack",
+      "engine": "sofa",
+      "name": "LabelMakr models (v030 asset pack)",
+      "description": "English, French, Mandarin, Japanese and Korean SOFA models with G2P, as used by LabelMakr. Each model is registered as labelmakr-<folder>.",
+      "author": "tigermeat and contributors",
+      "homepage": "https://github.com/spicytigermeat/LabelMakr",
+      "prefix": "labelmakr-",
+      "defaults": {},
+      "source": {"type": "github_release", "repo": "spicytigermeat/LabelMakr", "tag": "assets_v030", "asset": "models.zip"}
+    },
+    {
+      "id": "labelmakr-tgm-en-v100",
+      "type": "pack",
+      "engine": "sofa",
+      "name": "tgm_sofa English v1.0.0 (LabelMakr)",
+      "languages": ["en"],
+      "text_frontend": "en",
+      "homepage": "https://github.com/spicytigermeat/LabelMakr/releases/tag/tgm_en_v100",
+      "prefix": "labelmakr-",
+      "defaults": {"rule_sets": ["en_fixes"]},
+      "source": {"type": "github_release", "repo": "spicytigermeat/LabelMakr", "tag": "tgm_en_v100", "asset": "*.zip"}
+    },
+    {
+      "id": "wfl-asr-test1",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Test 1.0",
+      "homepage": "https://github.com/MLo7Ghinsan/WFL-ASR/releases/tag/model_release",
+      "source": {"type": "github_release", "repo": "MLo7Ghinsan/WFL-ASR", "tag": "model_release", "asset": "*"}
+    },
+    {
+      "id": "game-large",
+      "engine": "game",
+      "name": "GAME large",
+      "languages": ["en", "ja", "zh", "yue"],
+      "description": "Best quality note extraction (~100M parameters).",
+      "homepage": "https://github.com/openvpi/GAME/releases",
+      "source": {"type": "github_release", "repo": "openvpi/GAME", "tag": "v1.0.3", "asset": "*large*"}
+    },
+    {
+      "id": "game-medium",
+      "engine": "game",
+      "name": "GAME medium",
+      "languages": ["en", "ja", "zh", "yue"],
+      "homepage": "https://github.com/openvpi/GAME/releases",
+      "source": {"type": "github_release", "repo": "openvpi/GAME", "tag": "v1.0.3", "asset": "*medium*"}
+    },
+    {
+      "id": "game-small",
+      "engine": "game",
+      "name": "GAME small",
+      "languages": ["en", "ja", "zh", "yue"],
+      "description": "Fast, ~12M parameters.",
+      "homepage": "https://github.com/openvpi/GAME/releases",
+      "source": {"type": "github_release", "repo": "openvpi/GAME", "tag": "v1.0.3", "asset": "*small*"}
+    },
+    {
+      "id": "deeprhythm",
+      "engine": "tempo",
+      "name": "DeepRhythm",
+      "source": {"type": "engine"}
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+name = "tempo"
+title = "Tempo estimation (DeepRhythm)"
+description = "Fast BPM estimation, used to save notes from GAME as MIDI with the right tempo."
+capabilities = ["tempo"]
+python = "3.11"
+torch = true
+size_hint = "~1.5 GB with CUDA, small model"
+homepage = "https://github.com/bleugreen/deeprhythm"
+license = "MIT"
+requirements = [
+    "torch",
+    "torchaudio",
+    "deeprhythm",
+    "librosa",
+    "soundfile",
+]

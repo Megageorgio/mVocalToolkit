@@ -1,0 +1,4 @@
+name = "textfront"
+title = "fake textfront"
+python = "system"
+capabilities = ["test"]

@@ -1,0 +1,26 @@
+name = "wfl_asr"
+title = "WFL-ASR phoneme segmentation"
+description = "Frame-level phoneme labeling (BIO tags) on top of Whisper/WavLM encoders: phoneme labels without text."
+capabilities = ["segment"]
+python = "3.11"
+torch = true
+size_hint = "~2.5 GB with CUDA (+ encoder weights from Hugging Face on first use)"
+homepage = "https://github.com/MLo7Ghinsan/WFL-ASR"
+requirements = [
+    "torch",
+    "torchaudio",
+    "librosa==0.11.0",
+    "numpy>=2,<2.3",
+    "PyYAML",
+    "scipy",
+    "soundfile",
+    "tqdm",
+    "transformers==4.51.3",
+    "click",
+    "pytorch-optimizer",
+    "matplotlib",
+]
+
+[source]
+repo = "MLo7Ghinsan/WFL-ASR"
+commit = "43f91f08292a585269f90ae21e4304b768c603be"
