@@ -140,10 +140,19 @@ def _load_dictionary(path: Path) -> dict[str, list[str]]:
     return entries
 
 
+def _use_librosa_loading() -> None:
+    """SOFA's load_wav (also used by the AP detector) prefers torchaudio.load, which needs torchcodec and
+    ffmpeg since torchaudio 2.9. torchaudio stays installed (SOFA imports it), loading goes through librosa."""
+    import modules.utils.load_wav as load_wav_module  # noqa: PLC0415
+
+    load_wav_module.installed_torchaudio = False
+
+
 def _get_model(model: dict[str, Any]) -> LoadedModel:
     key = model["path"]
     loaded = _models.get(key)
     if loaded is None:
+        _use_librosa_loading()
         if len(_models) >= 2:  # keep at most two aligners in memory
             _models.pop(next(iter(_models)))
             rt.free_memory()
