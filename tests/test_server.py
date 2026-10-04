@@ -2,7 +2,7 @@
 
 import time
 
-from conftest import FAKE_ENGINES, make_sofa_model, make_wav
+from conftest import FAKE_ENGINES, make_hubertfa_model, make_sofa_model, make_wav
 from fastapi.testclient import TestClient
 
 from mvocaltoolkit.server.app import create_app
@@ -155,3 +155,78 @@ def test_token_required_when_enabled(tmp_path):
         assert client.get("/health").status_code == 200
         assert client.get("/engines").status_code == 401
         assert client.get("/engines", headers={"Authorization": "Bearer secret"}).status_code == 200
+
+
+def test_languages_and_models_by_task(tmp_path):
+    with _client(tmp_path) as client:
+        _import_model(client, tmp_path)
+        folder = make_hubertfa_model(tmp_path / "hfa_src" / "hfa")
+        assert client.post("/models/import", json={"engine": "hubertfa", "path": str(folder), "id": "hfa"}).status_code == 200
+        data = client.get("/languages", params={"task": "align"}).json()
+        by_code = {lang["code"]: lang for lang in data["languages"]}
+        assert by_code["ru"]["native_name"] == "Русский"
+        assert "sofa-ru-hhskt-v0.0.1" in [m["id"] for m in by_code["ru"]["models"]]
+        assert {"test-en", "hfa"} <= {m["id"] for m in by_code["en"]["models"]}
+        assert "hfa" in [m["id"] for m in by_code["ja"]["models"]]
+        assert "whisper-large-v3-turbo" not in str(data)  # transcription models are another task
+        pitch = {m["id"] for m in client.get("/models", params={"task": "pitch"}).json()}
+        assert pitch == {"rmvpe", "fcpe", "parselmouth"}
+        separate = client.get("/languages", params={"task": "separate"}).json()["languages"]
+        assert [lang["code"] for lang in separate] == ["*"]
+        tasks = {t["task"]: t for t in client.get("/tasks").json()}
+        assert tasks["align"]["language_specific"] and not tasks["pitch"]["language_specific"]
+        assert tasks["align"]["engines"] == ["hubertfa", "sofa"]
+
+
+def test_align_with_hubertfa_model(tmp_path):
+    make_wav(tmp_path / "h.wav")
+    with _client(tmp_path) as client:
+        folder = make_hubertfa_model(tmp_path / "hfa_src" / "hfa")
+        client.post("/models/import", json={"engine": "hubertfa", "path": str(folder), "id": "hfa"})
+        job = client.post("/align", json={
+            "input": {"items": [{"path": str(tmp_path / "h.wav"), "text": "Hello world"}]},
+            "model": "hfa", "language": "en",
+            "output": {"formats": ["htk"], "dir": str(tmp_path / "o")},
+        }).json()
+        info = _wait(client, job["id"])
+        assert info["status"] == "done", info
+        assert info["result"]["engine"] == "hubertfa"
+        phones = [p["text"] for p in info["result"]["items"][0]["label"]["tiers"]["phones"]]
+        assert phones == ["AP", "hh", "ah", "l", "ow", "w", "er", "l", "d", "SP"]
+        g2p = client.post("/text/g2p", json={"texts": ["world, nope"], "model": "hfa", "language": "en"}).json()
+        item = g2p["items"][0]
+        assert item["phonemes"][0] == ["w", "er", "l", "d"] and item["unknown_words"] == ["nope"]
+        # the multilingual model picks the dictionary of the requested language
+        job = client.post("/align", json={
+            "input": {"items": [{"path": str(tmp_path / "h.wav"), "words": ["ka"]}]}, "model": "hfa",
+            "language": "ja", "non_lexical_phonemes": [], "output": {"formats": ["htk"], "dir": str(tmp_path / "o")},
+        }).json()
+        info = _wait(client, job["id"])
+        phones = [p["text"] for p in info["result"]["items"][0]["label"]["tiers"]["phones"]]
+        assert phones == ["SP", "k", "a", "SP"]
+
+
+def test_separate_and_pitch(tmp_path):
+    make_wav(tmp_path / "song" / "s.wav")
+    with _client(tmp_path) as client:
+        job = client.post("/separate", json={
+            "input": {"folder": str(tmp_path / "song")}, "model": "separation-vocals-bs-roformer",
+            "stems": ["vocals"], "output_dir": str(tmp_path / "stems"),
+        }).json()
+        info = _wait(client, job["id"])
+        assert info["status"] == "done", info
+        files = info["result"]["items"][0]["files"]
+        assert list(files) == ["vocals"] and (tmp_path / "stems" / "s_vocals.wav").exists()
+        assert client.get("/models/installed").json()[0]["id"] == "separation-vocals-bs-roformer"
+
+        job = client.post("/pitch", json={
+            "input": {"items": [{"path": str(tmp_path / "song" / "s.wav")}]}, "model": "fcpe",
+            "output_formats": ["csv", "json"],
+        }).json()
+        info = _wait(client, job["id"])
+        assert info["status"] == "done", info
+        item = info["result"]["items"][0]
+        assert info["result"]["method"] == "fcpe"
+        assert item["data"]["f0"][:2] == [0.0, 220.0] and item["data"]["hop"] == 0.01
+        csv_lines = (tmp_path / "song" / "s.f0.csv").read_text().splitlines()
+        assert csv_lines[0] == "time,f0" and csv_lines[2] == "0.0100,220.000"

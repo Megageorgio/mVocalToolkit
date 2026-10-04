@@ -1,0 +1,17 @@
+name = "separation"
+title = "Vocal separation (audio-separator)"
+description = "Separates vocals from accompaniment, lead from backing vocals, removes reverb/echo. MelBand/BS Roformer, MDX-Net, VR and Demucs models. Only runs when explicitly requested."
+capabilities = ["separate"]
+python = "3.11"
+torch = true
+size_hint = "~3 GB with CUDA (torch + onnxruntime), models 50-900 MB each"
+homepage = "https://github.com/nomadkaraoke/python-audio-separator"
+license = "MIT"
+requirements = [
+    "torch",
+    "torchaudio",
+    "audio-separator[gpu]>=0.30; sys_platform != 'darwin'",
+    "audio-separator[cpu]>=0.30; sys_platform == 'darwin'",
+    "soundfile",
+    "static-ffmpeg",
+]

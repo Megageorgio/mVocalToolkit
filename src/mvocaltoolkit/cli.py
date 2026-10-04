@@ -100,16 +100,16 @@ def cmd_engines(args) -> None:
 def cmd_models(args) -> None:
     tk = _toolkit(args)
     if args.action == "list":
-        installed = tk.models.installed()
-        for entry in tk.catalog.filter(args.engine, args.lang):
-            if args.installed and entry.id not in installed:
+        from .models.store import model_listing  # noqa: PLC0415
+
+        for model in model_listing(tk.models, task=args.task, engine=args.engine, language=args.lang):
+            if args.installed and not model["installed"]:
                 continue
-            mark = "*" if entry.id in installed else " "
-            print(f"{mark} {entry.id:<36} {entry.engine:<9} {','.join(entry.languages):<10} {entry.name}")
-        for model in installed.values():
-            if tk.catalog.get(model.id) is None and (not args.engine or model.engine == args.engine):
-                print(f"* {model.id:<36} {model.engine:<9} {','.join(model.languages):<10} {model.name}")
-        print("(* = installed)", file=sys.stderr)
+            mark = "*" if model["installed"] else " "
+            kind = " [pack]" if model.get("type") == "pack" else ""
+            print(f"{mark} {model['id']:<38} {model['engine']:<10} {','.join(model.get('languages') or []):<10} "
+                  f"{model.get('name', '')}{kind}")
+        print("(* = installed; other models are downloaded on first use)", file=sys.stderr)
     elif args.action == "download":
         entry = tk.catalog.get(args.id)
         if entry is None:
@@ -130,6 +130,37 @@ def cmd_models(args) -> None:
         )
         for model in installed:
             print(f"Imported {model.id}: {model.layout}")
+
+
+def cmd_languages(args) -> None:
+    """Languages with models for a task: what a GUI shows as "language -> model"."""
+    from .models.store import model_listing  # noqa: PLC0415
+    from .text.languages import language_info  # noqa: PLC0415
+
+    groups: dict[str, list[str]] = {}
+    universal: list[str] = []
+    for model in model_listing(_toolkit(args).models, task=args.task):
+        langs = [lang for lang in model.get("languages") or [] if lang != "*"]
+        mark = "*" if model["installed"] else ""
+        for lang in langs:
+            groups.setdefault(lang, []).append(model["id"] + mark)
+        if not langs:
+            universal.append(model["id"] + mark)
+    for code, ids in sorted(groups.items()):
+        info = language_info(code)
+        print(f"{code:<5} {info['name']:<12} {', '.join(ids)}")
+    if universal:
+        print(f"{'*':<5} {'any':<12} {', '.join(universal)}")
+
+
+def _run(tk, kind: str, func) -> Any:
+    async def main():
+        try:
+            return await _run_job(tk, kind, func)
+        finally:
+            await tk.stop()
+
+    return asyncio.run(main())
 
 
 def _input_spec(paths: list[str]):
@@ -160,6 +191,8 @@ def cmd_label(args) -> None:
         model=args.model,
         language=args.lang,
         mode=args.mode,
+        ap_detector="none" if args.no_breath else "loudness_spectral_centroid",
+        dictionary=args.dictionary,
         transcribe=transcribe,
         skip_unknown_words=args.skip_unknown,
         postprocess=PostprocessOptions(rule_sets=args.rules.split(",") if args.rules else []),
@@ -239,6 +272,31 @@ def cmd_midi(args) -> None:
         print(f"{item['name']}: {item.get('files') if item.get('ok') else 'ERROR ' + str(item.get('error'))}")
 
 
+def cmd_separate(args) -> None:
+    from .api_models import SeparateRequest  # noqa: PLC0415
+    from .pipelines.extra import run_separate  # noqa: PLC0415
+
+    tk = _toolkit(args)
+    req = SeparateRequest(input=_input_spec(args.paths), model=args.model,
+                          stems=args.stems.split(",") if args.stems else None, output_format=args.format,
+                          output_dir=args.out)
+    result = _run(tk, "separate", lambda job: run_separate(tk, job, req))
+    for item in result["items"]:
+        print(f"{item['name']}: {item.get('files') if item.get('ok') else 'ERROR ' + str(item.get('error'))}")
+
+
+def cmd_pitch(args) -> None:
+    from .api_models import PitchRequest  # noqa: PLC0415
+    from .pipelines.extra import run_pitch  # noqa: PLC0415
+
+    tk = _toolkit(args)
+    req = PitchRequest(input=_input_spec(args.paths), model=args.model, hop=args.hop,
+                       output_formats=args.formats.split(","), output_dir=args.out, return_curve=False)
+    result = _run(tk, "pitch", lambda job: run_pitch(tk, job, req))
+    for item in result["items"]:
+        print(f"{item['name']}: {item.get('files') if item.get('ok') else 'ERROR ' + str(item.get('error'))}")
+
+
 def cmd_convert(args) -> None:
     label = formats.read(Path(args.input), args.from_format)
     fmt = args.to_format or formats.detect_format(Path(args.output))
@@ -298,6 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("models", help="Manage models")
     p.add_argument("action", choices=["list", "download", "remove", "import"])
     p.add_argument("id", nargs="?", help="model id (download/remove)")
+    p.add_argument("--task", help="align, transcribe, segment, midi, tempo, pitch, separate")
     p.add_argument("--engine")
     p.add_argument("--lang")
     p.add_argument("--installed", action="store_true")
@@ -305,11 +364,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name")
     p.set_defaults(func=cmd_models)
 
-    p = sub.add_parser("label", help="Transcribe (if needed) and align audio files with SOFA")
+    p = sub.add_parser("languages", help="Languages and their models for a task (the GUI model choice)")
+    p.add_argument("--task", default="align")
+    p.set_defaults(func=cmd_languages)
+
+    p = sub.add_parser("label", help="Transcribe (if needed) and align audio files (SOFA or HubertFA)")
     p.add_argument("paths", nargs="+", help="audio files or a folder")
-    p.add_argument("--model", "-m", required=True, help="SOFA model id or path")
+    p.add_argument("--model", "-m", required=True, help="aligner model id (see: mvt languages) or path:")
     p.add_argument("--lang", "-l")
     p.add_argument("--mode", choices=["force", "match"], default="force")
+    p.add_argument("--dictionary", help="custom dictionary file")
+    p.add_argument("--no-breath", action="store_true", help="don't detect breaths (AP)")
     p.add_argument("--formats", "-f", default="htk")
     p.add_argument("--out", "-o")
     p.add_argument("--rules", help="rule sets, e.g. en_fixes")
@@ -344,6 +409,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--formats", "-f", default="mid,csv")
     p.add_argument("--out", "-o")
     p.set_defaults(func=cmd_midi)
+
+    p = sub.add_parser("separate", help="Separate vocals (only when you need it: it can degrade clean audio)")
+    p.add_argument("paths", nargs="+")
+    p.add_argument("--model", "-m", default="separation-vocals-bs-roformer")
+    p.add_argument("--stems", help="keep only these stems, e.g. vocals")
+    p.add_argument("--format", default="wav", choices=["wav", "flac", "mp3"])
+    p.add_argument("--out", "-o")
+    p.set_defaults(func=cmd_separate)
+
+    p = sub.add_parser("pitch", help="Extract f0 curves (RMVPE, FCPE, Parselmouth)")
+    p.add_argument("paths", nargs="+")
+    p.add_argument("--model", "-m", default="rmvpe")
+    p.add_argument("--hop", type=float, default=0.01)
+    p.add_argument("--formats", "-f", default="csv")
+    p.add_argument("--out", "-o")
+    p.set_defaults(func=cmd_pitch)
 
     p = sub.add_parser("convert", help="Convert label formats")
     p.add_argument("input")

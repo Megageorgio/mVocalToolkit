@@ -14,7 +14,7 @@ import tarfile
 import time
 import zipfile
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import httpx
 from pydantic import BaseModel, Field
@@ -39,6 +39,8 @@ class InstalledModel(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     defaults: dict[str, Any] = Field(default_factory=dict)
     text_frontend: str | None = None
+    tasks: list[str] = Field(default_factory=list)
+    description: str = ""
     source: str = ""  # catalog id / pack id / "import"
     installed_at: float = Field(default_factory=time.time)
 
@@ -87,31 +89,46 @@ class ModelStore:
         shutil.rmtree(folder)
         return True
 
-    def resolve_local(self, engine: str, path: str) -> InstalledModel:
+    def resolve_local(self, engine: str | Sequence[str], path: str) -> InstalledModel:
         """Uses a model folder (or file) given by path without installing it."""
+        engines = [engine] if isinstance(engine, str) else list(engine)
         root = Path(path).expanduser()
         if root.is_file():
             root = root.parent
-        detected = layouts.detect(engine, root)
-        if detected is None:
-            raise ModelNotFound(f"No {engine} model found in {root}")
-        return InstalledModel(id=f"path:{root}", engine=engine, name=root.name, path=str(root), layout=detected, source="path")
+        for name in engines:
+            detected = layouts.detect(name, root)
+            if detected is not None and (detected or name not in layouts.DETECTORS):
+                return InstalledModel(id=f"path:{root}", engine=name, name=root.name, path=str(root),
+                                      layout=detected, languages=detected.get("languages", []), source="path")
+        raise ModelNotFound(f"No {' / '.join(engines)} model found in {root}")
 
-    async def require(self, engine: str, model: str, progress: ProgressFunc | None = None) -> InstalledModel:
-        """Returns an installed model by id or path, downloading it from the catalog if needed."""
+    async def require(self, engine: str | Sequence[str], model: str,
+                      progress: ProgressFunc | None = None) -> InstalledModel:
+        """Returns an installed model by id or path, downloading it from the catalog if needed.
+
+        engine can be a list: any of these engines is accepted (e.g. sofa or hubertfa for alignment)."""
+        engines = [engine] if isinstance(engine, str) else list(engine)
         if model.startswith("path:") or Path(model).expanduser().is_absolute():
-            return self.resolve_local(engine, model.removeprefix("path:"))
+            return self.resolve_local(engines, model.removeprefix("path:"))
         installed = self.get_installed(model)
         if installed is not None:
+            if installed.engine not in engines:
+                raise ModelNotFound(f"Model {model} is for engine {installed.engine}, not {' / '.join(engines)}")
             return installed
         entry = self.catalog.get(model)
         if entry is None:
             raise ModelNotFound(f"Model {model} is not installed and not found in the catalogs")
-        if entry.engine != engine:
-            raise ModelNotFound(f"Model {model} is for engine {entry.engine}, not {engine}")
+        if entry.engine not in engines:
+            raise ModelNotFound(f"Model {model} is for engine {entry.engine}, not {' / '.join(engines)}")
         if not self.settings.auto_download_models:
             raise ModelNotFound(f"Model {model} is not installed (automatic download is disabled)")
-        await self.download(entry, progress)
+        if entry.pack:
+            pack = self.catalog.get(entry.pack)
+            if pack is None:
+                raise ModelNotFound(f"Pack {entry.pack} of model {model} is not in the catalogs")
+            await self.download(pack, progress)
+        else:
+            await self.download(entry, progress)
         installed = self.get_installed(model)
         if installed is None:
             raise ModelNotFound(f"Model {model} was downloaded but not found")
@@ -168,17 +185,20 @@ class ModelStore:
             detected = layouts.detect(entry.engine, model_dir)
             if detected is None:
                 continue
-            model_id = f"{entry.prefix}{model_dir.name}"
-            sub = CatalogEntry(
+            member = entry.member_for_folder(model_dir.name)
+            model_id = member.id if member else f"{entry.prefix}{model_dir.name}"
+            known = self.catalog.get(model_id) if member else None
+            sub = known or CatalogEntry(
                 id=model_id,
                 engine=entry.engine,
                 name=f"{model_dir.name} ({entry.name or entry.id})",
                 version=entry.version,
-                languages=_guess_languages(model_dir.name) or entry.languages,
+                languages=_guess_languages(model_dir.name) or detected.get("languages") or entry.languages,
                 author=entry.author,
                 license=entry.license,
                 defaults=entry.defaults,
                 params=entry.params,
+                tasks=entry.tasks,
                 text_frontend=_guess_frontend(model_dir.name) or entry.text_frontend,
             )
             target = self.home.models / _safe(model_id)
@@ -195,12 +215,14 @@ class ModelStore:
             engine=entry.engine,
             name=entry.name or entry.id,
             version=entry.version,
-            languages=entry.languages,
+            languages=entry.languages or list(detected.get("languages") or []),
             path=str(folder),
             layout=detected,
             params=entry.params,
             defaults=entry.defaults,
             text_frontend=entry.text_frontend,
+            tasks=entry.task_list(),
+            description=entry.description,
             source=source,
         )
         (folder / "model.json").write_text(model.model_dump_json(indent=2), encoding="utf-8")
@@ -233,11 +255,12 @@ class ModelStore:
         installed = []
         for model_dir in dirs:
             mid = model_id if (model_id and len(dirs) == 1) else _safe(model_dir.name if model_dir != root else src.stem)
+            detected = layouts.detect(engine, model_dir) or {}
             entry = CatalogEntry(
                 id=mid,
                 engine=engine,
                 name=name or model_dir.name,
-                languages=languages or _guess_languages(model_dir.name),
+                languages=languages or list(detected.get("languages") or []) or _guess_languages(model_dir.name),
                 text_frontend=text_frontend or _guess_frontend(model_dir.name),
             )
             target = self.home.models / _safe(mid)
@@ -449,3 +472,44 @@ def _guess_languages(name: str) -> list[str]:
 def _guess_frontend(name: str) -> str | None:
     langs = _guess_languages(name)
     return langs[0] if langs else None
+
+
+# ---------- listing for GUIs ----------
+
+
+def model_listing(store: ModelStore, task: str | None = None, engine: str | None = None,
+                  language: str | None = None) -> list[dict[str, Any]]:
+    """Catalog entries (pack members included) + installed models, with an "installed" flag.
+
+    Packs themselves are listed only when they don't list their models (otherwise the members are listed)."""
+    from .catalog import engine_tasks, lang_match  # noqa: PLC0415
+
+    installed = store.installed()
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in store.catalog.filter(engine, language, task):
+        if entry.type == "pack" and entry.models:
+            continue
+        data = entry.model_dump(exclude={"source", "models"})
+        data["tasks"] = entry.task_list()
+        data["source_type"] = entry.source.type
+        data["installed"] = entry.id in installed
+        if entry.type == "pack":
+            data["installed"] = any(m.source == entry.id for m in installed.values())
+        result.append(data)
+        seen.add(entry.id)
+    engines = engine.split(",") if engine else None
+    for model in installed.values():
+        if model.id in seen or store.catalog.get(model.id) is not None:
+            continue
+        tasks = model.tasks or engine_tasks(model.engine)
+        if engines and model.engine not in engines:
+            continue
+        if task and task not in tasks:
+            continue
+        if language and model.languages and not any(lang_match(language, lang) for lang in model.languages):
+            continue
+        data = model.model_dump()
+        data.update({"installed": True, "type": "model", "tasks": tasks, "pack": None})
+        result.append(data)
+    return result

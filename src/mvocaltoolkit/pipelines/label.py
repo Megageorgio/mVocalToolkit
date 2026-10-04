@@ -1,7 +1,7 @@
 """Transcription and forced alignment (the LabelMakr workflow and more).
 
 transcribe:  audio -> text (WhisperX: batched, VAD) -> tokens (text frontend)
-align:       audio + text|words|phonemes (or transcribed) -> phoneme/word label (SOFA) -> rules -> files
+align:       audio + text|words|phonemes (or transcribed) -> phoneme/word label (SOFA or HubertFA) -> rules -> files
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from ..toolkit import Toolkit
 from .io import Item, OutputWriter, resolve_inputs
 
 CHUNK = 32  # items per engine request (progress & cancellation granularity)
+ALIGN_ENGINES = ("sofa", "hubertfa")
 
 
 def _sub_progress(job: Job, start: float, end: float, stage: str):
@@ -150,10 +151,32 @@ def _label_from_engine(res: dict[str, Any]) -> Label:
     return label
 
 
+def _align_params(model, req: AlignRequest, chunk: list[Item], language: str | None) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "model": {"path": model.path, "layout": model.layout},
+        "items": [{"audio": str(i.audio), "name": i.name, "words": i.words, "phonemes": i.phonemes} for i in chunk],
+        "g2p": req.g2p,
+        "skip_unknown_words": req.skip_unknown_words,
+    }
+    if model.engine == "hubertfa":
+        params.update({
+            "language": language,
+            "non_lexical_phonemes": req.non_lexical_phonemes if req.ap_detector != "none" else [],
+            "pad_times": req.pad_times,
+            "pad_length": req.pad_length,
+            "dictionary": req.dictionary,
+        })
+    else:
+        params.update({"mode": req.mode, "ap_detector": req.ap_detector})
+        if req.dictionary:
+            params["dictionary"] = req.dictionary
+    return params
+
+
 async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
     items = resolve_inputs(req.input, tk.home)
     job.progress(0.0, stage="model", message=f"{len(items)} files")
-    model = await tk.models.require("sofa", req.model, _sub_progress(job, 0.0, 0.1, "download"))
+    model = await tk.models.require(ALIGN_ENGINES, req.model, _sub_progress(job, 0.0, 0.1, "download"))
     language = req.language or model.text_frontend or (model.languages[0] if model.languages else None)
 
     # 1. transcription of items without text
@@ -213,20 +236,7 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
             report((offset + float(data.get("progress", 0.0)) * size) / total, data.get("message", "Aligning"))
 
         results = await tk.engines.call(
-            "sofa",
-            "align",
-            {
-                "model": {"path": model.path, "layout": model.layout},
-                "items": [
-                    {"audio": str(i.audio), "name": i.name, "words": i.words, "phonemes": i.phonemes} for i in chunk
-                ],
-                "mode": req.mode,
-                "g2p": req.g2p,
-                "ap_detector": req.ap_detector,
-                "skip_unknown_words": req.skip_unknown_words,
-            },
-            on_progress=on_progress,
-            log=job.log,
+            model.engine, "align", _align_params(model, req, chunk, language), on_progress=on_progress, log=job.log
         )
         for item, res in zip(chunk, results):
             if res.get("unknown_words"):
@@ -262,4 +272,5 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
                 data={"transcription": item.data["transcription"]} if "transcription" in item.data else {},
             ).model_dump(exclude_none=True)
         )
-    return {"model": model.id, "language": language, "items": results_out, "csv": csv_files}
+    return {"model": model.id, "engine": model.engine, "language": language, "items": results_out,
+            "csv": csv_files}

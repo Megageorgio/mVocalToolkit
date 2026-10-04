@@ -7,114 +7,331 @@
       "engine": "whisperx",
       "name": "Whisper large-v3-turbo",
       "description": "Fast and accurate multilingual recognizer (recommended).",
-      "languages": ["*"],
+      "languages": [
+        "*"
+      ],
       "size_hint": "1.6 GB",
-      "source": {"type": "engine"},
-      "params": {"model": "large-v3-turbo"}
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "model": "large-v3-turbo"
+      }
     },
     {
       "id": "whisper-large-v3",
       "engine": "whisperx",
       "name": "Whisper large-v3",
       "description": "Most accurate, slower than turbo.",
-      "languages": ["*"],
+      "languages": [
+        "*"
+      ],
       "size_hint": "3 GB",
-      "source": {"type": "engine"},
-      "params": {"model": "large-v3"}
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "model": "large-v3"
+      }
     },
     {
       "id": "whisper-medium",
       "engine": "whisperx",
       "name": "Whisper medium",
-      "languages": ["*"],
+      "languages": [
+        "*"
+      ],
       "size_hint": "1.5 GB",
-      "source": {"type": "engine"},
-      "params": {"model": "medium"}
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "model": "medium"
+      }
     },
     {
       "id": "whisper-small",
       "engine": "whisperx",
       "name": "Whisper small",
       "description": "For weak GPUs / CPU.",
-      "languages": ["*"],
+      "languages": [
+        "*"
+      ],
       "size_hint": "0.5 GB",
-      "source": {"type": "engine"},
-      "params": {"model": "small"}
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "model": "small"
+      }
     },
     {
       "id": "sofa-ru-hhskt-v0.0.1",
       "engine": "sofa",
       "name": "Russian SOFA (hhskt)",
       "version": "0.0.1",
-      "languages": ["ru"],
+      "languages": [
+        "ru"
+      ],
       "text_frontend": "ru",
       "author": "Megageorgio",
       "description": "Russian singing aligner, modified cmusphinx-ru-5.2 dictionary, with G2P for unknown words.",
       "homepage": "https://github.com/Megageorgio/SOFA-Models/releases/tag/Russian_v0.0.1",
-      "source": {"type": "github_release", "repo": "Megageorgio/SOFA-Models", "tag": "Russian_v0.0.1", "asset": "*safetensors*.zip"}
+      "source": {
+        "type": "github_release",
+        "repo": "Megageorgio/SOFA-Models",
+        "tag": "Russian_v0.0.1",
+        "asset": "*safetensors*.zip"
+      }
     },
     {
       "id": "labelmakr-pack-v030",
       "type": "pack",
       "engine": "sofa",
       "name": "LabelMakr models (v030 asset pack)",
-      "description": "English, French, Mandarin, Japanese and Korean SOFA models with G2P, as used by LabelMakr. Each model is registered as labelmakr-<folder>.",
+      "description": "English, French, Mandarin, Japanese and Korean SOFA models with G2P, as used by LabelMakr. Downloading the pack registers every model inside as labelmakr-<folder>; list them in \"models\" to show them by language before the download.",
       "author": "tigermeat and contributors",
       "homepage": "https://github.com/spicytigermeat/LabelMakr",
       "prefix": "labelmakr-",
       "defaults": {},
-      "source": {"type": "github_release", "repo": "spicytigermeat/LabelMakr", "tag": "assets_v030", "asset": "models.zip"}
+      "source": {
+        "type": "github_release",
+        "repo": "spicytigermeat/LabelMakr",
+        "tag": "assets_v030",
+        "asset": "models.zip"
+      },
+      "languages": [
+        "en",
+        "fr",
+        "zh",
+        "ja",
+        "ko"
+      ]
     },
     {
       "id": "labelmakr-tgm-en-v100",
       "type": "pack",
       "engine": "sofa",
       "name": "tgm_sofa English v1.0.0 (LabelMakr)",
-      "languages": ["en"],
+      "languages": [
+        "en"
+      ],
       "text_frontend": "en",
       "homepage": "https://github.com/spicytigermeat/LabelMakr/releases/tag/tgm_en_v100",
       "prefix": "labelmakr-",
-      "defaults": {"rule_sets": ["en_fixes"]},
-      "source": {"type": "github_release", "repo": "spicytigermeat/LabelMakr", "tag": "tgm_en_v100", "asset": "*.zip"}
+      "defaults": {
+        "rule_sets": [
+          "en_fixes"
+        ]
+      },
+      "source": {
+        "type": "github_release",
+        "repo": "spicytigermeat/LabelMakr",
+        "tag": "tgm_en_v100",
+        "asset": "*.zip"
+      }
+    },
+    {
+      "id": "hubertfa-zh-ja-en-latest",
+      "engine": "hubertfa",
+      "name": "HubertFA (Mandarin, Japanese, English)",
+      "languages": [
+        "zh",
+        "ja",
+        "en"
+      ],
+      "description": "Multilingual HubertFA ONNX model from the official releases; detects breaths (AP) and other non-lexical sounds (EP). The languages are read from the model's vocab.json after download.",
+      "author": "wolfgitpr",
+      "license": "MIT",
+      "homepage": "https://github.com/wolfgitpr/HubertFA/releases",
+      "source": {
+        "type": "github_release",
+        "repo": "wolfgitpr/HubertFA",
+        "tag": "latest",
+        "asset": "*.zip"
+      }
     },
     {
       "id": "wfl-asr-test1",
       "engine": "wfl_asr",
       "name": "WFL-ASR Test 1.0",
       "homepage": "https://github.com/MLo7Ghinsan/WFL-ASR/releases/tag/model_release",
-      "source": {"type": "github_release", "repo": "MLo7Ghinsan/WFL-ASR", "tag": "model_release", "asset": "*"}
+      "source": {
+        "type": "github_release",
+        "repo": "MLo7Ghinsan/WFL-ASR",
+        "tag": "model_release",
+        "asset": "*"
+      }
     },
     {
       "id": "game-large",
       "engine": "game",
       "name": "GAME large",
-      "languages": ["en", "ja", "zh", "yue"],
+      "languages": [
+        "en",
+        "ja",
+        "zh",
+        "yue"
+      ],
       "description": "Best quality note extraction (~100M parameters).",
       "homepage": "https://github.com/openvpi/GAME/releases",
-      "source": {"type": "github_release", "repo": "openvpi/GAME", "tag": "v1.0.3", "asset": "*large*"}
+      "source": {
+        "type": "github_release",
+        "repo": "openvpi/GAME",
+        "tag": "v1.0.3",
+        "asset": "*large*"
+      }
     },
     {
       "id": "game-medium",
       "engine": "game",
       "name": "GAME medium",
-      "languages": ["en", "ja", "zh", "yue"],
+      "languages": [
+        "en",
+        "ja",
+        "zh",
+        "yue"
+      ],
       "homepage": "https://github.com/openvpi/GAME/releases",
-      "source": {"type": "github_release", "repo": "openvpi/GAME", "tag": "v1.0.3", "asset": "*medium*"}
+      "source": {
+        "type": "github_release",
+        "repo": "openvpi/GAME",
+        "tag": "v1.0.3",
+        "asset": "*medium*"
+      }
     },
     {
       "id": "game-small",
       "engine": "game",
       "name": "GAME small",
-      "languages": ["en", "ja", "zh", "yue"],
+      "languages": [
+        "en",
+        "ja",
+        "zh",
+        "yue"
+      ],
       "description": "Fast, ~12M parameters.",
       "homepage": "https://github.com/openvpi/GAME/releases",
-      "source": {"type": "github_release", "repo": "openvpi/GAME", "tag": "v1.0.3", "asset": "*small*"}
+      "source": {
+        "type": "github_release",
+        "repo": "openvpi/GAME",
+        "tag": "v1.0.3",
+        "asset": "*small*"
+      }
     },
     {
       "id": "deeprhythm",
       "engine": "tempo",
       "name": "DeepRhythm",
-      "source": {"type": "engine"}
+      "source": {
+        "type": "engine"
+      }
+    },
+    {
+      "id": "separation-vocals-bs-roformer",
+      "engine": "separation",
+      "name": "Vocals / instrumental: BS-Roformer (ViperX 1297)",
+      "description": "High quality vocal extraction from a full mix.",
+      "size_hint": "640 MB",
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "model_file": "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+      },
+      "tags": [
+        "vocals"
+      ]
+    },
+    {
+      "id": "separation-vocals-melband-roformer",
+      "engine": "separation",
+      "name": "Vocals / instrumental: MelBand Roformer (Kim)",
+      "description": "Vocal extraction, often cleaner on singing.",
+      "size_hint": "900 MB",
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "model_file": "vocals_mel_band_roformer.ckpt"
+      },
+      "tags": [
+        "vocals"
+      ]
+    },
+    {
+      "id": "separation-karaoke-melband-roformer",
+      "engine": "separation",
+      "name": "Lead / backing vocals: MelBand Roformer karaoke",
+      "description": "Separates the lead vocal from backing vocals (run on already extracted vocals).",
+      "size_hint": "900 MB",
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "model_file": "mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt"
+      },
+      "tags": [
+        "karaoke"
+      ]
+    },
+    {
+      "id": "separation-dereverb-echo",
+      "engine": "separation",
+      "name": "De-reverb / de-echo (UVR VR)",
+      "description": "Removes reverb and echo from vocals.",
+      "size_hint": "120 MB",
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "model_file": "UVR-DeEcho-DeReverb.pth"
+      },
+      "tags": [
+        "dereverb"
+      ]
+    },
+    {
+      "id": "rmvpe",
+      "engine": "pitch",
+      "name": "RMVPE",
+      "description": "Robust f0 for singing, also on noisy or accompanied audio.",
+      "size_hint": "180 MB",
+      "license": "MIT",
+      "source": {
+        "type": "huggingface",
+        "repo": "lj1995/VoiceConversionWebUI",
+        "files": [
+          "rmvpe.pt"
+        ]
+      },
+      "params": {
+        "method": "rmvpe"
+      }
+    },
+    {
+      "id": "fcpe",
+      "engine": "pitch",
+      "name": "FCPE",
+      "description": "Fast f0 estimation (model included in the engine).",
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "method": "fcpe"
+      }
+    },
+    {
+      "id": "parselmouth",
+      "engine": "pitch",
+      "name": "Parselmouth (Praat)",
+      "description": "Classic autocorrelation f0, CPU only, best on clean speech-like audio.",
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "method": "parselmouth"
+      }
     }
   ]
 }

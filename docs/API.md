@@ -6,6 +6,32 @@ usable to generate clients for Kotlin, C#, TypeScript...).
 Authentication: requests from the same machine are allowed without a token. Other machines send
 `Authorization: Bearer <token>` (or `X-MVT-Token`, or `?token=` for WebSockets).
 
+## Choosing a model in a GUI
+
+Each model belongs to a **task**: `transcribe`, `align`, `segment`, `midi`, `tempo`, `pitch`, `separate`.
+
+1. `GET /tasks` — tasks, their engines, and whether the models depend on the language.
+2. `GET /languages?task=align` — languages with their models:
+
+   ```json
+   {"task": "align", "languages": [
+     {"code": "ru", "name": "Russian", "native_name": "Русский", "models": [
+       {"id": "sofa-ru-hhskt-v0.0.1", "name": "Russian SOFA (hhskt)", "engine": "sofa", "installed": false, ...},
+       {"id": "person1-ru", "name": "Person 1", "engine": "sofa", "installed": true, "pack": "my-pack", ...}
+     ]},
+     {"code": "ja", ...},
+     {"code": "*", "name": "Any language", "models": [...]}
+   ]}
+   ```
+
+   Models without a language (`"*"` or none) are added to every language and listed in the `*` group.
+   `GET /models?task=align&language=ru` returns the same as a flat list with all fields.
+3. Start the operation with the chosen id: `POST /align {"model": "person1-ru", "language": "ru", ...}`.
+   A model that isn't installed is downloaded by the job itself (stage `download` in the progress), the engine
+   environment is created on first use too. `POST /models/{id}/download` downloads ahead of time.
+
+The command line has the same: `mvt languages --task align`, `mvt models list --task align --lang ru`.
+
 ## Inputs and outputs
 
 Every operation takes an `input`:
@@ -91,7 +117,8 @@ If the GPU runs out of memory, the batch size is halved automatically.
 
 ## Alignment
 
-`POST /align` (`POST /pipelines/label` is the same with all steps)
+`POST /align` (`POST /pipelines/label` is the same with all steps). The aligner is chosen by the model:
+SOFA or HubertFA.
 
 ```json
 {
@@ -101,6 +128,10 @@ If the GPU runs out of memory, the batch size is halved automatically.
   "mode": "force",
   "g2p": "auto",
   "ap_detector": "loudness_spectral_centroid",
+  "non_lexical_phonemes": ["AP"],
+  "pad_times": 1,
+  "pad_length": 5.0,
+  "dictionary": null,
   "transcribe": {"model": "whisper-large-v3-turbo", "batch_size": 8},
   "review_transcription": false,
   "skip_unknown_words": false,
@@ -111,9 +142,14 @@ If the GPU runs out of memory, the batch size is halved automatically.
 
 - `model`: catalog/installed id, or `path:D:/models/my_sofa` for a model folder that isn't installed.
   Catalog models are downloaded automatically on first use.
-- `mode`: `force` uses every phoneme; `match` allows the alignment to skip phonemes that aren't sung.
-- `g2p`: `auto` = dictionary, then the model's G2P model (`g2p/` folder) for unknown words;
+- `language`: language of the texts. Multilingual models (HubertFA) use the dictionary of this language.
+- `mode` (SOFA): `force` uses every phoneme; `match` allows the alignment to skip phonemes that aren't sung.
+- `g2p`: `auto` = dictionary, then the model's G2P model (`g2p/` folder, SOFA) for unknown words;
   `dictionary` = dictionary only; `none` = tokens are already phonemes.
+- `ap_detector` (SOFA) / `non_lexical_phonemes` (HubertFA: `AP` breath, `EP` other sounds): breath detection.
+  `ap_detector: "none"` disables it for both.
+- `pad_times`, `pad_length` (HubertFA): several passes with different padding, averaged — steadier boundaries.
+- `dictionary`: a custom dictionary file instead of the model's one.
 - `transcribe: null` disables transcription: items without text fail.
 - `skip_unknown_words`: drop words that can't be converted instead of failing the file.
   Unknown words are reported in `unknown_words` of each item. `POST /text/validate` checks texts beforehand.
@@ -162,6 +198,36 @@ Built-in sets: `en_fixes` (LabelMakr's English fixes), `cleanup` (`pau`/`sil` �
 
 `POST /tempo` — BPM and confidence per file.
 
+## Pitch
+
+`POST /pitch` — f0 curve for piano rolls / pitch editing.
+
+```json
+{"input": {"items": [{"path": "a.wav"}]}, "model": "rmvpe", "hop": 0.01, "f0_min": 50, "f0_max": 1100,
+ "output_formats": ["csv"], "return_curve": true}
+```
+
+- `model`: `rmvpe` (robust on singing, ~180 MB model), `fcpe` (fast, no download), `parselmouth` (Praat, CPU),
+  or `path:` to an RMVPE checkpoint.
+- Result items: `data.f0` (Hz per frame, 0 = unvoiced, frame `i` is at `i * hop` seconds), `data.voiced_ratio`,
+  `files` (`csv`: `time,f0`; `json`: `{"hop", "f0"}`; `txt`: one value per line).
+
+## Vocal separation
+
+`POST /separate` — only when the user asks for it: no other operation separates audio by itself, because
+separation can make clean recordings worse.
+
+```json
+{"input": {"items": [{"path": "song.mp3"}]}, "model": "separation-vocals-bs-roformer", "stems": ["vocals"],
+ "output_format": "wav", "output_dir": "D:/voice/stems"}
+```
+
+- Built-in models: `separation-vocals-bs-roformer`, `separation-vocals-melband-roformer` (vocals /
+  instrumental), `separation-karaoke-melband-roformer` (lead / backing vocals, run on extracted vocals),
+  `separation-dereverb-echo`. Any other audio-separator model file name works as `model` too.
+- `stems`: keep only these (`vocals`, `instrumental`, `no_reverb`...); default: all stems of the model.
+- Result items: `files` = `{"vocals": ".../song_vocals.wav", ...}`. Feed the vocals to `/align`, `/pitch`, etc.
+
 ## Text
 
 - `POST /text/normalize` `{"texts": [...], "language": "ja"}` → tokens.
@@ -176,7 +242,7 @@ Built-in sets: `en_fixes` (LabelMakr's English fixes), `cleanup` (`pau`/`sil` �
 - `POST /engines/{name}/install?force=false` — job; `DELETE /engines/{name}`; `POST /engines/{name}/stop`
   (frees GPU memory; idle engines stop automatically after `engine_idle_timeout` seconds).
 - `GET /engines/{name}/info` — Python, torch, CUDA, GPU of the engine's environment.
-- `GET /models?engine=sofa&language=ru` — catalog + installed.
+- `GET /models?task=align&language=ru` (also `engine=sofa,hubertfa`) — catalog + installed.
 - `POST /models/{id}/download` — job. `DELETE /models/{id}`.
 - `POST /models/import` `{"engine": "sofa", "path": "D:/models/my_model.zip"}` — folder or archive,
   several models inside are imported separately.
@@ -203,11 +269,19 @@ Built-in sets: `en_fixes` (LabelMakr's English fixes), `cleanup` (`pau`/`sil` �
       "type": "pack",
       "engine": "sofa",
       "prefix": "mypack-",
-      "source": {"type": "url", "url": "https://example.com/models.zip", "sha256": "..."}
+      "source": {"type": "url", "url": "https://example.com/models.zip", "sha256": "..."},
+      "models": [
+        {"id": "person1-ru", "folder": "person1_ru", "name": "Person 1", "languages": ["ru"], "text_frontend": "ru"}
+      ]
     }
   ]
 }
 ```
+
+`engine`: `sofa`, `hubertfa`, `whisperx`, `wfl_asr`, `game`, `tempo`, `pitch`, `separation`. The task comes from
+the engine; `"tasks": [...]` overrides it. Pack `models` are optional: listed members are offered by language
+before the pack is downloaded (`folder` = folder name inside the archive); unlisted folders are registered as
+`<prefix><folder>` after the download.
 
 Source types: `url`, `github_release` (`asset` is a file name pattern or a list of them; `tag` can be
 `latest`), `huggingface` (`repo`, `files`, `revision`), `engine` (the engine downloads the model itself).

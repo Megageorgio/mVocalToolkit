@@ -85,13 +85,27 @@ class PostprocessOptions(BaseModel):
 
 class AlignRequest(BaseModel):
     input: InputSpec
-    model: str = Field(..., description="SOFA model id (catalog/installed) or path:/folder/of/model")
-    language: str | None = Field(None, description="Text frontend; default: the model's language")
-    mode: Literal["force", "match"] = "force"
+    model: str = Field(
+        ..., description="Aligner model id (SOFA or HubertFA, catalog/installed) or path:/folder/of/model"
+    )
+    language: str | None = Field(
+        None, description="Language of the texts (text frontend, dictionary of multilingual models); "
+        "default: the model's language"
+    )
+    mode: Literal["force", "match"] = Field("force", description="SOFA only")
     g2p: Literal["auto", "dictionary", "none"] = Field(
         "auto", description="auto: dictionary + the model's G2P for unknown words; none: tokens are phonemes"
     )
-    ap_detector: Literal["loudness_spectral_centroid", "none"] = "loudness_spectral_centroid"
+    ap_detector: Literal["loudness_spectral_centroid", "none"] = Field(
+        "loudness_spectral_centroid", description="SOFA: breath detection; none disables it"
+    )
+    non_lexical_phonemes: list[str] = Field(
+        default_factory=lambda: ["AP"],
+        description="HubertFA: non-lexical phonemes to detect (AP = breath, EP = other sounds); [] disables",
+    )
+    pad_times: int = Field(1, description="HubertFA: number of passes with different padding (more = steadier)")
+    pad_length: float = Field(5.0, description="HubertFA: max padding in seconds for the extra passes")
+    dictionary: str | None = Field(None, description="Custom dictionary file instead of the model's one")
     # transcribe items without text (None = fail for such items)
     transcribe: TranscribeOptions | None = Field(default_factory=TranscribeOptions)
     # pause after transcription so that a GUI can show and edit the texts (POST /jobs/{id}/resume)
@@ -131,6 +145,35 @@ class MidiRequest(BaseModel):
     output_dir: str | None = None
 
 
+class SeparateRequest(BaseModel):
+    """Vocal separation. Never part of other pipelines: separation can degrade clean recordings."""
+
+    input: InputSpec
+    model: str = Field("separation-vocals-bs-roformer",
+                       description="Catalog id or an audio-separator model file name")
+    stems: list[str] | None = Field(
+        None, description="Keep only these stems, e.g. [\"vocals\"]; default: all stems of the model"
+    )
+    output_format: Literal["wav", "flac", "mp3"] = "wav"
+    sample_rate: int = 44100
+    output_dir: str | None = Field(None, description="Default: next to the audio (<home>/outputs/<job> for uploads)")
+    options: dict[str, Any] = Field(
+        default_factory=dict, description="audio-separator parameters: mdx_params, mdxc_params, vr_params, ..."
+    )
+
+
+class PitchRequest(BaseModel):
+    input: InputSpec
+    model: str = Field("rmvpe", description="rmvpe, fcpe, parselmouth (catalog ids) or path: to an RMVPE model")
+    hop: float = Field(0.01, description="Seconds between f0 values")
+    f0_min: float = 50.0
+    f0_max: float = 1100.0
+    threshold: float | None = Field(None, description="Voicing threshold (method specific)")
+    output_formats: list[str] = Field(default_factory=list, description="csv (time,f0), json, txt (f0 per line)")
+    output_dir: str | None = None
+    return_curve: bool = Field(True, description="Include the f0 values in the job result")
+
+
 class TempoRequest(BaseModel):
     input: InputSpec
     model: str = "deeprhythm"
@@ -139,7 +182,7 @@ class TempoRequest(BaseModel):
 class TextRequest(BaseModel):
     texts: list[str]
     language: str | None = None
-    model: str | None = Field(None, description="SOFA model whose dictionary / G2P is used")
+    model: str | None = Field(None, description="Aligner model (SOFA / HubertFA) whose dictionary / G2P is used")
     g2p: Literal["auto", "dictionary"] = "auto"
 
 

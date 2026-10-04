@@ -6,6 +6,7 @@ a .ckpt next to a dictionary, safetensors with yaml configs...). These functions
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +80,25 @@ def detect_game(root: Path) -> dict[str, Any] | None:
     return layout
 
 
+def detect_hubertfa(root: Path) -> dict[str, Any] | None:
+    """A HubertFA ONNX model: model.onnx + vocab.json + config.json (+ VERSION, dictionaries per language)."""
+    model = _first(root, "model.onnx") or next(iter(_files(root, "*.onnx")), None)
+    if model is None or not (root / "vocab.json").exists() or not (root / "config.json").exists():
+        return None
+    layout: dict[str, Any] = {"model": model.name, "vocab": "vocab.json", "config": "config.json"}
+    if (root / "VERSION").exists():
+        layout["version_file"] = "VERSION"
+    try:
+        vocab = json.loads((root / "vocab.json").read_text(encoding="utf-8"))
+        dictionaries = {k: v for k, v in (vocab.get("dictionaries") or {}).items() if v and (root / v).exists()}
+        layout["dictionaries"] = dictionaries
+        layout["languages"] = list(dictionaries)
+        layout["non_lexical_phonemes"] = list(vocab.get("non_lexical_phonemes") or [])
+    except (OSError, ValueError):
+        pass
+    return layout
+
+
 def detect_generic(root: Path) -> dict[str, Any] | None:
     ckpt = next(iter(_files(root, *(f"*{ext}" for ext in CHECKPOINT_EXT))), None)
     return {"checkpoint": ckpt.name} if ckpt is not None else {}
@@ -88,6 +108,7 @@ DETECTORS = {
     "sofa": detect_sofa,
     "wfl_asr": detect_wfl_asr,
     "game": detect_game,
+    "hubertfa": detect_hubertfa,
 }
 
 

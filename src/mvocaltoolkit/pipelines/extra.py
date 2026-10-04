@@ -1,18 +1,29 @@
-"""Segmentation without text (WFL-ASR), MIDI extraction (GAME), tempo estimation, text tools."""
+"""Segmentation without text (WFL-ASR), MIDI extraction (GAME), tempo estimation, vocal separation, pitch
+extraction, text tools."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
-from ..api_models import ItemResult, MidiRequest, SegmentRequest, TempoRequest, TextRequest
+from ..api_models import (
+    ItemResult,
+    MidiRequest,
+    PitchRequest,
+    SegmentRequest,
+    SeparateRequest,
+    TempoRequest,
+    TextRequest,
+)
 from ..jobs import Job
 from ..labels import Interval, Label
+from ..models.store import InstalledModel, ModelNotFound
 from ..text.dictionary import Dictionary
 from ..text.rules import apply_rule_sets
 from ..toolkit import Toolkit
-from .io import OutputWriter, resolve_inputs
-from .label import CHUNK, _sub_progress, text_frontend
+from .io import OutputWriter, output_folder, resolve_inputs
+from .label import ALIGN_ENGINES, CHUNK, _sub_progress, text_frontend
 
 
 async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, Any]:
@@ -66,12 +77,11 @@ async def run_midi(tk: Toolkit, job: Job, req: MidiRequest) -> dict[str, Any]:
             "tempo", "tempo", {"items": [{"audio": str(i.audio), "name": i.name} for i in items]}, log=job.log
         )
         tempo_by_item = {r["name"]: r["bpm"] for r in tempo if r.get("ok", True) and r.get("bpm")}
-    out_root = Path(req.output_dir).expanduser() if req.output_dir else None
     report = _sub_progress(job, 0.15, 0.95, "midi")
     total = len(items)
     for index, item in enumerate(items):
         job.check_cancelled()
-        out_dir = (out_root / item.rel_dir) if out_root else item.audio.parent
+        out_dir = output_folder(item, req.output_dir, tk.home, job.id)
         res = await tk.engines.call(
             "game",
             "extract",
@@ -114,6 +124,133 @@ async def run_midi(tk: Toolkit, job: Job, req: MidiRequest) -> dict[str, Any]:
     return {"model": model.id, "items": _results(job, items, True)}
 
 
+async def _separation_model(tk: Toolkit, job: Job, model_id: str) -> tuple[str, str, str]:
+    """-> (audio-separator model file name, folder for its files, id)"""
+    if model_id.startswith("path:") or Path(model_id).expanduser().is_absolute():
+        path = Path(model_id.removeprefix("path:")).expanduser()
+        return path.name, str(path.parent), str(path)
+    entry = tk.catalog.get(model_id)
+    if entry is None and tk.models.get_installed(model_id) is None:
+        # any model name known to audio-separator (it downloads it itself)
+        return model_id, str(tk.home.dir("models/_audio-separator")), model_id
+    model = await tk.models.require("separation", model_id, _sub_progress(job, 0.0, 0.05, "download"))
+    file_name = model.params.get("model_file") or model.layout.get("checkpoint")
+    if not file_name:
+        raise ModelNotFound(f"Model {model_id} has no model_file parameter")
+    return str(file_name), model.path, model.id
+
+
+async def run_separate(tk: Toolkit, job: Job, req: SeparateRequest) -> dict[str, Any]:
+    items = resolve_inputs(req.input, tk.home)
+    model_file, model_dir, model_id = await _separation_model(tk, job, req.model)
+    report = _sub_progress(job, 0.05, 0.98, "separate")
+    total = len(items)
+    for index, item in enumerate(items):
+        job.check_cancelled()
+
+        def on_progress(data: dict[str, Any], offset=index) -> None:
+            report((offset + float(data.get("progress", 0.0))) / total, data.get("message", "Separating"))
+
+        res = await tk.engines.call(
+            "separation",
+            "separate",
+            {
+                "items": [{"audio": str(item.audio), "name": item.name,
+                           "output_dir": str(output_folder(item, req.output_dir, tk.home, job.id))}],
+                "model_file": model_file,
+                "model_dir": model_dir,
+                "stems": req.stems,
+                "output_format": req.output_format,
+                "sample_rate": req.sample_rate,
+                "options": req.options,
+            },
+            on_progress=on_progress,
+            log=job.log,
+        )
+        result = res[0] if res else {"ok": False, "error": "no result"}
+        if not result.get("ok", True):
+            item.data["error"] = result.get("error", "separation failed")
+        else:
+            item.data["files"] = result.get("files", {})
+        report((index + 1) / total, "Separating")
+    return {"model": model_id, "items": _results(job, items, False)}
+
+
+async def _pitch_model(tk: Toolkit, job: Job, model_id: str) -> tuple[str, str | None, str]:
+    """-> (method, RMVPE model path, id)"""
+    if model_id in ("fcpe", "parselmouth") and tk.catalog.get(model_id) is None:
+        return model_id, None, model_id
+    model = await tk.models.require("pitch", model_id, _sub_progress(job, 0.0, 0.05, "download"))
+    method = str(model.params.get("method") or "rmvpe")
+    checkpoint = model.file("checkpoint") if method == "rmvpe" else None
+    if method == "rmvpe" and checkpoint is None:
+        raise ModelNotFound(f"No RMVPE checkpoint found in {model.path}")
+    return method, str(checkpoint) if checkpoint else None, model.id
+
+
+def _write_f0(folder: Path, name: str, hop: float, f0: list[float], fmts: list[str]) -> dict[str, str]:
+    folder.mkdir(parents=True, exist_ok=True)
+    files = {}
+    for fmt in fmts:
+        fmt = fmt.lower().lstrip(".")
+        if fmt == "csv":
+            path = folder / f"{name}.f0.csv"
+            lines = ["time,f0"] + [f"{i * hop:.4f},{v:.3f}" for i, v in enumerate(f0)]
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        elif fmt == "json":
+            path = folder / f"{name}.f0.json"
+            path.write_text(json.dumps({"hop": hop, "f0": f0}), encoding="utf-8")
+        elif fmt == "txt":
+            path = folder / f"{name}.f0.txt"
+            path.write_text("\n".join(f"{v:.3f}" for v in f0) + "\n", encoding="utf-8")
+        else:
+            raise ValueError(f"Unknown f0 format {fmt!r} (csv, json, txt)")
+        files[fmt] = str(path)
+    return files
+
+
+async def run_pitch(tk: Toolkit, job: Job, req: PitchRequest) -> dict[str, Any]:
+    items = resolve_inputs(req.input, tk.home)
+    method, model_path, model_id = await _pitch_model(tk, job, req.model)
+    report = _sub_progress(job, 0.05, 0.98, "pitch")
+    total = len(items)
+    for start in range(0, total, CHUNK):
+        job.check_cancelled()
+        chunk = items[start : start + CHUNK]
+
+        def on_progress(data: dict[str, Any], offset=start, size=len(chunk)) -> None:
+            report((offset + float(data.get("progress", 0.0)) * size) / total, data.get("message", "Pitch"))
+
+        results = await tk.engines.call(
+            "pitch",
+            "pitch",
+            {
+                "items": [{"audio": str(i.audio), "name": i.name} for i in chunk],
+                "method": method,
+                "model_path": model_path,
+                "hop": req.hop,
+                "f0_min": req.f0_min,
+                "f0_max": req.f0_max,
+                "threshold": req.threshold,
+            },
+            on_progress=on_progress,
+            log=job.log,
+        )
+        for item, res in zip(chunk, results):
+            if not res.get("ok", True):
+                item.data["error"] = res.get("error", "pitch extraction failed")
+                continue
+            f0 = res.get("f0", [])
+            if req.output_formats:
+                item.data["files"] = _write_f0(output_folder(item, req.output_dir, tk.home, job.id), item.name,
+                                               req.hop, f0, req.output_formats)
+            if req.return_curve:
+                item.data["f0"] = f0
+            item.data["hop"] = req.hop
+            item.data["voiced_ratio"] = round(sum(1 for v in f0 if v > 0) / len(f0), 3) if f0 else 0.0
+    return {"model": model_id, "method": method, "items": _results(job, items, False)}
+
+
 async def run_tempo(tk: Toolkit, job: Job, req: TempoRequest) -> dict[str, Any]:
     items = resolve_inputs(req.input, tk.home)
     results = await tk.engines.call(
@@ -129,10 +266,10 @@ async def run_tempo(tk: Toolkit, job: Job, req: TempoRequest) -> dict[str, Any]:
 
 
 async def run_text(tk: Toolkit, job: Job | None, req: TextRequest, validate_only: bool = False) -> dict[str, Any]:
-    """Normalizes texts and converts them to phonemes with the dictionary (and G2P) of a SOFA model."""
-    model = None
+    """Normalizes texts and converts them to phonemes with the dictionary (and G2P) of an aligner model."""
+    model: InstalledModel | None = None
     if req.model:
-        model = await tk.models.require("sofa", req.model)
+        model = await tk.models.require(ALIGN_ENGINES, req.model)
     language = req.language or (model.text_frontend if model else None) or (
         model.languages[0] if model and model.languages else None
     )
@@ -140,8 +277,9 @@ async def run_text(tk: Toolkit, job: Job | None, req: TextRequest, validate_only
     tokens = await text_frontend(tk, dummy, language, req.texts)  # type: ignore[arg-type]
     items = []
     dictionary = None
-    if model is not None and model.file("dictionary") is not None:
-        dictionary = Dictionary.load(model.file("dictionary"))  # type: ignore[arg-type]
+    dictionary_path = _dictionary_path(model, language) if model is not None else None
+    if dictionary_path is not None:
+        dictionary = Dictionary.load(dictionary_path)
     for text, toks in zip(req.texts, tokens):
         entry: dict[str, Any] = {"text": text, "tokens": toks}
         if dictionary is not None:
@@ -150,7 +288,8 @@ async def run_text(tk: Toolkit, job: Job | None, req: TextRequest, validate_only
                 entry["phonemes"] = [dictionary.lookup(t) for t in toks]
         items.append(entry)
     unknown = sorted({w for e in items for w in e.get("unknown_words", [])})
-    if unknown and req.g2p == "auto" and model is not None and model.layout.get("g2p") and not validate_only:
+    if (unknown and req.g2p == "auto" and model is not None and model.engine == "sofa" and model.layout.get("g2p")
+            and not validate_only):
         guessed = await tk.engines.call(
             "sofa", "g2p", {"model": {"path": model.path, "layout": model.layout}, "words": unknown}
         )
@@ -160,6 +299,21 @@ async def run_text(tk: Toolkit, job: Job | None, req: TextRequest, validate_only
             ]
             entry["guessed"] = {w: guessed.get(w) for w in entry.get("unknown_words", [])}
     return {"language": language, "model": model.id if model else None, "items": items}
+
+
+def _dictionary_path(model: InstalledModel, language: str | None) -> Path | None:
+    if model.engine == "hubertfa":
+        dictionaries: dict[str, str] = model.layout.get("dictionaries") or {}
+        if not dictionaries:
+            return None
+        name = dictionaries.get(language or "")
+        if name is None and language:
+            base = language.lower().split("_")[0].split("-")[0]
+            name = next((v for k, v in dictionaries.items() if k.lower().split("_")[0] == base), None)
+        if name is None and len(dictionaries) == 1:
+            name = next(iter(dictionaries.values()))
+        return Path(model.path) / name if name else None
+    return model.file("dictionary")
 
 
 class _NullJob:

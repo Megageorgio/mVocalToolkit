@@ -1,14 +1,15 @@
 import asyncio
+import json
 import http.server
 import threading
 import zipfile
 from functools import partial
 
-from conftest import make_sofa_model
+from conftest import make_hubertfa_model, make_sofa_model
 
 from mvocaltoolkit.models.catalog import Catalog, CatalogEntry, ModelSource
-from mvocaltoolkit.models.layout import detect_sofa, find_model_dirs
-from mvocaltoolkit.models.store import ModelStore
+from mvocaltoolkit.models.layout import detect_hubertfa, detect_sofa, find_model_dirs
+from mvocaltoolkit.models.store import ModelStore, model_listing
 from mvocaltoolkit.settings import Home
 
 
@@ -81,5 +82,52 @@ def test_download_url_source_and_pack(tmp_path):
         installed = asyncio.run(store.download(pack))
         assert [m.id for m in installed] == ["lm-hhskt_ru_v0.0.1"]
         assert installed[0].languages == ["ru"]
+    finally:
+        server.shutdown()
+
+
+def test_hubertfa_layout_and_import(tmp_path):
+    _home, store = _store(tmp_path)
+    folder = make_hubertfa_model(tmp_path / "hfa" / "my_hfa")
+    layout = detect_hubertfa(folder)
+    assert layout["model"] == "model.onnx" and layout["languages"] == ["en", "ja"]
+    assert layout["dictionaries"]["ja"] == "dictionaries/ja.txt"
+    installed = store.import_local("hubertfa", str(tmp_path / "hfa"))
+    assert installed[0].languages == ["en", "ja"] and installed[0].tasks == ["align"]
+    # an aligner model is found by path for any of the aligner engines
+    resolved = store.resolve_local(["sofa", "hubertfa"], str(folder))
+    assert resolved.engine == "hubertfa"
+
+
+def test_pack_members_are_listed_and_downloaded_on_use(tmp_path):
+    home, store = _store(tmp_path)
+    serve_dir = tmp_path / "www"
+    serve_dir.mkdir()
+    make_sofa_model(tmp_path / "build" / "models" / "person1_ru")
+    make_sofa_model(tmp_path / "build" / "models" / "other_model")
+    with zipfile.ZipFile(serve_dir / "pack.zip", "w") as z:
+        for path in (tmp_path / "build").rglob("*"):
+            z.write(path, path.relative_to(tmp_path / "build"))
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(serve_dir))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/pack.zip"
+        (home.catalogs / "my.json").write_text(json.dumps({"name": "my", "models": [{
+            "id": "my-pack", "type": "pack", "engine": "sofa", "prefix": "my-",
+            "source": {"type": "url", "url": url},
+            "models": [{"id": "person1-ru", "folder": "person1_ru", "name": "Person 1", "languages": ["ru"],
+                        "text_frontend": "ru"}],
+        }]}), encoding="utf-8")
+        store.catalog.load()
+        ru = [m["id"] for m in model_listing(store, task="align", language="ru")]
+        assert "person1-ru" in ru and "sofa-ru-hhskt-v0.0.1" in ru and "my-pack" not in ru
+        assert "person1-ru" not in [m["id"] for m in model_listing(store, task="align", language="ja")]
+        model = asyncio.run(store.require(["sofa", "hubertfa"], "person1-ru"))
+        assert model.id == "person1-ru" and model.languages == ["ru"] and model.source == "my-pack"
+        # the other model of the pack is registered too, with the prefix
+        assert store.get_installed("my-other_model") is not None
+        listed = {m["id"]: m for m in model_listing(store, task="align")}
+        assert listed["person1-ru"]["installed"] and listed["my-other_model"]["installed"]
     finally:
         server.shutdown()

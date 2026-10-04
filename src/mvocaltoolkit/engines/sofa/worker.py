@@ -201,12 +201,24 @@ def build_sequence(model: LoadedModel, item: dict[str, Any], g2p: str, skip_unkn
 
 @rt.method()
 def align(model: dict[str, Any], items: list[dict[str, Any]], mode: str = "force", g2p: str = "auto",
-          ap_detector: str = "loudness_spectral_centroid", skip_unknown_words: bool = False) -> list[dict[str, Any]]:
+          ap_detector: str = "loudness_spectral_centroid", skip_unknown_words: bool = False,
+          dictionary: str | None = None) -> list[dict[str, Any]]:
+    loaded = _get_model(model)
+    original = loaded.dictionary
+    if dictionary:
+        loaded.dictionary = _load_dictionary(Path(dictionary))
+    try:
+        return _align(loaded, items, mode, g2p, ap_detector, skip_unknown_words)
+    finally:
+        loaded.dictionary = original
+
+
+def _align(loaded: "LoadedModel", items: list[dict[str, Any]], mode: str, g2p: str, ap_detector: str,
+           skip_unknown_words: bool) -> list[dict[str, Any]]:
     import torch  # noqa: PLC0415
 
     from modules.utils.post_processing import post_processing  # noqa: PLC0415
 
-    loaded = _get_model(model)
     loaded.task.set_inference_mode(mode)
     detector = None
     if ap_detector != "none":

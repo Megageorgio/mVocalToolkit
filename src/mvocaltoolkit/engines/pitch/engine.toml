@@ -1,0 +1,22 @@
+name = "pitch"
+title = "Pitch (f0) extraction"
+description = "f0 curves for piano rolls and pitch editing: RMVPE (robust on singing, needs a model), FCPE (fast, model included), Parselmouth (Praat, CPU)."
+capabilities = ["pitch"]
+python = "3.11"
+torch = true
+size_hint = "~2.5 GB with CUDA (torch is shared through the uv cache), RMVPE model ~180 MB"
+homepage = "https://github.com/yxlllc/RMVPE"
+license = "MIT (RMVPE), MIT (torchfcpe), GPL (Praat via parselmouth)"
+requirements = [
+    "torch",
+    "torchaudio",
+    "numpy",
+    "librosa",
+    "soundfile",
+    "torchfcpe",
+    "praat-parselmouth",
+]
+
+[source]
+repo = "yxlllc/RMVPE"
+commit = "0aabafba18289ca938a73af0b0297686abf4922d"

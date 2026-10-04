@@ -1,0 +1,26 @@
+name = "hubertfa"
+title = "HubertFA forced aligner"
+description = "Forced alignment based on HuBERT features (ONNX inference). Multilingual models with a dictionary per language, breath (AP) and other non-lexical phoneme detection."
+capabilities = ["align"]
+python = "3.11"
+torch = false
+size_hint = "~400 MB (onnxruntime with CUDA libraries), ~60 MB CPU-only on macOS"
+homepage = "https://github.com/wolfgitpr/HubertFA"
+license = "MIT"
+requirements = [
+    "onnxruntime-gpu[cuda,cudnn]>=1.21; sys_platform != 'darwin'",
+    "onnxruntime>=1.21; sys_platform == 'darwin'",
+    "numpy~=1.26.4",
+    "librosa>=0.9,<0.10",
+    "soundfile",
+    "pyyaml",
+    "tqdm",
+    "matplotlib",
+    "textgrid~=1.5",
+    "pandas",
+    "click",
+]
+
+[source]
+repo = "wolfgitpr/HubertFA"
+commit = "b3f086966946255a05b0ccb69c865c8e3e806e0a"

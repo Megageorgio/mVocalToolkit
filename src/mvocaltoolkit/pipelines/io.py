@@ -106,6 +106,16 @@ def _uploaded(home: Home, file_id: str) -> Path:
 FORMAT_FOLDERS = {"htk": "htk", "textgrid": "textgrid", "json": "json", "audacity": "audacity"}
 
 
+def output_folder(item: Item, out_dir: str | None, home: Home, job_id: str) -> Path:
+    """Folder for non-label outputs (stems, f0, MIDI): out_dir/<sub-folder>, next to the audio, or
+    <home>/outputs/<job> for uploaded files."""
+    if out_dir:
+        return Path(out_dir).expanduser() / item.rel_dir
+    if item.audio.is_relative_to(home.uploads):
+        return home.outputs / job_id
+    return item.audio.parent
+
+
 class OutputWriter:
     def __init__(self, spec: OutputSpec, home: Home, job_id: str):
         self.spec = spec

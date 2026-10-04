@@ -5,10 +5,15 @@ A local API server for automatic labeling of singing voice data. One toolkit, us
 
 - **Transcription** of lyrics — WhisperX (faster-whisper, batched, Silero VAD to skip silence and noise,
   automatic batch reduction on GPU out-of-memory).
-- **Forced alignment** — SOFA, with dictionaries, G2P models for unknown words, breath (AP) detection,
-  `.ckpt` and `.safetensors` models, LabelMakr model packs.
+- **Forced alignment** — SOFA (dictionaries, G2P models for unknown words, breath (AP) detection, `.ckpt` and
+  `.safetensors` models, LabelMakr model packs) or HubertFA (ONNX, multilingual models, breath and other
+  non-lexical sound detection). The engine is chosen by the model.
 - **Phoneme segmentation without text** — WFL-ASR.
 - **Notes (MIDI)** — GAME, with automatic tempo estimation (DeepRhythm).
+- **Pitch (f0)** — RMVPE, FCPE, Parselmouth: curves for piano rolls and pitch editing.
+- **Vocal separation** — vocals/accompaniment, lead/backing vocals, de-reverb (Roformer, MDX, VR, Demucs
+  models via audio-separator). Only on explicit request: nothing else separates audio by itself, since it can
+  make clean recordings worse.
 - **Label formats** — HTK `.lab`, TextGrid, DiffSinger `transcriptions.csv`, Audacity, JSON.
 - **Post-processing rules** — e.g. LabelMakr's English fixes (`dx`, `uh r → er`, merging short `hh` and duplicates).
 
@@ -42,15 +47,20 @@ A token is generated and printed on first start (`mvt config token` makes a new 
 
 ## Command line
 
-The CLI runs the same operations without a server:
+Every operation is available both as an API method (for GUIs) and as a command (for scripts); the CLI runs the
+same code in-process, without a server:
 
 ```
-mvt models list --engine sofa
+mvt languages --task align                                          # languages and their models
+mvt models list --task align --lang ru
 mvt label ./corpus -m sofa-ru-hhskt-v0.0.1 -f htk,textgrid,ds_csv
+mvt label ./corpus -m hubertfa-zh-ja-en-latest -l ja                # a multilingual HubertFA model
 mvt label ./corpus -m labelmakr-<model> --rules en_fixes           # English, LabelMakr fixes
 mvt transcribe ./corpus -l ja                                       # writes .txt next to the audio
 mvt segment ./corpus -m wfl-asr-test1
 mvt midi song.wav --tempo auto
+mvt pitch ./corpus -m rmvpe -f csv
+mvt separate song.mp3 --stems vocals                                # only when the audio needs it
 mvt models import --engine sofa --path my_model.zip                 # a local model (folder or zip)
 mvt engines list | install <name> | remove <name> | info <name>
 mvt convert a.TextGrid a.lab
@@ -70,12 +80,15 @@ polling with `?wait=`) or `WS /jobs/{id}/events`, `POST /jobs/{id}/cancel` stops
 | `GET /health` | version, GPU — for a "Check" button |
 | `GET /capabilities` | engines, formats, rule sets, languages |
 | `GET /engines`, `POST /engines/{name}/install` | engines and their environments |
-| `GET /models`, `POST /models/{id}/download`, `POST /models/import` | catalog, installed models |
+| `GET /languages?task=align` | languages with their models — the "language → model" choice of a GUI |
+| `GET /models?task=&language=`, `POST /models/{id}/download`, `POST /models/import` | catalog, installed models |
 | `POST /files` | upload audio (when the server is on another machine) |
 | `POST /transcribe` | audio → text (+ tokens for alignment) |
 | `POST /align`, `POST /pipelines/label` | audio + text / words / phonemes (or nothing → transcribe) → label files |
 | `POST /segment` | audio → phonemes without text (WFL-ASR) |
 | `POST /midi/extract`, `POST /tempo` | notes, BPM |
+| `POST /pitch` | f0 curves |
+| `POST /separate` | vocal separation (explicit only) |
 | `POST /text/normalize`, `/text/g2p`, `/text/validate` | text tools, unknown words check before a long run |
 | `POST /convert` | label format conversion |
 
@@ -92,16 +105,25 @@ See [docs/API.md](docs/API.md) for details and examples.
 ## Models and catalogs
 
 Models come from catalogs (JSON). The built-in one contains Whisper models, Russian SOFA, the LabelMakr model
-packs, WFL-ASR and GAME models. Add your own with `POST /catalogs` (URL or path) or by putting a JSON file into
+packs, HubertFA, WFL-ASR, GAME, separation and pitch models.
+
+How a GUI uses them: it asks `GET /languages?task=align`, shows the languages, then the models of the chosen
+language (e.g. `person1-ru`, `hhskt-ru` for Russian), and starts `POST /align` with `"model": "<id>"`. If the
+model isn't installed yet, the job downloads it first (progress is part of the job), the engine environment is
+created on first use the same way. Nothing has to be installed in advance. Add your own with `POST /catalogs` (URL or path) or by putting a JSON file into
 `<home>/catalogs/`. Sources can be direct URLs, GitHub release assets (by file name pattern) or Hugging Face
 files. Archives are unpacked and the model files are detected automatically; archives with several models
 (packs) register every model inside.
 
-SOFA model folder (any of these layouts works):
+A pack (one archive with several models) can list its models in the catalog, so they are offered by language
+before the pack is downloaded; using any of them downloads the whole pack.
+
+Model folders (detected automatically inside archives):
 
 ```
-model.ckpt + dict.txt [+ g2p/cfg.yaml + g2p/model.ptsd]
-model.safetensors + dict.txt + vocab.yaml + train_config.yaml + global_config.yaml [+ g2p/...]
+SOFA:      model.ckpt + dict.txt [+ g2p/cfg.yaml + g2p/model.ptsd]
+           model.safetensors + dict.txt + vocab.yaml + train_config.yaml + global_config.yaml [+ g2p/...]
+HubertFA:  model.onnx + vocab.json + config.json + VERSION + dictionaries (languages are read from vocab.json)
 ```
 
 ## Development

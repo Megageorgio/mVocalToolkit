@@ -1,0 +1,4 @@
+name = "pitch"
+title = "fake pitch"
+python = "system"
+capabilities = ["test"]

@@ -13,6 +13,12 @@ Model sources:
 
 An entry with "type": "pack" is an archive that contains several models (like the LabelMakr model pack).
 All model folders found inside are registered as separate models named <prefix><folder name>.
+A pack can list its models ("models": [{"id", "folder", "name", "languages", ...}]): they show up in the catalog
+as separate models (so a GUI can offer them by language before anything is downloaded); using any of them
+downloads the whole pack.
+
+Every entry belongs to one or more tasks (what a GUI offers it for): align, transcribe, segment, midi, tempo,
+separate, pitch. By default the task comes from the engine.
 """
 
 from __future__ import annotations
@@ -45,6 +51,38 @@ class ModelSource(BaseModel):
     subpath: str | None = None
 
 
+# task -> engines; the task of a model is derived from its engine unless the entry lists "tasks"
+ENGINE_TASKS: dict[str, list[str]] = {
+    "sofa": ["align"],
+    "hubertfa": ["align"],
+    "whisperx": ["transcribe"],
+    "wfl_asr": ["segment"],
+    "game": ["midi"],
+    "tempo": ["tempo"],
+    "separation": ["separate"],
+    "pitch": ["pitch"],
+}
+TASKS = ["transcribe", "align", "segment", "midi", "tempo", "pitch", "separate"]
+
+
+def engine_tasks(engine: str) -> list[str]:
+    return list(ENGINE_TASKS.get(engine, []))
+
+
+class PackMember(BaseModel):
+    """A model inside a pack archive."""
+
+    id: str
+    folder: str = Field("", description="Folder name inside the archive (default: id without the pack prefix)")
+    name: str = ""
+    languages: list[str] = Field(default_factory=list)
+    text_frontend: str | None = None
+    description: str = ""
+    params: dict[str, Any] = Field(default_factory=dict)
+    defaults: dict[str, Any] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+
+
 class CatalogEntry(BaseModel):
     id: str
     engine: str
@@ -67,7 +105,22 @@ class CatalogEntry(BaseModel):
     # packs: prefix of the registered model ids
     prefix: str = ""
     tags: list[str] = Field(default_factory=list)
+    # what the model is used for (default: from the engine)
+    tasks: list[str] = Field(default_factory=list)
+    # packs: the models inside (optional)
+    models: list[PackMember] = Field(default_factory=list)
+    # a model that is part of a pack: id of the pack entry (using the model downloads the pack)
+    pack: str | None = None
     catalog: str = ""
+
+    def task_list(self) -> list[str]:
+        return list(self.tasks) or engine_tasks(self.engine)
+
+    def member_for_folder(self, folder: str) -> PackMember | None:
+        for member in self.models:
+            if (member.folder or member.id.removeprefix(self.prefix)) == folder:
+                return member
+        return None
 
 
 class Catalog:
@@ -100,6 +153,28 @@ class Catalog:
         for raw in data.get("models", []):
             entry = CatalogEntry.model_validate({**raw, "catalog": name})
             entries[entry.id] = entry
+            if entry.type == "pack":
+                for member in entry.models:
+                    entries[member.id] = CatalogEntry(
+                        id=member.id,
+                        engine=entry.engine,
+                        name=member.name or member.id,
+                        version=entry.version,
+                        languages=member.languages or entry.languages,
+                        description=member.description,
+                        author=entry.author,
+                        license=entry.license,
+                        homepage=entry.homepage,
+                        size_hint=entry.size_hint,
+                        source=entry.source,
+                        params={**entry.params, **member.params},
+                        defaults={**entry.defaults, **member.defaults},
+                        text_frontend=member.text_frontend or entry.text_frontend,
+                        tags=member.tags or entry.tags,
+                        tasks=entry.tasks,
+                        pack=entry.id,
+                        catalog=name,
+                    )
 
     def _load_remote(self, ref: str, refresh: bool) -> dict[str, Any]:
         if not ref.startswith(("http://", "https://")):
@@ -121,10 +196,13 @@ class Catalog:
     def get(self, model_id: str) -> CatalogEntry | None:
         return self.entries.get(model_id)
 
-    def filter(self, engine: str | None = None, language: str | None = None) -> list[CatalogEntry]:
+    def filter(self, engine: str | None = None, language: str | None = None, task: str | None = None,
+               ) -> list[CatalogEntry]:
         result = []
         for entry in self.entries.values():
-            if engine and entry.engine != engine:
+            if engine and entry.engine not in engine.split(","):
+                continue
+            if task and task not in entry.task_list():
                 continue
             if language and entry.languages and not any(_lang_match(language, lang) for lang in entry.languages):
                 continue
@@ -136,6 +214,10 @@ class Catalog:
             self.settings.catalogs.append(ref)
             self.home.save_settings(self.settings)
         self.load(refresh_remote=True)
+
+
+def lang_match(wanted: str, available: str) -> bool:
+    return _lang_match(wanted, available)
 
 
 def _lang_match(wanted: str, available: str) -> bool:

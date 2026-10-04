@@ -21,15 +21,19 @@ from ..api_models import (
     ConvertRequest,
     MidiRequest,
     ModelImportRequest,
+    PitchRequest,
     SegmentRequest,
+    SeparateRequest,
     TempoRequest,
     TextRequest,
     TranscribeRequest,
 )
 from ..jobs import FINISHED, Job, JobInfo
-from ..models.store import ModelNotFound
-from ..pipelines.extra import run_midi, run_segment, run_tempo, run_text
+from ..models.catalog import ENGINE_TASKS, TASKS
+from ..models.store import ModelNotFound, model_listing
+from ..pipelines.extra import run_midi, run_pitch, run_segment, run_separate, run_tempo, run_text
 from ..pipelines.label import run_align, run_transcribe
+from ..text.languages import language_info
 from ..text.rules import RULE_SETS
 from ..toolkit import Toolkit
 from ..update import check_update
@@ -96,6 +100,7 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
             "engines": tk.engines.list(),
             "formats": sorted(set(formats.FORMATS) | {"ds_csv"}),
             "rule_sets": {name: rs["rules"] for name, rs in RULE_SETS.items()},
+            "tasks": TASKS,
             "languages": sorted({lang for e in tk.catalog.entries.values() for lang in e.languages}),
         }
 
@@ -167,22 +172,47 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
     # ---------------- models ----------------
 
     @app.get("/models", tags=["models"], dependencies=[Depends(auth)])
-    async def models(engine: str | None = None, language: str | None = None, tk: Toolkit = Depends(get_tk)):
-        installed = tk.models.installed()
+    async def models(task: str | None = None, language: str | None = None, engine: str | None = None,
+                     tk: Toolkit = Depends(get_tk)) -> list[dict[str, Any]]:
+        """Catalog + installed models. task: align, transcribe, segment, midi, tempo, pitch, separate.
+        language: models for this language (and language-independent ones). engine: comma separated list."""
+        return model_listing(tk.models, task=task, engine=engine, language=language)
+
+    @app.get("/tasks", tags=["models"], dependencies=[Depends(auth)])
+    async def tasks(tk: Toolkit = Depends(get_tk)) -> list[dict[str, Any]]:
+        """Tasks a GUI can offer, with their engines and whether models depend on the language."""
         result = []
-        for entry in tk.catalog.filter(engine, language):
-            data = entry.model_dump(exclude={"source"})
-            data["source_type"] = entry.source.type
-            data["installed"] = entry.id in installed
-            result.append(data)
-        catalog_ids = {e.id for e in tk.catalog.entries.values()}
-        for model in installed.values():
-            if model.id in catalog_ids:
-                continue
-            if engine and model.engine != engine:
-                continue
-            result.append({**model.model_dump(), "installed": True, "type": "model"})
+        for task in TASKS:
+            engines = sorted({name for name, t in ENGINE_TASKS.items() if task in t})
+            listed = model_listing(tk.models, task=task)
+            result.append({
+                "task": task,
+                "engines": engines,
+                "models": len(listed),
+                "language_specific": any(m.get("languages") and m["languages"] != ["*"] for m in listed),
+            })
         return result
+
+    @app.get("/languages", tags=["models"], dependencies=[Depends(auth)])
+    async def languages(task: str = "align", tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        """Languages that have models for a task, each with its models: the "language -> model" choice of a GUI.
+
+        Models without a language (or with "*") work for any language: they are listed in every language and
+        in the "*" group. Selecting a model and starting the operation downloads it if needed."""
+        groups: dict[str, list[dict[str, Any]]] = {}
+        universal: list[dict[str, Any]] = []
+        for model in model_listing(tk.models, task=task):
+            short = {k: model.get(k) for k in ("id", "name", "engine", "type", "version", "description", "author",
+                                                "size_hint", "installed", "languages", "pack", "tags")}
+            langs = [lang for lang in model.get("languages") or [] if lang != "*"]
+            if not langs:
+                universal.append(short)
+            for lang in langs:
+                groups.setdefault(lang, []).append(short)
+        result = [{**language_info(code), "models": models + universal} for code, models in sorted(groups.items())]
+        if universal:
+            result.append({**language_info("*"), "models": universal})
+        return {"task": task, "languages": result}
 
     @app.get("/models/installed", tags=["models"], dependencies=[Depends(auth)])
     async def installed_models(tk: Toolkit = Depends(get_tk)):
@@ -265,7 +295,7 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
 
     @app.post("/align", tags=["operations"], dependencies=[Depends(auth)])
     async def align(req: AlignRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
-        """Forced alignment with SOFA. Items without text are transcribed first (unless transcribe is null).
+        """Forced alignment (SOFA or HubertFA, chosen by the model). Items without text are transcribed first (unless transcribe is null).
         With review_transcription=true the job pauses after transcription; resume it with the corrected texts."""
         return submit(tk, "align", lambda job: run_align(tk, job, req), req.model_dump())
 
@@ -284,6 +314,17 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
         """Notes (MIDI) from singing (GAME). tempo="auto" estimates the BPM first."""
         return submit(tk, "midi", lambda job: run_midi(tk, job, req), req.model_dump())
 
+    @app.post("/separate", tags=["operations"], dependencies=[Depends(auth)])
+    async def separate(req: SeparateRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        """Vocal separation (vocals / accompaniment, lead / backing, de-reverb). Explicit only: no other
+        operation separates vocals by itself, because separation can degrade clean recordings."""
+        return submit(tk, "separate", lambda job: run_separate(tk, job, req), req.model_dump())
+
+    @app.post("/pitch", tags=["operations"], dependencies=[Depends(auth)])
+    async def pitch(req: PitchRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        """f0 curve (RMVPE, FCPE, Parselmouth) for piano rolls and pitch editing."""
+        return submit(tk, "pitch", lambda job: run_pitch(tk, job, req), req.model_dump())
+
     @app.post("/tempo", tags=["operations"], dependencies=[Depends(auth)])
     async def tempo(req: TempoRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
         return submit(tk, "tempo", lambda job: run_tempo(tk, job, req), req.model_dump())
@@ -297,7 +338,7 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
 
     @app.post("/text/g2p", tags=["text"], dependencies=[Depends(auth)])
     async def text_g2p(req: TextRequest, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
-        """Text -> tokens -> phonemes with the dictionary (and G2P model) of a SOFA model."""
+        """Text -> tokens -> phonemes with the dictionary of an aligner model (and the G2P model of SOFA models)."""
         return await _guard(run_text(tk, None, req))
 
     @app.post("/text/validate", tags=["text"], dependencies=[Depends(auth)])

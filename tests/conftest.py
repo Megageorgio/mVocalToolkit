@@ -39,3 +39,20 @@ def make_sofa_model(folder: Path, words: dict[str, str] | None = None, safetenso
     (g2p / "cfg.yaml").write_text("_target_: models.g2p_model.G2p\n", encoding="utf-8")
     (g2p / "model.ptsd").write_bytes(b"\0")
     return folder
+
+
+def make_hubertfa_model(folder: Path) -> Path:
+    import json  # noqa: PLC0415
+
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "model.onnx").write_bytes(b"\0" * 16)
+    (folder / "VERSION").write_text("5\n", encoding="utf-8")
+    (folder / "config.json").write_text(json.dumps({"mel_spec_config": {"sample_rate": 16000, "hop_size": 320}}),
+                                        encoding="utf-8")
+    (folder / "dictionaries").mkdir(exist_ok=True)
+    (folder / "dictionaries" / "en.txt").write_text("hello\thh ah l ow\nworld\tw er l d\n", encoding="utf-8")
+    (folder / "dictionaries" / "ja.txt").write_text("ka\tk a\n", encoding="utf-8")
+    vocab = {"dictionaries": {"en": "dictionaries/en.txt", "ja": "dictionaries/ja.txt"}, "language_prefix": True,
+             "non_lexical_phonemes": ["AP", "EP"], "vocab": {"SP": 0}, "vocab_size": 1}
+    (folder / "vocab.json").write_text(json.dumps(vocab), encoding="utf-8")
+    return folder
