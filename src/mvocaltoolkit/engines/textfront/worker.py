@@ -53,8 +53,14 @@ def zh(text: str) -> list[str]:
     from pypinyin import lazy_pinyin  # noqa: PLC0415
 
     text = _PUNCT.sub(" ", _clean(text))
-    syllables = lazy_pinyin(text.replace(" ", ""), errors="ignore")
-    return [s for s in (x.strip().lower() for x in syllables) if s]
+    tokens: list[str] = []
+    # hanzi -> pinyin; latin text (already pinyin, or English words) is kept as words
+    for chunk in re.findall(r"[㐀-鿿豈-﫿]+|[^\s㐀-鿿豈-﫿]+", text):
+        if re.match(r"[㐀-鿿豈-﫿]", chunk):
+            tokens += [s.strip().lower() for s in lazy_pinyin(chunk, errors="ignore")]
+        else:
+            tokens.append(chunk.lower())
+    return [t for t in tokens if t]
 
 
 CMUDICT_URL = "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/corpora/cmudict.zip"
