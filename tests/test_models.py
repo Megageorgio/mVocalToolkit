@@ -214,3 +214,14 @@ def test_update_detection_uses_when_a_commit_appeared():
     # local folders: by time
     assert is_newer({}, None, 2000.0, installed=1000.0, now=0.0)
     assert not is_newer({}, None, 1000.0, installed=1000.0, now=0.0)
+
+
+def test_every_engine_worker_runs_its_loop():
+    """A worker without rt.run() exits at once (exit code 0, nothing printed)."""
+    from mvocaltoolkit.engines.spec import ENGINES_DIR  # noqa: PLC0415
+
+    workers = sorted(ENGINES_DIR.glob("*/worker.py"))
+    assert workers
+    for w in workers:
+        text = w.read_text(encoding="utf-8")
+        assert 'if __name__ == "__main__":' in text and "rt.run()" in text, w.parent.name

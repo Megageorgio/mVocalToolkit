@@ -38,7 +38,18 @@ def _load(model: dict[str, Any], device: str):
     merge_map = load_phoneme_merge_map(str(merge_path)) if merge_path.exists() else None
     langs_path = save_dir / "langs.txt"
     id2lang = {v: k for k, v in load_langs(str(langs_path)).items()} if langs_path.exists() else {}
-    net = BIOPhonemeTagger(cfg, labels).to(device)
+    # the network loads Whisper from "encoder" in the current folder (downloading it there when missing): use the
+    # one saved next to the model by training when there is one, so it needn't be downloaded
+    encoder_home = next((d for d in (save_dir, root, root.parent, save_dir.parent)
+                         if (d / "encoder" / "config.json").is_file()), None)
+    here = os.getcwd()
+    try:
+        if encoder_home is not None:
+            os.chdir(encoder_home)
+        net = BIOPhonemeTagger(cfg, labels)
+    finally:
+        os.chdir(here)
+    net = net.to(device)
     net.eval()
     data = torch.load(str(root / layout["checkpoint"]), map_location=device, weights_only=False)
     state = data["state_dict"] if isinstance(data, dict) and "state_dict" in data else data
@@ -102,3 +113,7 @@ def segment(
             results.append({"ok": False, "error": f"{type(e).__name__}: {e}"})
     rt.progress(1.0, "Segmented")
     return results
+
+
+if __name__ == "__main__":
+    rt.run()
