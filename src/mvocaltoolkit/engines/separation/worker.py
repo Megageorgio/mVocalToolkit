@@ -66,6 +66,30 @@ def _separator(model_file: str, model_dir: str, output_format: str, single_stem:
     return separator
 
 
+def _as_wav(audio: str, staging: Path, name: str) -> tuple[str, Path | None]:
+    """audio-separator writes its outputs with the input's encoding: an MP3/OGG/M4A input makes it try MP3 data in a
+    WAV file ("unsupported encoding"). Anything that is not already PCM/float WAV is converted to a 16-bit WAV first."""
+    import soundfile as sf  # noqa: PLC0415
+
+    try:
+        info = sf.info(audio)
+        if info.format == "WAV" and info.subtype in ("PCM_16", "PCM_24", "PCM_32", "FLOAT", "DOUBLE"):
+            return audio, None
+    except Exception:  # noqa: BLE001
+        pass
+    target = staging / f"{name}.input.wav"
+    try:
+        data, sr = sf.read(audio, always_2d=True)
+        sf.write(str(target), data, sr, subtype="PCM_16")
+    except Exception:  # noqa: BLE001
+        # formats libsndfile can't read (m4a, aac...): through ffmpeg
+        import subprocess  # noqa: PLC0415
+
+        _ensure_ffmpeg()
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", audio, "-acodec", "pcm_s16le", str(target)], check=True)
+    return str(target), target
+
+
 def _stem_name(file_name: str) -> str:
     found = _STEM_RE.findall(file_name)
     return (found[0] if found else Path(file_name).stem).strip().lower().replace(" ", "_")
@@ -86,7 +110,12 @@ def separate(items: list[dict[str, Any]], model_file: str, model_dir: str, stems
         out_dir = Path(item["output_dir"])
         out_dir.mkdir(parents=True, exist_ok=True)
         try:
-            produced = separator.separate(item["audio"])
+            source_audio, temp = _as_wav(item["audio"], staging, name)
+            try:
+                produced = separator.separate(source_audio)
+            finally:
+                if temp is not None:
+                    temp.unlink(missing_ok=True)
             files: dict[str, str] = {}
             for produced_file in produced:
                 source = Path(produced_file)
