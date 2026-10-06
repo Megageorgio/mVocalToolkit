@@ -5,7 +5,7 @@ When the source has a commit newer than the installation, `mvt serve` hands over
 waits for it to exit, runs `uv tool install --force --reinstall <source>` (files of a running environment can't be
 replaced on Windows) and starts `mvt serve` again with the same arguments. The old process exits with
 EXIT_UPDATING, so a program that started it knows to wait for the server to come back instead of giving up.
-Checks happen at most every few hours; with no network, nothing changes.
+Every start checks (one short request to GitHub); with no network the toolkit starts as it is.
 """
 
 from __future__ import annotations
@@ -24,7 +24,8 @@ from typing import Any
 EXIT_UPDATING = 75
 # the last line of logs/update.log once uv is done (a program waiting for the toolkit may start it itself then)
 FINISHED = "mVocalToolkit update finished"
-CHECK_EVERY = 3 * 3600
+# seconds between checks; 0 = at every start
+CHECK_EVERY = 0
 NO_WINDOW = 0x08000000
 
 
@@ -75,7 +76,7 @@ def source_head(source: str, github_token: str = "") -> tuple[str | None, float 
             headers = {"Accept": "application/vnd.github+json", "User-Agent": "mVocalToolkit"}
             if github_token:
                 headers["Authorization"] = f"Bearer {github_token}"
-            r = httpx.get(f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}", headers=headers, timeout=8)
+            r = httpx.get(f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}", headers=headers, timeout=5)
             if r.status_code != 200:
                 return None, None
             data = r.json()
