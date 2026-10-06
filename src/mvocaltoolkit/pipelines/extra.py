@@ -26,6 +26,23 @@ from .io import OutputWriter, output_folder, resolve_inputs
 from .label import ALIGN_ENGINES, CHUNK, _sub_progress, text_frontend
 
 
+def _lang_id(model: InstalledModel, language: str) -> int | None:
+    """The model's number for a language code, from its langs.txt ("ru,0" per line)."""
+    root = Path(model.path)
+    langs = next(iter(sorted(root.rglob("langs.txt"))), None)
+    if langs is None:
+        return None
+    code = language.lower().split("-")[0].split("_")[0]
+    try:
+        for line in langs.read_text(encoding="utf-8").splitlines():
+            name, _, num = line.strip().partition(",")
+            if name.strip().lower() == code and num.strip().isdigit():
+                return int(num)
+    except OSError:
+        return None
+    return None
+
+
 async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, Any]:
     items = resolve_inputs(req.input, tk.home)
     model = await tk.models.require("wfl_asr", req.model, _sub_progress(job, 0.0, 0.1, "download"))
@@ -52,7 +69,12 @@ async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, A
             {
                 "model": {"path": model.path, "layout": model.layout},
                 "items": [{"audio": str(i.audio), "name": i.name, "phonemes": i.phonemes} for i in chunk],
-                "lang_id": req.lang_id if req.lang_id is not None else model.params.get("lang_id"),
+                "lang_id": req.lang_id if req.lang_id is not None else (
+                    _lang_id(model, req.language) if req.language else model.params.get("lang_id")),
+                "decoder": req.decoder,
+                "viterbi_bias": req.viterbi_bias,
+                "silence_threshold": req.silence_threshold,
+                "min_silence_duration": req.min_silence_duration,
                 "sample": req.sample,
                 "top_k": req.top_k,
                 "top_p": req.top_p,

@@ -126,11 +126,17 @@ class SegmentRequest(BaseModel):
     input: InputSpec
     model: str = Field(..., description="WFL-ASR model id or path:")
     lang_id: int | None = None
+    language: str | None = Field(None, description="Language code; turned into lang_id with the model's langs.txt")
     sample: bool = False
     top_k: int = 0
     top_p: float = 0.0
     temperature: float = 1.0
     confidence_threshold: float | None = None
+    # models of WFL-ASR's refactor branch
+    decoder: Literal["viterbi", "constrained"] = "viterbi"
+    viterbi_bias: float = 5.0
+    silence_threshold: float = 0.005
+    min_silence_duration: float = 0.5
     postprocess: PostprocessOptions = Field(default_factory=PostprocessOptions)
     output: OutputSpec = Field(default_factory=OutputSpec)
 

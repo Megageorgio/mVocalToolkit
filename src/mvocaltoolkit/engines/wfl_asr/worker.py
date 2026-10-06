@@ -33,6 +33,7 @@ def segment(
     top_p: float = 0.0,
     temperature: float = 1.0,
     confidence_threshold: float | None = None,
+    **_ignored: Any,  # options of the refactor-branch engine
 ) -> list[dict[str, Any]]:
     from infer import infer_audio  # noqa: PLC0415  (WFL-ASR)
 
