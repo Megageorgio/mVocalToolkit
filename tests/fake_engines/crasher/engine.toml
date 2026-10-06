@@ -1,0 +1,4 @@
+name = "crasher"
+title = "fake engine that dies on a call"
+python = "system"
+capabilities = ["test"]

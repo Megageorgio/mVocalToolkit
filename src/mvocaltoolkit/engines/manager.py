@@ -23,6 +23,28 @@ RUNTIME_DIR = Path(__file__).parent / "_runtime"
 ProgressFunc = Callable[[dict[str, Any]], None]
 
 
+def _code_hint(code: int | None) -> str:
+    """A few exit codes that say more than the number (Windows status codes and POSIX signals)."""
+    if code is None:
+        return ""
+    known = {
+        3221225477: "access violation: a crash inside native code (torch, CUDA or a DLL)",
+        -1073741819: "access violation: a crash inside native code (torch, CUDA or a DLL)",
+        3221225725: "stack overflow",
+        -1073741571: "stack overflow",
+        3221226505: "a native library aborted",
+        -1073740791: "a native library aborted",
+        3221225781: "a DLL was not found",
+        -1073741515: "a DLL was not found",
+        -9: "killed, often for running out of memory",
+        -11: "segmentation fault: a crash inside native code",
+        -6: "aborted by a native library",
+        137: "killed, often for running out of memory",
+    }
+    hint = known.get(code)
+    return f": {hint}" if hint else ""
+
+
 class EngineError(RuntimeError):
     def __init__(self, engine: str, error: dict[str, Any]):
         self.engine = engine
@@ -79,6 +101,10 @@ class WorkerProcess:
         # keep model caches (HF, torch hub) inside the toolkit home
         env.setdefault("HF_HOME", str(self.envs.home.cache / "huggingface"))
         env.setdefault("TORCH_HOME", str(self.envs.home.cache / "torch"))
+        import datetime  # noqa: PLC0415
+
+        self.stderr_tail.clear()
+        self._log(f"--- {datetime.datetime.now():%Y-%m-%d %H:%M:%S} starting {self.spec.name} ({python})")
         self.process = await asyncio.create_subprocess_exec(
             str(python),
             "-u",
@@ -99,7 +125,7 @@ class WorkerProcess:
             await asyncio.wait_for(asyncio.shield(self._ready), timeout=300)
         except asyncio.TimeoutError:
             await self.stop()
-            raise RuntimeError(f"Engine {self.spec.name} did not start:\n" + "\n".join(self.stderr_tail))
+            raise RuntimeError(f"Engine {self.spec.name} did not start:\n" + "\n".join(self.stderr_tail) + f"\nFull output: {self.log_path()}")
 
     async def _read_stdout(self) -> None:
         assert self.process is not None and self.process.stdout is not None
@@ -112,6 +138,7 @@ class WorkerProcess:
                     message = json.loads(line)
                 except json.JSONDecodeError:
                     self.stderr_tail.append(line)
+                    self._log(line)
                     continue
                 if message.get("event") == "ready":
                     if self._ready and not self._ready.done():
@@ -137,9 +164,9 @@ class WorkerProcess:
                 else:
                     future.set_result(message.get("result"))
         finally:
-            error = RuntimeError(
-                f"Engine {self.spec.name} stopped unexpectedly:\n" + "\n".join(list(self.stderr_tail)[-30:])
-            )
+            waiting = any(not f.done() for f, _ in self._pending.values()) or (self._ready is not None and not self._ready.done())
+            # a normal stop has nobody waiting: no report then
+            error = RuntimeError(await self._death_report()) if waiting else RuntimeError(f"Engine {self.spec.name} stopped")
             for future, _ in self._pending.values():
                 if not future.done():
                     future.set_exception(error)
@@ -147,10 +174,47 @@ class WorkerProcess:
             if self._ready and not self._ready.done():
                 self._ready.set_exception(error)
 
+    def log_path(self) -> Path:
+        """Everything the engine printed (errors, warnings, downloads), kept between runs."""
+        return self.envs.home.logs / "engines" / f"{self.spec.name}.log"
+
+    def _log(self, line: str) -> None:
+        try:
+            path = self.log_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except OSError:
+            pass
+
+    async def _death_report(self) -> str:
+        """Why the worker is gone: its exit code and the end of its output (read to the end first)."""
+        process = self.process
+        if self._stderr_task is not None:
+            try:
+                await asyncio.wait_for(asyncio.shield(self._stderr_task), timeout=5)
+            except Exception:  # noqa: BLE001
+                pass
+        code = None
+        if process is not None:
+            try:
+                code = await asyncio.wait_for(process.wait(), timeout=5)
+            except Exception:  # noqa: BLE001
+                code = process.returncode
+        tail = "\n".join(list(self.stderr_tail)[-60:]).strip()
+        lines = [f"Engine {self.spec.name} stopped unexpectedly (exit code {code}{_code_hint(code)})."]
+        lines.append(tail if tail else "It printed nothing before stopping.")
+        lines.append(f"Full output: {self.log_path()}")
+        report = "\n".join(lines)
+        self._log(report)
+        return report
+
     async def _read_stderr(self) -> None:
         assert self.process is not None and self.process.stderr is not None
         async for raw in self.process.stderr:
-            self.stderr_tail.append(raw.decode("utf-8", errors="replace").rstrip())
+            line = raw.decode("utf-8", errors="replace").rstrip()
+            self.stderr_tail.append(line)
+            self._log(line)
 
     async def call(self, method: str, params: dict[str, Any] | None = None, on_progress: ProgressFunc | None = None):
         await self.start()

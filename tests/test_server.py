@@ -261,3 +261,29 @@ def test_extra_words_and_fix_labels(tmp_path):
         again = client.post("/labels/fix", json={"folder": str(tmp_path / "labels"),
                                                  "rule_sets": ["merge_duplicates"]}).json()
         assert again["changed"] == 0 and len(again["files"]) == 1
+
+
+def test_engine_crash_report_has_its_output(tmp_path):
+    """A worker that dies mid-call: the error has its exit code and its last output, which also goes to a log."""
+    import asyncio  # noqa: PLC0415
+
+    from mvocaltoolkit.engines.manager import EngineManager  # noqa: PLC0415
+    from mvocaltoolkit.settings import Home, Settings  # noqa: PLC0415
+
+    home = Home(tmp_path / "home")
+    manager = EngineManager(home, Settings(), extra_dirs=[FAKE_ENGINES])
+
+    async def run():
+        try:
+            await manager.call("crasher", "boom", {})
+        except RuntimeError as e:
+            return str(e)
+        finally:
+            await manager.stop_all()
+        return ""
+
+    message = asyncio.run(run())
+    assert "exit code 3" in message
+    assert "no encoder weights" in message
+    log = home.logs / "engines" / "crasher.log"
+    assert "no encoder weights" in log.read_text(encoding="utf-8")
