@@ -579,6 +579,61 @@
       ],
       "author": "ZzHus272",
       "description": "Phoneme recognition without text for Azerbaijani and Turkish. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
+    },
+    {
+      "id": "wfl-generic-en-mega5",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR generic English (mega-5)",
+      "homepage": "https://github.com/Superbox2147/wfl-generic-en/releases/tag/mega-5",
+      "source": {
+        "type": "github_release",
+        "repo": "Superbox2147/wfl-generic-en",
+        "tag": "mega-5",
+        "asset": "mega-5-small.7z"
+      },
+      "size_hint": "350 MB",
+      "languages": [
+        "en"
+      ],
+      "author": "Superbox2147",
+      "description": "Phoneme recognition without text for English, trained on 15 singing datasets (WFL-ASR refactor branch)."
+    },
+    {
+      "id": "wfl-italian-small-1.1",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Italian small 1.1",
+      "homepage": "https://github.com/gnloop/WFL-italian-small/releases/tag/model_test",
+      "source": {
+        "type": "github_release",
+        "repo": "gnloop/WFL-italian-small",
+        "tag": "model_test",
+        "asset": "ita_small_b.7z",
+        "sha256": "383fe69246b0203888686734c258fa17cc547dcd2cc105718c3c16466b0f7e13"
+      },
+      "size_hint": "221 MB",
+      "languages": [
+        "it"
+      ],
+      "author": "gnloop",
+      "description": "Small Italian model, 5 speakers. The author: lower error rate than 1.0, not sure it is better."
+    },
+    {
+      "id": "wfl-italian-small-1.0",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Italian small 1.0",
+      "homepage": "https://github.com/gnloop/WFL-italian-small/releases/tag/model",
+      "source": {
+        "type": "github_release",
+        "repo": "gnloop/WFL-italian-small",
+        "tag": "model",
+        "asset": "wfl_italian_small.7z"
+      },
+      "size_hint": "221 MB",
+      "languages": [
+        "it"
+      ],
+      "author": "gnloop",
+      "description": "Small Italian model, 5 speakers, for testing."
     }
   ]
 }

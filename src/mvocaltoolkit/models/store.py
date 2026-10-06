@@ -433,7 +433,17 @@ def _extract(archive: Path, target: Path) -> None:
                     continue
                 _check_member(target, info.filename)
                 z.extract(info, target)
-    elif name.endswith((".rar", ".7z")):
+    elif name.endswith(".7z"):
+        try:
+            import py7zr  # noqa: PLC0415
+        except ImportError:
+            _extract_with_tool(archive, target)
+            return
+        with py7zr.SevenZipFile(archive) as z:
+            for n in z.getnames():
+                _check_member(target, n)
+            z.extractall(target)
+    elif name.endswith(".rar"):
         _extract_with_tool(archive, target)
     else:
         with tarfile.open(archive) as t:
@@ -443,7 +453,7 @@ def _extract(archive: Path, target: Path) -> None:
 
 
 def _extract_with_tool(archive: Path, target: Path) -> None:
-    """RAR and 7z: Python can't read them, so a program that can is used (tar on Windows 10/11 reads RAR)."""
+    """RAR (and 7z without py7zr): a program that can read it is used (tar on Windows 11 reads RAR)."""
     import subprocess  # noqa: PLC0415
 
     candidates: list[list[str]] = []

@@ -190,3 +190,10 @@ def test_catalog_has_the_refactor_wfl_models(tmp_path):
     _home, store = _store(tmp_path)
     e = store.catalog.get("wfl-archivoice-ja-2026-09")
     assert e is not None and e.source.asset == "ja.rar" and e.engine == "wfl_asr"
+
+
+def test_catalog_has_the_7z_wfl_models(tmp_path):
+    _home, store = _store(tmp_path)
+    for mid, asset in (("wfl-generic-en-mega5", "mega-5-small.7z"), ("wfl-italian-small-1.1", "ita_small_b.7z")):
+        e = store.catalog.get(mid)
+        assert e is not None and e.source.asset == asset and e.engine == "wfl_asr"
