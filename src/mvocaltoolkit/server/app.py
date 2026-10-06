@@ -262,7 +262,7 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
                 tk.models.import_local, req.engine, req.path, req.id, req.name, req.languages, req.text_frontend,
                 req.copy_files,
             )
-        except (FileNotFoundError, ValueError) as e:
+        except (FileNotFoundError, ValueError, RuntimeError) as e:
             raise HTTPException(400, str(e)) from e
         return installed
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
+import os
 import shutil
 import tarfile
 import time
@@ -25,7 +26,8 @@ from .catalog import Catalog, CatalogEntry, ModelSource
 
 ProgressFunc = Callable[[float | None, str], None]
 
-ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".tar.bz2")
+ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".tar.bz2", ".rar", ".7z")
+CHECKPOINT_SUFFIXES = (".pt", ".pth", ".ckpt", ".safetensors", ".onnx")
 
 
 class InstalledModel(BaseModel):
@@ -247,6 +249,15 @@ class ModelStore:
         if src.is_file() and src.name.lower().endswith(ARCHIVE_SUFFIXES):
             _extract(src, work)
             root = _flatten(work)
+        elif src.is_file() and src.name.lower().endswith(CHECKPOINT_SUFFIXES):
+            # one checkpoint of a training run: it and the small files next to it (config, phonemes, languages)
+            root = work / _safe(model_id or src.stem)
+            root.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, root / src.name)
+            for f in src.parent.iterdir():
+                if f.is_file() and f.suffix.lower() in (".yaml", ".yml", ".txt", ".json") and f.stat().st_size < 2_000_000:
+                    shutil.copy2(f, root / f.name)
+            copy = False
         elif src.is_dir():
             root = src
         else:
@@ -422,11 +433,48 @@ def _extract(archive: Path, target: Path) -> None:
                     continue
                 _check_member(target, info.filename)
                 z.extract(info, target)
+    elif name.endswith((".rar", ".7z")):
+        _extract_with_tool(archive, target)
     else:
         with tarfile.open(archive) as t:
             for member in t.getmembers():
                 _check_member(target, member.name)
             t.extractall(target)
+
+
+def _extract_with_tool(archive: Path, target: Path) -> None:
+    """RAR and 7z: Python can't read them, so a program that can is used (tar on Windows 10/11 reads RAR)."""
+    import subprocess  # noqa: PLC0415
+
+    candidates: list[list[str]] = []
+    for exe in ("7z", "7za", "7zz", r"C:\Program Files\7-Zip\7z.exe", r"C:\Program Files (x86)\7-Zip\7z.exe"):
+        found = shutil.which(exe) or (exe if Path(exe).is_file() else None)
+        if found:
+            candidates.append([found, "x", "-y", f"-o{target}", str(archive)])
+    for exe in ("unrar", r"C:\Program Files\WinRAR\UnRAR.exe", r"C:\Program Files (x86)\WinRAR\UnRAR.exe"):
+        found = shutil.which(exe) or (exe if Path(exe).is_file() else None)
+        if found and archive.name.lower().endswith(".rar"):
+            candidates.append([found, "x", "-o+", "-y", str(archive), str(target) + os.sep])
+    for exe in ("bsdtar", "tar"):
+        found = shutil.which(exe)
+        if found:
+            candidates.append([found, "-xf", str(archive), "-C", str(target)])
+    errors = []
+    for cmd in candidates:
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        except OSError as e:
+            errors.append(f"{cmd[0]}: {e}")
+            continue
+        if r.returncode == 0 and any(target.iterdir()):
+            for p in target.rglob("*"):
+                _check_member(target, str(p.relative_to(target)))
+            return
+        errors.append(f"{Path(cmd[0]).name}: {(r.stderr or r.stdout).strip()[-200:]}")
+    raise RuntimeError(
+        f"Can't unpack {archive.name}: install 7-Zip (7-zip.org) or unpack it yourself and add the folder as your own model."
+        + (" Tried: " + "; ".join(errors) if errors else "")
+    )
 
 
 def _check_member(target: Path, name: str) -> None:

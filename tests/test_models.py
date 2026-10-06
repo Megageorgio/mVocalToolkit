@@ -145,3 +145,48 @@ def test_game_onnx_layout(tmp_path):
     layout = detect_game(folder)
     assert layout["format"] == "onnx" and layout["languages"] == ["en", "ja", "zh"]
     assert find_model_dirs("game", tmp_path) == [folder]
+
+
+def _fake_torch_file(path, keys, lightning=False):
+    """A zip shaped like torch.save output: <stem>/data.pkl naming the keys."""
+    body = b"".join(k.encode() for k in keys)
+    if lightning:
+        body = b"state_dict" + body + b"pytorch-lightning_version"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr(f"{path.stem}/data.pkl", b"\x80\x02" + body)
+
+
+def test_import_one_wfl_checkpoint_of_a_training_run(tmp_path):
+    from mvocaltoolkit.models.layout import wfl_generation
+
+    home, store = _store(tmp_path)
+    run = tmp_path / "runs" / "ru"
+    run.mkdir(parents=True)
+    (run / "config.yaml").write_text("finetuning:\n  enable: true\nmodel:\n  encoder_type: whisper\n", encoding="utf-8")
+    (run / "phonemes.txt").write_text("B-a\nI-a\n", encoding="utf-8")
+    (run / "langs.txt").write_text("ru,0\n", encoding="utf-8")
+    (run / "train.json").write_bytes(b"x" * 3_000_000)  # big training data is left out
+    _fake_torch_file(run / "model_step5000.pt", ["encoder.conv1.weight"])
+    _fake_torch_file(run / "model_step6000.pt", ["encoder.conv1.weight"])
+    installed = store.import_local("wfl_asr", str(run / "model_step5000.pt"), "my-ru", "My RU", ["ru"])
+    assert [m.id for m in installed] == ["my-ru"]
+    m = store.get_installed("my-ru")
+    folder = home.models / "my-ru"
+    assert sorted(p.name for p in folder.iterdir() if p.name != "model.json") == ["config.yaml", "langs.txt", "model_step5000.pt", "phonemes.txt"]
+    assert m.layout["checkpoint"] == "model_step5000.pt" and m.layout["generation"] == 1 and m.languages == ["ru"]
+
+    # refactor-branch models: Lightning checkpoint or the new config keys
+    new = tmp_path / "new"
+    new.mkdir()
+    (new / "config.yaml").write_text("model: {}\n", encoding="utf-8")
+    _fake_torch_file(new / "model.ckpt", ["model.encoder.x"], lightning=True)
+    assert wfl_generation(new / "model.ckpt", new / "config.yaml") == 2
+    (new / "config2.yaml").write_text("postprocess:\n  forced_alignment_args: {}\n", encoding="utf-8")
+    _fake_torch_file(new / "plain.pt", ["encoder.x"])
+    assert wfl_generation(new / "plain.pt", new / "config2.yaml") == 2
+
+
+def test_catalog_has_the_refactor_wfl_models(tmp_path):
+    _home, store = _store(tmp_path)
+    e = store.catalog.get("wfl-archivoice-ja-2026-09")
+    assert e is not None and e.source.asset == "ja.rar" and e.engine == "wfl_asr"

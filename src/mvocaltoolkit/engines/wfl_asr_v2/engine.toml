@@ -1,0 +1,27 @@
+name = "wfl_asr_v2"
+title = "WFL-ASR phoneme segmentation (refactor models)"
+description = "WFL-ASR from its refactor branch (learned encoder-layer mix, Viterbi decoding): models trained with it since September 2026. Older models use wfl_asr."
+capabilities = ["segment"]
+python = "3.11"
+torch = true
+size_hint = "~2.5 GB with CUDA (+ encoder weights from Hugging Face on first use)"
+homepage = "https://github.com/MLo7Ghinsan/WFL-ASR/tree/refactor"
+requirements = [
+    "torch",
+    "torchaudio",
+    "librosa==0.11.0",
+    "numpy>=2,<2.3",
+    "PyYAML",
+    "scipy",
+    "soundfile",
+    "tqdm",
+    "transformers==4.51.3",
+    "click",
+    "pytorch-optimizer",
+    "matplotlib",
+    "numba",
+]
+
+[source]
+repo = "MLo7Ghinsan/WFL-ASR"
+commit = "8ea6559b41ca32df827ee68db8c9065e3265d1c4"

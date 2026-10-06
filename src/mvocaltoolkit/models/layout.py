@@ -64,7 +64,32 @@ def detect_wfl_asr(root: Path) -> dict[str, Any] | None:
     config = _first(root, "config.yaml") or next(iter(_files(root, "*.yaml", "*/*.yaml")), None)
     if ckpt is None or config is None:
         return None
-    return {"checkpoint": str(ckpt.relative_to(root)), "config": str(config.relative_to(root))}
+    return {"checkpoint": str(ckpt.relative_to(root)), "config": str(config.relative_to(root)),
+            "generation": wfl_generation(ckpt, config)}
+
+
+def wfl_generation(ckpt: Path, config: Path) -> int:
+    """1 = WFL-ASR main branch (plain state dict), 2 = refactor branch (Lightning checkpoint, new config).
+
+    Tells them apart without torch: a .pt/.ckpt is a zip whose data.pkl names its keys."""
+    try:
+        cfg = config.read_text(encoding="utf-8", errors="replace")
+        if "forced_alignment_args" in cfg or "unfreeze_last_n_layers" in cfg or "\nfinetune:" in "\n" + cfg:
+            return 2
+    except OSError:
+        pass
+    try:
+        import zipfile  # noqa: PLC0415
+
+        with zipfile.ZipFile(ckpt) as z:
+            pkl = next((n for n in z.namelist() if n.endswith("data.pkl")), None)
+            if pkl is not None:
+                data = z.read(pkl)
+                if b"pytorch-lightning_version" in data or (b"state_dict" in data and b"model.encoder" in data):
+                    return 2
+    except (OSError, zipfile.BadZipFile):
+        pass
+    return 1
 
 
 def detect_game(root: Path) -> dict[str, Any] | None:

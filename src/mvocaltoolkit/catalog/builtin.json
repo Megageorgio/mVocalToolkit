@@ -397,6 +397,188 @@
       "params": {
         "method": "parselmouth"
       }
+    },
+    {
+      "id": "wfl-archivoice-yue-2026-09",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Archivoice Cantonese (2026-09)",
+      "homepage": "https://github.com/Archivoice/WFL-ASR-model/releases/tag/2026_09",
+      "source": {
+        "type": "github_release",
+        "repo": "Archivoice/WFL-ASR-model",
+        "tag": "2026_09",
+        "asset": "cantonese.rar"
+      },
+      "size_hint": "228 MB",
+      "languages": [
+        "yue"
+      ],
+      "author": "Archivoice",
+      "description": "Phoneme recognition without text, trained on ACV-format datasets (WFL-ASR refactor branch). Best on voices it has seen: a good base for fine-tuning. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
+    },
+    {
+      "id": "wfl-archivoice-ka-2026-09",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Archivoice Georgian (2026-09)",
+      "homepage": "https://github.com/Archivoice/WFL-ASR-model/releases/tag/2026_09",
+      "source": {
+        "type": "github_release",
+        "repo": "Archivoice/WFL-ASR-model",
+        "tag": "2026_09",
+        "asset": "georgian.rar"
+      },
+      "size_hint": "228 MB",
+      "languages": [
+        "ka"
+      ],
+      "author": "Archivoice",
+      "description": "Phoneme recognition without text, trained on ACV-format datasets (WFL-ASR refactor branch). Best on voices it has seen: a good base for fine-tuning. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
+    },
+    {
+      "id": "wfl-archivoice-el-2026-09",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Archivoice Greek (2026-09)",
+      "homepage": "https://github.com/Archivoice/WFL-ASR-model/releases/tag/2026_09",
+      "source": {
+        "type": "github_release",
+        "repo": "Archivoice/WFL-ASR-model",
+        "tag": "2026_09",
+        "asset": "greek.rar"
+      },
+      "size_hint": "228 MB",
+      "languages": [
+        "el"
+      ],
+      "author": "Archivoice",
+      "description": "Phoneme recognition without text, trained on ACV-format datasets (WFL-ASR refactor branch). Best on voices it has seen: a good base for fine-tuning. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
+    },
+    {
+      "id": "wfl-archivoice-nan-2026-09",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Archivoice Hokkien (2026-09)",
+      "homepage": "https://github.com/Archivoice/WFL-ASR-model/releases/tag/2026_09",
+      "source": {
+        "type": "github_release",
+        "repo": "Archivoice/WFL-ASR-model",
+        "tag": "2026_09",
+        "asset": "hokkien.rar"
+      },
+      "size_hint": "228 MB",
+      "languages": [
+        "nan"
+      ],
+      "author": "Archivoice",
+      "description": "Phoneme recognition without text, trained on ACV-format datasets (WFL-ASR refactor branch). Best on voices it has seen: a good base for fine-tuning. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
+    },
+    {
+      "id": "wfl-archivoice-ja-2026-09",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Archivoice Japanese (2026-09)",
+      "homepage": "https://github.com/Archivoice/WFL-ASR-model/releases/tag/2026_09",
+      "source": {
+        "type": "github_release",
+        "repo": "Archivoice/WFL-ASR-model",
+        "tag": "2026_09",
+        "asset": "ja.rar"
+      },
+      "size_hint": "228 MB",
+      "languages": [
+        "ja"
+      ],
+      "author": "Archivoice",
+      "description": "Phoneme recognition without text, trained on ACV-format datasets (WFL-ASR refactor branch). Best on voices it has seen: a good base for fine-tuning. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
+    },
+    {
+      "id": "wfl-archivoice-ko-2026-09",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Archivoice Korean (2026-09)",
+      "homepage": "https://github.com/Archivoice/WFL-ASR-model/releases/tag/2026_09",
+      "source": {
+        "type": "github_release",
+        "repo": "Archivoice/WFL-ASR-model",
+        "tag": "2026_09",
+        "asset": "korean.rar"
+      },
+      "size_hint": "228 MB",
+      "languages": [
+        "ko"
+      ],
+      "author": "Archivoice",
+      "description": "Phoneme recognition without text, trained on ACV-format datasets (WFL-ASR refactor branch). Best on voices it has seen: a good base for fine-tuning. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
+    },
+    {
+      "id": "wfl-archivoice-zh-2026-09",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Archivoice Mandarin Chinese (2026-09)",
+      "homepage": "https://github.com/Archivoice/WFL-ASR-model/releases/tag/2026_09",
+      "source": {
+        "type": "github_release",
+        "repo": "Archivoice/WFL-ASR-model",
+        "tag": "2026_09",
+        "asset": "mandarin.rar"
+      },
+      "size_hint": "228 MB",
+      "languages": [
+        "zh"
+      ],
+      "author": "Archivoice",
+      "description": "Phoneme recognition without text, trained on ACV-format datasets (WFL-ASR refactor branch). Best on voices it has seen: a good base for fine-tuning. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
+    },
+    {
+      "id": "wfl-archivoice-es-2026-09",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Archivoice Spanish (2026-09)",
+      "homepage": "https://github.com/Archivoice/WFL-ASR-model/releases/tag/2026_09",
+      "source": {
+        "type": "github_release",
+        "repo": "Archivoice/WFL-ASR-model",
+        "tag": "2026_09",
+        "asset": "spanish.rar"
+      },
+      "size_hint": "228 MB",
+      "languages": [
+        "es"
+      ],
+      "author": "Archivoice",
+      "description": "Phoneme recognition without text, trained on ACV-format datasets (WFL-ASR refactor branch). Best on voices it has seen: a good base for fine-tuning. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
+    },
+    {
+      "id": "wfl-archivoice-th-2026-09",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Archivoice Thai (2026-09)",
+      "homepage": "https://github.com/Archivoice/WFL-ASR-model/releases/tag/2026_09",
+      "source": {
+        "type": "github_release",
+        "repo": "Archivoice/WFL-ASR-model",
+        "tag": "2026_09",
+        "asset": "thai.rar"
+      },
+      "size_hint": "228 MB",
+      "languages": [
+        "th"
+      ],
+      "author": "Archivoice",
+      "description": "Phoneme recognition without text, trained on ACV-format datasets (WFL-ASR refactor branch). Best on voices it has seen: a good base for fine-tuning. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
+    },
+    {
+      "id": "wfl-aztr",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR Azerbaijani and Turkish",
+      "homepage": "https://github.com/ZzHus272/WFL-ASR-AZTR",
+      "source": {
+        "type": "github_release",
+        "repo": "ZzHus272/WFL-ASR-AZTR",
+        "tag": "AZTR-model",
+        "asset": "aztr.rar",
+        "sha256": "6c9720c3b2986b64d125ef24816de046cf38466d161eacb8dcc3191d6fcdcc50"
+      },
+      "size_hint": "552 MB",
+      "languages": [
+        "az",
+        "tr"
+      ],
+      "author": "ZzHus272",
+      "description": "Phoneme recognition without text for Azerbaijani and Turkish. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it."
     }
   ]
 }

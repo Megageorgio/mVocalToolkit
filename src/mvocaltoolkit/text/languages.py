@@ -27,6 +27,11 @@ LANGUAGE_NAMES: dict[str, tuple[str, str]] = {
     "ar": ("Arabic", "العربية"),
     "fi": ("Finnish", "Suomi"),
     "sv": ("Swedish", "Svenska"),
+    "ka": ("Georgian", "ქართული"),
+    "nan": ("Hokkien", "閩南語"),
+    "az": ("Azerbaijani", "Azərbaycanca"),
+    "el": ("Greek", "Ελληνικά"),
+    "he": ("Hebrew", "עברית"),
     "*": ("Any language", "Any language"),
 }
 

@@ -46,7 +46,8 @@ async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, A
             report((offset + float(data.get("progress", 0.0)) * size) / total, data.get("message", "Segmenting"))
 
         results = await tk.engines.call(
-            "wfl_asr",
+            # models trained with WFL-ASR's refactor branch need its code
+            "wfl_asr_v2" if int(model.layout.get("generation", 1)) >= 2 else "wfl_asr",
             "segment",
             {
                 "model": {"path": model.path, "layout": model.layout},
