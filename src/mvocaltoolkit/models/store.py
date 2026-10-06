@@ -300,10 +300,22 @@ class ModelStore:
                 files.append(target)  # downloaded before (e.g. extraction was interrupted)
                 continue
 
-            def file_progress(done: int, length: int | None, i=index, name=filename):
+            started = {"t": time.monotonic(), "done": None}
+
+            def file_progress(done: int, length: int | None, i=index, name=filename, st=started):
                 fraction = (done / length) if length else None
                 overall = ((i + (fraction or 0)) / total) if total else None
-                progress(overall, f"Downloading {name} ({done / 2**20:.1f} MB)")
+                if st["done"] is None:
+                    st["done"] = done  # a resumed download doesn't count towards the speed
+                elapsed = max(1e-3, time.monotonic() - st["t"])
+                speed = (done - st["done"]) / elapsed / 2**20
+                size_text = f"{done / 2**20:.1f} / {length / 2**20:.1f} MB" if length else f"{done / 2**20:.1f} MB"
+                left = ""
+                if length and speed > 0.05:
+                    secs = int((length - done) / 2**20 / speed)
+                    left = f", {secs // 60}:{secs % 60:02d} left"
+                files_text = f" [{i + 1}/{total}]" if total > 1 else ""
+                progress(overall, f"Downloading {name}{files_text}: {size_text}, {speed:.1f} MB/s{left}")
 
             await download_file(url, target, file_progress, sha256=source.sha256 if total == 1 else None,
                                 headers=self._auth_headers(url))
