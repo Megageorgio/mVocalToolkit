@@ -68,14 +68,14 @@
     {
       "id": "sofa-ru-hhskt-v0.0.1",
       "engine": "sofa",
-      "name": "Russian SOFA (hhskt)",
+      "name": "Russian SOFA hhskt_ru v0.0.1 (m & hhs_kt)",
       "version": "0.0.1",
       "languages": [
         "ru"
       ],
       "text_frontend": "ru",
-      "author": "Megageorgio",
-      "description": "Russian singing aligner, modified cmusphinx-ru-5.2 dictionary, with G2P for unknown words.",
+      "author": "m & hhs_kt",
+      "description": "Russian singing aligner trained by m and hhs_kt (the model is named after hhs_kt). Data: hhs_kt, XHR0ME, Miya, m, Gitreti, about 4 hours. Modified cmusphinx-ru-5.2 dictionary and a G2P by m for unknown words. When you label with it, please link the model page or the hhs_kt channel (t.me/hhs_kt_666).",
       "homepage": "https://github.com/Megageorgio/SOFA-Models/releases/tag/Russian_v0.0.1",
       "source": {
         "type": "github_release",
@@ -89,7 +89,7 @@
       "type": "pack",
       "engine": "sofa",
       "name": "LabelMakr models (v030 asset pack)",
-      "description": "English, French, Mandarin, Japanese and Korean SOFA models with G2P, as used by LabelMakr. Downloading the pack registers every model inside as labelmakr-<folder>; list them in \"models\" to show them by language before the download.",
+      "description": "English, French, Mandarin, Japanese and Korean SOFA models with G2P, as used by LabelMakr: tgm v0.0.5 (tigermeat), millefeuille b001 (imsupposedto), suco (SOFA v1.0.1), colstone Japanese v0.0.2b and Korean v0.0.1b. Downloading the pack registers every model inside as labelmakr-<folder>.",
       "author": "tigermeat and contributors",
       "homepage": "https://github.com/spicytigermeat/LabelMakr",
       "prefix": "labelmakr-",
@@ -112,7 +112,7 @@
         {
           "id": "labelmakr-tgm_sofa_en",
           "folder": "tgm_sofa_en",
-          "name": "English SOFA (tgm, LabelMakr)",
+          "name": "English SOFA tgm v0.0.5 (tigermeat, LabelMakr pack)",
           "languages": [
             "en"
           ],
@@ -121,43 +121,48 @@
             "rule_sets": [
               "en_fixes"
             ]
-          }
+          },
+          "author": "tigermeat"
         },
         {
           "id": "labelmakr-millefeuille_fr",
           "folder": "millefeuille_fr",
-          "name": "French SOFA (millefeuille, LabelMakr)",
+          "name": "French SOFA millefeuille b001 (imsupposedto, LabelMakr pack)",
           "languages": [
             "fr"
           ],
-          "text_frontend": "fr"
+          "text_frontend": "fr",
+          "author": "imsupposedto"
         },
         {
           "id": "labelmakr-suco_zh",
           "folder": "suco_zh",
-          "name": "Mandarin SOFA (suco, LabelMakr)",
+          "name": "Mandarin SOFA (suco, LabelMakr pack)",
           "languages": [
             "zh"
           ],
-          "text_frontend": "zh"
+          "text_frontend": "zh",
+          "author": "suco"
         },
         {
           "id": "labelmakr-colstone_jp",
           "folder": "colstone_jp",
-          "name": "Japanese SOFA (colstone, LabelMakr)",
+          "name": "Japanese SOFA v0.0.2b (colstone, LabelMakr pack)",
           "languages": [
             "ja"
           ],
-          "text_frontend": "ja"
+          "text_frontend": "ja",
+          "author": "colstone"
         },
         {
           "id": "labelmakr-colstone_ko",
           "folder": "colstone_ko",
-          "name": "Korean SOFA (colstone, LabelMakr)",
+          "name": "Korean SOFA v0.0.1b (colstone, LabelMakr pack)",
           "languages": [
             "ko"
           ],
-          "text_frontend": "ko"
+          "text_frontend": "ko",
+          "author": "colstone"
         }
       ]
     },
@@ -165,7 +170,7 @@
       "id": "labelmakr-tgm-en-v100",
       "type": "pack",
       "engine": "sofa",
-      "name": "tgm_sofa English v1.0.0 (LabelMakr)",
+      "name": "English SOFA tgm v1.0.0 (tigermeat)",
       "languages": [
         "en"
       ],
@@ -183,7 +188,156 @@
         "tag": "tgm_en_v100",
         "asset": "tgm_en_v100.zip"
       },
-      "size_hint": "362 MB"
+      "size_hint": "362 MB",
+      "author": "tigermeat",
+      "version": "1.0.0",
+      "description": "Newer English model than the v0.0.5 in the LabelMakr pack (other weights, same dictionary and G2P); trained only on data labelled or checked by hand by its author.",
+      "models": [
+        {
+          "id": "labelmakr-tgm_en_v100",
+          "folder": "tgm_en_v100",
+          "name": "English SOFA tgm v1.0.0 (tigermeat)",
+          "author": "tigermeat",
+          "languages": [
+            "en"
+          ],
+          "text_frontend": "en",
+          "defaults": {
+            "rule_sets": [
+              "en_fixes"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "sofa-ja-akm-v0.0.1",
+      "engine": "sofa",
+      "name": "Japanese SOFA akm_ja v0.0.1 (ariikamusic)",
+      "version": "0.0.1",
+      "languages": [
+        "ja"
+      ],
+      "text_frontend": "ja",
+      "author": "ariikamusic",
+      "description": "Japanese singing aligner trained on hand-annotated data (the author's own and community datasets). May misplace phonemes on noisy audio and put stray AP/SP into long silence.",
+      "homepage": "https://github.com/ariikamusic/SOFA_Models/releases/tag/akm_ja_v001",
+      "size_hint": "378 MB",
+      "source": {
+        "type": "github_release",
+        "repo": "ariikamusic/SOFA_Models",
+        "tag": "akm_ja_v001",
+        "asset": "akm_ja_v001.zip"
+      }
+    },
+    {
+      "id": "sofa-ja-greenleaf-test2plus",
+      "engine": "sofa",
+      "name": "Japanese SOFA Test2_Plus (Greenleaf2001)",
+      "version": "Test2_Plus",
+      "languages": [
+        "ja"
+      ],
+      "text_frontend": "ja",
+      "author": "Greenleaf2001",
+      "license": "no commercial use",
+      "description": "Japanese singing aligner (japanese-extension dictionary, romaji preferred), a smaller and faster model than Test2.",
+      "homepage": "https://github.com/Greenleaf2001/SOFA_Models/releases/tag/JPN_Test2_Plus",
+      "size_hint": "53 MB",
+      "source": {
+        "type": "github_release",
+        "repo": "Greenleaf2001/SOFA_Models",
+        "tag": "JPN_Test2_Plus",
+        "asset": [
+          "step.100000.ckpt",
+          "japanese-extension-sofa.txt",
+          "hparams.yaml"
+        ]
+      }
+    },
+    {
+      "id": "sofa-zh-baishuo-v2.1",
+      "engine": "sofa",
+      "name": "Mandarin SOFA v2.1 (BaiShuo)",
+      "version": "2.1",
+      "languages": [
+        "zh"
+      ],
+      "text_frontend": "zh",
+      "author": "BaiShuo",
+      "license": "CC BY-NC-SA",
+      "description": "Mandarin singing aligner with the opencpop-extension dictionary, trained on open and community datasets.",
+      "homepage": "https://github.com/BaiShuoQwQ/SOFA_Models/releases/tag/SOFA_model_mandarin_byBaiShuo_v2.1",
+      "size_hint": "406 MB",
+      "source": {
+        "type": "github_release",
+        "repo": "BaiShuoQwQ/SOFA_Models",
+        "tag": "SOFA_model_mandarin_byBaiShuo_v2.1",
+        "asset": "SOFA_model_mandarin_byBaiShuo.zip"
+      }
+    },
+    {
+      "id": "sofa-zh-acv-beta-0.0.1",
+      "engine": "sofa",
+      "name": "Mandarin SOFA ACV beta 0.0.1 (Archivoice)",
+      "version": "0.0.1",
+      "languages": [
+        "zh"
+      ],
+      "text_frontend": "zh",
+      "author": "Archivoice",
+      "description": "Mandarin singing aligner with ACV-style phonemes (dict_cn.txt), hand-labelled ACV-001 and part of OpenCPop. Beta: little data diversity. The archive is RAR: 7-Zip or the tar of Windows 10/11 unpacks it.",
+      "homepage": "https://github.com/Archivoice/SOFA-models/releases/tag/beta_0.0.1",
+      "size_hint": "378 MB",
+      "source": {
+        "type": "github_release",
+        "repo": "Archivoice/SOFA-models",
+        "tag": "beta_0.0.1",
+        "asset": "ACV_chn_beta_0.0.1.rar",
+        "sha256": "2d00bbd0f539cc9ecef24865768fc459b7b28c90dfa2bafb4285c7b20ec23cbf"
+      }
+    },
+    {
+      "id": "sofa-yue-ribosomek-v0.1",
+      "engine": "sofa",
+      "name": "Cantonese SOFA v0.1 (RibosomeK)",
+      "version": "0.1",
+      "languages": [
+        "yue"
+      ],
+      "text_frontend": "yue",
+      "author": "RibosomeK",
+      "license": "MIT",
+      "description": "Cantonese singing aligner; jyutping dictionary with an arpabet-like phoneme scheme.",
+      "homepage": "https://github.com/RibosomeK/SOFA-Cantonese-Model/releases/tag/v0.1",
+      "size_hint": "377 MB",
+      "source": {
+        "type": "github_release",
+        "repo": "RibosomeK/SOFA-Cantonese-Model",
+        "tag": "v0.1",
+        "asset": "canontese-arpabet-v0.1.zip"
+      }
+    },
+    {
+      "id": "sofa-yue-azairons-250816",
+      "engine": "sofa",
+      "name": "Cantonese SOFA 250816 (AzairoNS)",
+      "version": "250816",
+      "languages": [
+        "yue"
+      ],
+      "text_frontend": "yue",
+      "author": "AzairoNS",
+      "description": "Cantonese singing aligner; jyutping dictionary.",
+      "homepage": "https://github.com/AzairoNS/CantoneseSOFA-AzairoNS-/releases/tag/250816",
+      "size_hint": "377 MB",
+      "source": {
+        "type": "github_release",
+        "repo": "AzairoNS/CantoneseSOFA-AzairoNS-",
+        "tag": "250816",
+        "asset": "Cantonese_AzairoNS_250816.zip",
+        "sha256": "0356f960ca744b9e9fc5d0614e43b556b64ba1754b0ab5f6100d064adce48f1c"
+      }
     },
     {
       "id": "hubertfa-zh-ja-en-v0.0.7",

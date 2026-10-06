@@ -75,6 +75,7 @@ class PackMember(BaseModel):
     id: str
     folder: str = Field("", description="Folder name inside the archive (default: id without the pack prefix)")
     name: str = ""
+    author: str = ""
     languages: list[str] = Field(default_factory=list)
     text_frontend: str | None = None
     description: str = ""
@@ -162,7 +163,7 @@ class Catalog:
                         version=entry.version,
                         languages=member.languages or entry.languages,
                         description=member.description,
-                        author=entry.author,
+                        author=member.author or entry.author,
                         license=entry.license,
                         homepage=entry.homepage,
                         size_hint=entry.size_hint,
