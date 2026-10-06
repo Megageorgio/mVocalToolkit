@@ -139,6 +139,31 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
         threading.Timer(0.3, lambda: os._exit(0)).start()
         return {"ok": True}
 
+    @app.post("/update", tags=["system"], dependencies=[Depends(auth)])
+    async def update_now(tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        """Updates the toolkit now when its source has something newer (instead of waiting for the check at start):
+        hands over to the updater, which reinstalls it and starts it again; this server then exits with
+        EXIT_UPDATING. {"updating": false} when it is up to date (or wasn't installed as a uv tool)."""
+        import threading  # noqa: PLC0415
+
+        from ..self_update import EXIT_UPDATING, hand_over, pending_update, update_log  # noqa: PLC0415
+
+        source = await asyncio.to_thread(pending_update, tk.home.root, tk.settings.github_token, True)
+        if not source:
+            return {"updating": False}
+        if not hand_over(source, tk.home.root, sys.argv[1:]):
+            return {"updating": False, "error": "uv was not found"}
+        log = update_log(tk.home.root)
+        # the same words as an update found at start: a program reading the output follows the log
+        print(f"A newer mVocalToolkit is available; updating from {source} and starting again.", flush=True)
+        print(f"Update log: {log}", flush=True)
+        try:
+            await tk.engines.stop_all()
+        except Exception:  # noqa: BLE001
+            pass
+        threading.Timer(0.5, lambda: os._exit(EXIT_UPDATING)).start()
+        return {"updating": True, "log": str(log)}
+
     @app.get("/update/check", tags=["system"], dependencies=[Depends(auth)])
     async def update_check() -> dict[str, Any]:
         return await check_update()
