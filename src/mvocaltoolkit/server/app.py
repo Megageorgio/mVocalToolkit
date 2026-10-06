@@ -479,7 +479,18 @@ def _allowed_download(tk: Toolkit, target: Path) -> bool:
     return False
 
 
+_GPU_INFO: list = []
+
+
 def _gpu_info() -> dict[str, Any] | None:
+    """GPU info, asked once per run (GUIs poll /health; running nvidia-smi each time is slow and on Windows
+    may flash a console window)."""
+    if not _GPU_INFO:
+        _GPU_INFO.append(_query_gpu())
+    return _GPU_INFO[0]
+
+
+def _query_gpu() -> dict[str, Any] | None:
     """GPU info without torch (the server itself doesn't depend on it): uses nvidia-smi if available."""
     smi = shutil.which("nvidia-smi")
     if not smi:
