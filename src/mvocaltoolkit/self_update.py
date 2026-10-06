@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import Any
 
 EXIT_UPDATING = 75
+# the last line of logs/update.log once uv is done (a program waiting for the toolkit may start it itself then)
+FINISHED = "mVocalToolkit update finished"
 CHECK_EVERY = 3 * 3600
 NO_WINDOW = 0x08000000
 
@@ -166,16 +168,16 @@ def hand_over(source: str, home_root: Path, argv: list[str]) -> bool:
         log.write_text("", encoding="utf-8")
     except OSError:
         pass
-    mvt = Path(sys.argv[0]).resolve() if Path(sys.argv[0]).exists() else Path("mvt")
+    again = [*_mvt_command(), *argv]
     # only the toolkit itself is rebuilt; its dependencies come from uv's cache unless they changed (much faster
     # than --reinstall, which reinstalled every package)
     install = [uv, "tool", "install", "--force", "--reinstall-package", "mvocaltoolkit", "--python", "3.12", source]
-    again = [str(mvt), *argv]
     pid = os.getpid()
     if os.name == "nt":
         # cmd's redirection keeps uv's UTF-8 output as it is (PowerShell's would write UTF-16 and wrap errors);
         # /s with outer quotes: cmd keeps the quotes inside the line as they are
-        cmd_line = '"' + _cmd_line(install) + " >> " + _cmd_quote(str(log)) + ' 2>&1"'
+        cmd_line = ('"' + _cmd_line(install) + " >> " + _cmd_quote(str(log)) + " 2>&1 & echo " + FINISHED
+                    + " >> " + _cmd_quote(str(log)) + '"')
         # wait until this process is gone (its files are in use until then), update, start again
         script = (
             f"$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ $p.WaitForExit(30000) }}; "
@@ -189,12 +191,32 @@ def hand_over(source: str, home_root: Path, argv: list[str]) -> bool:
     else:
         script = (
             f"while kill -0 {pid} 2>/dev/null; do sleep 0.3; done; "
-            f"{shlex.join(install)} >> {shlex.quote(str(log))} 2>&1; "
+            f"{shlex.join(install)} >> {shlex.quote(str(log))} 2>&1; echo {FINISHED} >> {shlex.quote(str(log))}; "
             f"exec {shlex.join(again)} >> {shlex.quote(str(log))} 2>&1"
         )
         subprocess.Popen(["sh", "-c", script], start_new_session=True, close_fds=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return True
+
+
+def _mvt_command() -> list[str]:
+    """How to start this toolkit again. sys.argv[0] may lack ".exe", and the tools folder may not be on PATH."""
+    import shutil  # noqa: PLC0415
+
+    first = Path(sys.argv[0])
+    candidates = [first, first.with_name(first.name + ".exe"), Path(sys.prefix) / "Scripts" / "mvt.exe",
+                  Path(sys.prefix) / "bin" / "mvt"]
+    for c in candidates:
+        try:
+            if c.is_file() and c.suffix.lower() in ("", ".exe"):
+                return [str(c.resolve())]
+        except OSError:
+            continue
+    found = shutil.which("mvt")
+    if found:
+        return [found]
+    # the environment's Python stays where it is after a reinstall
+    return [sys.executable, "-m", "mvocaltoolkit"]
 
 
 def _cmd_quote(arg: str) -> str:
