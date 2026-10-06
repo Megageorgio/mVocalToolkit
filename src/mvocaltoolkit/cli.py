@@ -67,7 +67,10 @@ def cmd_serve(args) -> None:
 
         source = pending_update(home.root, settings.github_token)
         if source and hand_over(source, home.root, sys.argv[1:]):
+            from .self_update import update_log  # noqa: PLC0415
+
             print(f"A newer mVocalToolkit is available; updating from {source} and starting again.", flush=True)
+            print(f"Update log: {update_log(home.root)}", flush=True)
             raise SystemExit(EXIT_UPDATING)
     host = args.host or settings.host
     port = args.port or settings.port

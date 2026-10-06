@@ -159,17 +159,27 @@ def hand_over(source: str, home_root: Path, argv: list[str]) -> bool:
     uv = _find_uv()
     if uv is None:
         return False
-    log = home_root / "logs" / "update.log"
+    log = update_log(home_root)
     log.parent.mkdir(parents=True, exist_ok=True)
+    # a fresh log for this update (programs that started us can follow it)
+    try:
+        log.write_text("", encoding="utf-8")
+    except OSError:
+        pass
     mvt = Path(sys.argv[0]).resolve() if Path(sys.argv[0]).exists() else Path("mvt")
-    install = [uv, "tool", "install", "--force", "--reinstall", "--python", "3.12", source]
+    # only the toolkit itself is rebuilt; its dependencies come from uv's cache unless they changed (much faster
+    # than --reinstall, which reinstalled every package)
+    install = [uv, "tool", "install", "--force", "--reinstall-package", "mvocaltoolkit", "--python", "3.12", source]
     again = [str(mvt), *argv]
     pid = os.getpid()
     if os.name == "nt":
+        # cmd's redirection keeps uv's UTF-8 output as it is (PowerShell's would write UTF-16 and wrap errors);
+        # /s with outer quotes: cmd keeps the quotes inside the line as they are
+        cmd_line = '"' + _cmd_line(install) + " >> " + _cmd_quote(str(log)) + ' 2>&1"'
         # wait until this process is gone (its files are in use until then), update, start again
         script = (
             f"$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ $p.WaitForExit(30000) }}; "
-            f"& {_ps(install)} *>> {_ps([str(log)])}; "
+            f"& cmd.exe /d /s /c {_ps([cmd_line])}; "
             f"Start-Process -WindowStyle Hidden -FilePath {_ps([again[0]])} -ArgumentList {_ps_args(again[1:])}"
         )
         cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", script]
@@ -185,6 +195,18 @@ def hand_over(source: str, home_root: Path, argv: list[str]) -> bool:
         subprocess.Popen(["sh", "-c", script], start_new_session=True, close_fds=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return True
+
+
+def _cmd_quote(arg: str) -> str:
+    return '"' + arg.replace('"', '""') + '"' if any(c in arg for c in ' &()^|<>"') else arg
+
+
+def _cmd_line(parts: list[str]) -> str:
+    return " ".join(_cmd_quote(p) for p in parts)
+
+
+def update_log(home_root: Path) -> Path:
+    return home_root / "logs" / "update.log"
 
 
 def _ps(parts: list[str]) -> str:
