@@ -477,6 +477,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    from .nowindow import hide_child_consoles  # noqa: PLC0415
+
+    hide_child_consoles()
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "models" and args.action == "import" and (not args.engine or not args.path):

@@ -18,6 +18,22 @@ import threading
 import traceback
 from typing import Any, Callable
 
+# no console windows for programs the engine's libraries start (ffmpeg, git…) on Windows
+if os.name == "nt":
+    import subprocess as _sp
+
+    if not getattr(_sp.Popen, "_mvt_no_window", False):
+        _orig_init = _sp.Popen.__init__
+
+        def _init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            flags = kwargs.get("creationflags", 0) or 0
+            if not flags & (0x10 | 0x08):
+                kwargs["creationflags"] = flags | 0x08000000
+            _orig_init(self, *args, **kwargs)
+
+        _sp.Popen.__init__ = _init  # type: ignore[method-assign]
+        _sp.Popen._mvt_no_window = True  # type: ignore[attr-defined]
+
 _methods: dict[str, Callable[..., Any]] = {}
 _protocol_out = sys.stdout
 _lock = threading.Lock()
