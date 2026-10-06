@@ -197,3 +197,20 @@ def test_catalog_has_the_7z_wfl_models(tmp_path):
     for mid, asset in (("wfl-generic-en-mega5", "mega-5-small.7z"), ("wfl-italian-small-1.1", "ita_small_b.7z")):
         e = store.catalog.get(mid)
         assert e is not None and e.source.asset == asset and e.engine == "wfl_asr"
+
+
+def test_update_detection_uses_when_a_commit_appeared():
+    """A commit written before the installation but pushed after it is still an update; once installed, it isn't."""
+    from mvocaltoolkit.self_update import is_newer  # noqa: PLC0415
+
+    state: dict = {}
+    # installed at 1000; commit written at 900, first seen on the branch at 1100 (pushed late)
+    assert is_newer(state, "abc", 900.0, installed=1000.0, now=1100.0)
+    # reinstalled at 1200: up to date, even on later checks
+    assert not is_newer(state, "abc", 900.0, installed=1200.0, now=1300.0)
+    assert not is_newer(state, "abc", 900.0, installed=1200.0, now=5000.0)
+    # a new commit appears
+    assert is_newer(state, "def", 1250.0, installed=1200.0, now=6000.0)
+    # local folders: by time
+    assert is_newer({}, None, 2000.0, installed=1000.0, now=0.0)
+    assert not is_newer({}, None, 1000.0, installed=1000.0, now=0.0)

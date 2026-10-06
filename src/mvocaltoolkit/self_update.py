@@ -62,8 +62,9 @@ def install_source(rec: dict[str, Any]) -> str | None:
 _GITHUB = re.compile(r"github\.com/([^/]+)/([^/@#?]+?)(?:\.git)?(?:/archive/refs/heads/(.+?)\.zip|@([^#?]+)|[/?#].*|$)")
 
 
-def source_time(source: str, github_token: str = "") -> float | None:
-    """Time of the newest commit of the source (seconds since epoch), or None when unknown."""
+def source_head(source: str, github_token: str = "") -> tuple[str | None, float | None]:
+    """The newest commit of the source: (id, time in seconds since epoch); either is None when unknown.
+    GitHub branches have an id; local folders only a time."""
     m = _GITHUB.search(source)
     if m:
         owner, repo = m.group(1), m.group(2)
@@ -76,11 +77,19 @@ def source_time(source: str, github_token: str = "") -> float | None:
                 headers["Authorization"] = f"Bearer {github_token}"
             r = httpx.get(f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}", headers=headers, timeout=8)
             if r.status_code != 200:
-                return None
-            date = r.json()["commit"]["committer"]["date"]
-            return datetime.fromisoformat(date.replace("Z", "+00:00")).timestamp()
+                return None, None
+            data = r.json()
+            date = data["commit"]["committer"]["date"]
+            return str(data["sha"]), datetime.fromisoformat(date.replace("Z", "+00:00")).timestamp()
         except Exception:  # noqa: BLE001
-            return None
+            return None, None
+    return None, source_time(source)
+
+
+def source_time(source: str, github_token: str = "") -> float | None:
+    """Time of the newest change of the source (seconds since epoch), or None when unknown."""
+    if _GITHUB.search(source):
+        return source_head(source, github_token)[1]
     folder = Path(source)
     git = folder / ".git"
     if git.is_dir():
@@ -103,6 +112,21 @@ def source_time(source: str, github_token: str = "") -> float | None:
         except ValueError:
             return None
     return None
+
+
+def is_newer(state: dict[str, Any], commit: str | None, commit_time: float | None, installed: float, now: float) -> bool:
+    """Whether the source has something the installation doesn't, updating [state].
+
+    A commit's own time says when it was written, not when it reached the branch (it can be pushed hours later),
+    so for branches the time the commit was first seen there counts: an installation made after that has it.
+    """
+    if commit:
+        seen = state.get("seen") or {}
+        if seen.get("commit") != commit:
+            seen = {"commit": commit, "at": now}
+            state["seen"] = seen
+        return installed < float(seen["at"]) - 5
+    return commit_time is not None and commit_time > installed + 60
 
 
 def _state_file(home_root: Path) -> Path:
@@ -140,11 +164,11 @@ def pending_update(home_root: Path, github_token: str = "", force: bool = False)
         return None
     state["checked"] = now
     _save_state(home_root, state)
-    newest = source_time(source, github_token)
+    commit, newest = source_head(source, github_token)
     installed = rec["path"].stat().st_mtime
-    if newest is None or newest <= installed + 60:
-        return None
-    return source
+    newer = is_newer(state, commit, newest, installed, now)
+    _save_state(home_root, state)
+    return source if newer else None
 
 
 def _find_uv() -> str | None:
