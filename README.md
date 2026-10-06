@@ -30,6 +30,14 @@ mvt serve
 
 Open http://127.0.0.1:8765/docs for the interactive API documentation.
 
+### Updates
+
+`mvt serve` keeps itself up to date: when it starts, it looks (at most every three hours) whether the source it was
+installed from — a GitHub branch or a local folder — has something newer. If so, it updates itself with uv and starts
+again with the same arguments; the old process exits with code 75, so a program that started it should wait for
+`/health` to answer again. `--no-update`, `MVT_NO_UPDATE=1` or `auto_update: false` in `config.yaml` turn this off.
+`POST /shutdown` stops a server (programs use it when they close).
+
 Everything is stored in one folder (`~/mVocalToolkit` by default, change with `--home` or `MVT_HOME`):
 
 ```

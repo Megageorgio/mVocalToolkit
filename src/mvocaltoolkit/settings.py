@@ -52,6 +52,8 @@ class Settings:
     github_token: str = ""
     # Optional Hugging Face token (some models need it).
     hf_token: str = ""
+    # `mvt serve` checks for a newer toolkit when it starts and updates itself (uv tool installs only).
+    auto_update: bool = True
     # Max number of jobs running at the same time. Jobs that use the same engine are queued anyway.
     max_parallel_jobs: int = 2
     extra: dict[str, Any] = field(default_factory=dict)

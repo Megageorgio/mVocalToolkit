@@ -62,6 +62,13 @@ def cmd_serve(args) -> None:
 
     home = Home(args.home)
     settings = home.load_settings()
+    if settings.auto_update and not getattr(args, "no_update", False):
+        from .self_update import EXIT_UPDATING, hand_over, pending_update  # noqa: PLC0415
+
+        source = pending_update(home.root, settings.github_token)
+        if source and hand_over(source, home.root, sys.argv[1:]):
+            print(f"A newer mVocalToolkit is available; updating from {source} and starting again.", flush=True)
+            raise SystemExit(EXIT_UPDATING)
     host = args.host or settings.host
     port = args.port or settings.port
     if host not in ("127.0.0.1", "localhost", "::1"):
@@ -361,6 +368,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("serve", help="Run the API server")
     p.add_argument("--host")
     p.add_argument("--port", type=int)
+    p.add_argument("--no-update", action="store_true", help="Don't check for a newer toolkit at start")
     p.set_defaults(func=cmd_serve)
 
     p = sub.add_parser("engines", help="Manage engines (isolated environments)")

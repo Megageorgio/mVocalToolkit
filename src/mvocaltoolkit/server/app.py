@@ -127,6 +127,18 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
         tk.home.save_settings(tk.settings)
         return await get_settings(tk)
 
+    @app.post("/shutdown", tags=["system"], dependencies=[Depends(auth)])
+    async def shutdown(tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        """Stops the server (for programs that started it and are closing), engines first."""
+        import threading  # noqa: PLC0415
+
+        try:
+            await tk.engines.stop_all()
+        except Exception:  # noqa: BLE001
+            pass
+        threading.Timer(0.3, lambda: os._exit(0)).start()
+        return {"ok": True}
+
     @app.get("/update/check", tags=["system"], dependencies=[Depends(auth)])
     async def update_check() -> dict[str, Any]:
         return await check_update()
