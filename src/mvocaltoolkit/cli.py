@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -79,7 +80,15 @@ def cmd_serve(args) -> None:
         print(f"Remote access enabled. Token: {settings.token}")
     print(f"mVocalToolkit {__version__} | home: {home.root} | http://{host}:{port}/docs")
     tk = Toolkit(home, settings)
-    uvicorn.run(create_app(tk), host=host, port=port, log_level="info")
+    # the folder it was started from stays free (it can be moved or deleted while the toolkit runs)
+    try:
+        os.chdir(home.root)
+    except OSError:
+        pass
+    unused = float(getattr(args, "exit_when_unused", 0) or 0)
+    if unused > 0:
+        print(f"Stops by itself {int(unused)} s after the last program using it closes.", flush=True)
+    uvicorn.run(create_app(tk, exit_when_unused=unused), host=host, port=port, log_level="info")
 
 
 def cmd_engines(args) -> None:
@@ -372,6 +381,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--host")
     p.add_argument("--port", type=int)
     p.add_argument("--no-update", action="store_true", help="Don't check for a newer toolkit at start")
+    p.add_argument("--exit-when-unused", type=float, default=0, metavar="SECONDS",
+                   help="Stop by itself this long after the last program using it (see /clients) has closed")
     p.set_defaults(func=cmd_serve)
 
     p = sub.add_parser("engines", help="Manage engines (isolated environments)")

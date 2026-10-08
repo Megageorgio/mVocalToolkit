@@ -7,6 +7,7 @@ import os
 import platform
 import shutil
 import sys
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -39,21 +40,49 @@ from ..pipelines.extra import run_midi, run_pitch, run_resynth, run_segment, run
 from ..pipelines.label import run_align, run_transcribe
 from ..text.languages import language_info
 from ..text.rules import RULE_SETS
+from ..clients import STALE_SECONDS, Clients
 from ..toolkit import Toolkit
 from ..update import check_update
 
 LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 
 
-def create_app(toolkit: Toolkit | None = None) -> FastAPI:
+def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) -> FastAPI:
+    """exit_when_unused: seconds; when > 0 the server stops by itself once no program is attached and no job
+    has run for that long (a toolkit started by a program for its own use)."""
     tk_holder: dict[str, Toolkit] = {}
+    clients = Clients()
+
+    async def watch_unused(tk: Toolkit) -> None:
+        import asyncio  # noqa: PLC0415
+
+        while True:
+            await asyncio.sleep(5)
+            busy = any(j.info.status.value in ("queued", "running", "paused") for j in tk.jobs.jobs.values())
+            if clients.active() or busy:
+                clients.last_used = time.monotonic()
+                continue
+            # a program gets two minutes to attach after starting the toolkit
+            grace = max(exit_when_unused, 120.0) if clients.last_used <= clients.started + 1 else exit_when_unused
+            if time.monotonic() - clients.last_used > grace:
+                print("No program uses the toolkit any more; stopping.", flush=True)
+                try:
+                    await tk.engines.stop_all()
+                except Exception:  # noqa: BLE001
+                    pass
+                os._exit(0)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        import asyncio  # noqa: PLC0415
+
         tk = toolkit or Toolkit()
         tk_holder["tk"] = tk
         await tk.start()
+        watcher = asyncio.create_task(watch_unused(tk)) if exit_when_unused > 0 else None
         yield
+        if watcher is not None:
+            watcher.cancel()
         await tk.stop()
 
     app = FastAPI(
@@ -95,7 +124,33 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
             "platform": platform.platform(),
             "home": str(tk.home.root),
             "gpu": _gpu_info(),
+            "clients": len(clients.active()),
+            "exit_when_unused": exit_when_unused,
         }
+
+    # ---------------- programs using the toolkit ----------------
+
+    @app.post("/clients", tags=["system"], dependencies=[Depends(auth)])
+    async def attach(body: dict[str, Any]) -> dict[str, Any]:
+        """A program starts using the toolkit; it should ping at least every minute and detach when it closes."""
+        pid = body.get("pid")
+        c = clients.attach(str(body.get("name") or ""), int(pid) if isinstance(pid, (int, float)) else None)
+        return {"id": c.id, "stale_seconds": STALE_SECONDS}
+
+    @app.get("/clients", tags=["system"], dependencies=[Depends(auth)])
+    async def list_clients() -> list[dict[str, Any]]:
+        return clients.describe()
+
+    @app.post("/clients/{client_id}/ping", tags=["system"], dependencies=[Depends(auth)])
+    async def ping(client_id: str) -> dict[str, Any]:
+        if not clients.ping(client_id):
+            raise HTTPException(404, "Unknown client; attach again")
+        return {"ok": True}
+
+    @app.delete("/clients/{client_id}", tags=["system"], dependencies=[Depends(auth)])
+    async def detach(client_id: str) -> dict[str, Any]:
+        clients.detach(client_id)
+        return {"ok": True, "clients": len(clients.active())}
 
     @app.get("/capabilities", tags=["system"], dependencies=[Depends(auth)])
     async def capabilities(tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
@@ -343,7 +398,7 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
 
     @app.post("/pipelines/label", tags=["operations"], dependencies=[Depends(auth)])
     async def pipeline_label(req: AlignRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
-        """Full LabelMakr-like workflow: transcribe (if needed) -> normalize -> G2P -> align -> rules -> export."""
+        """Full labelling workflow: transcribe (if needed) -> normalize -> G2P -> align -> rules -> export."""
         return submit(tk, "label", lambda job: run_align(tk, job, req), req.model_dump())
 
     @app.post("/segment", tags=["operations"], dependencies=[Depends(auth)])

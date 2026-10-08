@@ -24,7 +24,7 @@ def _store(tmp_path):
 def test_builtin_catalog_loads(tmp_path):
     _home, store = _store(tmp_path)
     ids = set(store.catalog.entries)
-    assert "sofa-ru-hhskt-v0.0.1" in ids and "labelmakr-pack-v030" in ids and "whisper-large-v3-turbo" in ids
+    assert "sofa-ru-hhskt-v0.0.1" in ids and "sofa-pack-v030" in ids and "whisper-large-v3-turbo" in ids
     assert all(e.engine == "sofa" for e in store.catalog.filter("sofa", "ru"))
 
 

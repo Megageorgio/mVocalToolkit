@@ -1,4 +1,4 @@
-"""Transcription and forced alignment (the LabelMakr workflow and more).
+"""Transcription and forced alignment.
 
 transcribe:  audio -> text (WhisperX: batched, VAD) -> tokens (text frontend)
 align:       audio + text|words|phonemes (or transcribed) -> phoneme/word label (SOFA or HubertFA) -> rules -> files

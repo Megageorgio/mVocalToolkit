@@ -176,7 +176,7 @@ SOFA or HubertFA.
 | `contextual` | `phones`, `prev`, `next`, `max_dur`, `to` | `t`/`d` between vowels → `dx`; `prev`/`next`: `vowel`, `consonant`, a phoneme or a list |
 | `min_duration` | `min_dur` | merge too short phonemes into neighbours |
 
-Built-in sets: `en_fixes` (LabelMakr's English fixes), `cleanup` (`pau`/`sil` → `SP`, `br` → `AP`),
+Built-in sets: `en_fixes` (common English fixes), `cleanup` (`pau`/`sil` → `SP`, `br` → `AP`),
 `merge_duplicates`. A model can set default rule sets in its catalog entry (`defaults.rule_sets`).
 
 ## Segmentation without text

@@ -11,7 +11,7 @@ Model sources:
     {"type": "huggingface", "repo": "owner/name", "files": ["model.ckpt", "config.yaml"], "revision": "main"}
     {"type": "engine"}   the engine downloads the model itself (e.g. Whisper models)
 
-An entry with "type": "pack" is an archive that contains several models (like the LabelMakr model pack).
+An entry with "type": "pack" is an archive that contains several models (like the SOFA model pack v030).
 All model folders found inside are registered as separate models named <prefix><folder name>.
 A pack can list its models ("models": [{"id", "folder", "name", "languages", ...}]): they show up in the catalog
 as separate models (so a GUI can offer them by language before anything is downloaded); using any of them
@@ -63,6 +63,18 @@ ENGINE_TASKS: dict[str, list[str]] = {
     "pitch": ["pitch"],
     "vocoder": ["resynth"],
 }
+# ids models had in earlier catalogs: installed folders are renamed on start
+LEGACY_IDS: dict[str, str] = {
+    "labelmakr-pack-v030": "sofa-pack-v030",
+    "labelmakr-tgm-en-v100": "sofa-en-tgm-v1.0.0",
+    "labelmakr-tgm_en_v100": "sofa-tgm_en_v100",
+    "labelmakr-tgm_sofa_en": "sofa-pack-tgm_sofa_en",
+    "labelmakr-millefeuille_fr": "sofa-pack-millefeuille_fr",
+    "labelmakr-suco_zh": "sofa-pack-suco_zh",
+    "labelmakr-colstone_jp": "sofa-pack-colstone_jp",
+    "labelmakr-colstone_ko": "sofa-pack-colstone_ko"
+}
+
 TASKS = ["transcribe", "align", "segment", "midi", "tempo", "pitch", "separate", "resynth"]
 
 

@@ -29,7 +29,7 @@ class InputSpec(BaseModel):
     folder: str | None = Field(None, description="Process all audio files in this folder")
     recursive: bool = True
     patterns: list[str] = Field(default_factory=lambda: list(AUDIO_PATTERNS))
-    # text files next to the audio used as lyrics if present (LabelMakr / SOFA corpus layout)
+    # text files next to the audio used as lyrics if present (SOFA corpus layout)
     sidecar_text: list[str] = Field(default_factory=lambda: [".txt", ".lab"])
 
 
@@ -73,7 +73,7 @@ class TranscribeOptions(BaseModel):
 
 class TranscribeRequest(TranscribeOptions):
     input: InputSpec
-    # write <name>.txt next to the audio (LabelMakr corpus style) or into output.dir
+    # write <name>.txt next to the audio (SOFA corpus style) or into output.dir
     save_txt: bool = False
     output_dir: str | None = None
 

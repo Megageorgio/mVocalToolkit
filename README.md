@@ -6,7 +6,7 @@ A local API server for automatic labeling of singing voice data. One toolkit, us
 - **Transcription** of lyrics — WhisperX (faster-whisper, batched, Silero VAD to skip silence and noise,
   automatic batch reduction on GPU out-of-memory).
 - **Forced alignment** — SOFA (dictionaries, G2P models for unknown words, breath (AP) detection, `.ckpt` and
-  `.safetensors` models, LabelMakr model packs) or HubertFA (ONNX, multilingual models, breath and other
+  `.safetensors` models, SOFA model packs) or HubertFA (ONNX, multilingual models, breath and other
   non-lexical sound detection). The engine is chosen by the model.
 - **Phoneme segmentation without text** — WFL-ASR.
 - **Notes (MIDI)** — GAME, with automatic tempo estimation (DeepRhythm).
@@ -15,7 +15,7 @@ A local API server for automatic labeling of singing voice data. One toolkit, us
   models via audio-separator). Only on explicit request: nothing else separates audio by itself, since it can
   make clean recordings worse.
 - **Label formats** — HTK `.lab`, TextGrid, DiffSinger `transcriptions.csv`, Audacity, JSON.
-- **Post-processing rules** — e.g. LabelMakr's English fixes (`dx`, `uh r → er`, merging short `hh` and duplicates).
+- **Post-processing rules** — e.g. English fixes (`dx`, `uh r → er`, merging short `hh` and duplicates).
 
 Everything heavy is downloaded **only when needed**: each engine lives in its own isolated Python
 environment (created with [uv](https://docs.astral.sh/uv/) on first use), and models are downloaded from
@@ -63,7 +63,7 @@ mvt languages --task align                                          # languages 
 mvt models list --task align --lang ru
 mvt label ./corpus -m sofa-ru-hhskt-v0.0.1 -f htk,textgrid,ds_csv
 mvt label ./corpus -m hubertfa-zh-ja-en-v0.0.7 -l ja                # a multilingual HubertFA model
-mvt label ./corpus -m labelmakr-tgm_sofa_en                         # English, LabelMakr model and fixes
+mvt label ./corpus -m sofa-pack-tgm_sofa_en                         # English model and its fixes
 mvt transcribe ./corpus -l ja                                       # writes .txt next to the audio
 mvt segment ./corpus -m wfl-asr-ft-en-ja
 mvt midi song.wav --tempo auto
@@ -112,7 +112,7 @@ See [docs/API.md](docs/API.md) for details and examples.
 
 ## Models and catalogs
 
-Models come from catalogs (JSON). The built-in one contains Whisper models, Russian SOFA, the LabelMakr model
+Models come from catalogs (JSON). The built-in one contains Whisper models, Russian SOFA, the SOFA model
 packs, HubertFA, WFL-ASR, GAME, separation and pitch models.
 
 How a GUI uses them: it asks `GET /languages?task=align`, shows the languages, then the models of the chosen

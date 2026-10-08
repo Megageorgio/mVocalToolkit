@@ -24,7 +24,7 @@ ARPABET_VOWELS = [
 ]
 
 RULE_SETS: dict[str, dict[str, Any]] = {
-    # the label fixes LabelMakr applies to English
+    # common fixes of English labels
     "en_fixes": {
         "vowels": ARPABET_VOWELS,
         "rules": [

@@ -1,6 +1,6 @@
 """Text frontends for languages that need heavy libraries.
 
-Output conventions follow LabelMakr so that the usual SOFA models/dictionaries work:
+Output conventions follow the usual SOFA models and dictionaries:
     ja: OpenJTalk phonemes, devoiced vowels lower-cased (A -> a), N kept, pau -> SP
     zh: pinyin syllables without tones
     ko: pronunciation-normalized hangul (g2pk), split into words

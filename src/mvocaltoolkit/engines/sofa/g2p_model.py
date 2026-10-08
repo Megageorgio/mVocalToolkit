@@ -1,6 +1,6 @@
 """OpenUtau-style G2P model (RNN-T like LSTM encoder/decoder), used for words missing in a SOFA dictionary.
 
-Model folder layout (as in LabelMakr models):
+Model folder layout (as in the SOFA model pack v030):
     g2p/cfg.yaml     training config with _target_ entries for G2p / Encoder / Decoder
     g2p/model.ptsd   state dict
 

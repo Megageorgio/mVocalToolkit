@@ -85,14 +85,14 @@
       }
     },
     {
-      "id": "labelmakr-pack-v030",
+      "id": "sofa-pack-v030",
       "type": "pack",
       "engine": "sofa",
-      "name": "LabelMakr models (v030 asset pack)",
-      "description": "English, French, Mandarin, Japanese and Korean SOFA models with G2P, as used by LabelMakr: tgm v0.0.5 (tigermeat), millefeuille b001 (imsupposedto), suco (SOFA v1.0.1), colstone Japanese v0.0.2b and Korean v0.0.1b. Downloading the pack registers every model inside as labelmakr-<folder>.",
+      "name": "SOFA model pack v030 (English, French, Mandarin, Japanese, Korean)",
+      "description": "English, French, Mandarin, Japanese and Korean SOFA models with G2P: tgm v0.0.5 (tigermeat), millefeuille b001 (imsupposedto), suco (SOFA v1.0.1), colstone Japanese v0.0.2b and Korean v0.0.1b. Downloading the pack registers every model inside as sofa-pack-<folder>.",
       "author": "tigermeat and contributors",
       "homepage": "https://github.com/spicytigermeat/LabelMakr",
-      "prefix": "labelmakr-",
+      "prefix": "sofa-pack-",
       "defaults": {},
       "source": {
         "type": "github_release",
@@ -110,9 +110,9 @@
       "size_hint": "1.9 GB (all five models)",
       "models": [
         {
-          "id": "labelmakr-tgm_sofa_en",
+          "id": "sofa-pack-tgm_sofa_en",
           "folder": "tgm_sofa_en",
-          "name": "English SOFA tgm v0.0.5 (tigermeat, LabelMakr pack)",
+          "name": "English SOFA tgm v0.0.5 (tigermeat, v030 pack)",
           "languages": [
             "en"
           ],
@@ -125,9 +125,9 @@
           "author": "tigermeat"
         },
         {
-          "id": "labelmakr-millefeuille_fr",
+          "id": "sofa-pack-millefeuille_fr",
           "folder": "millefeuille_fr",
-          "name": "French SOFA millefeuille b001 (imsupposedto, LabelMakr pack)",
+          "name": "French SOFA millefeuille b001 (imsupposedto, v030 pack)",
           "languages": [
             "fr"
           ],
@@ -135,9 +135,9 @@
           "author": "imsupposedto"
         },
         {
-          "id": "labelmakr-suco_zh",
+          "id": "sofa-pack-suco_zh",
           "folder": "suco_zh",
-          "name": "Mandarin SOFA (suco, LabelMakr pack)",
+          "name": "Mandarin SOFA (suco, v030 pack)",
           "languages": [
             "zh"
           ],
@@ -145,9 +145,9 @@
           "author": "suco"
         },
         {
-          "id": "labelmakr-colstone_jp",
+          "id": "sofa-pack-colstone_jp",
           "folder": "colstone_jp",
-          "name": "Japanese SOFA v0.0.2b (colstone, LabelMakr pack)",
+          "name": "Japanese SOFA v0.0.2b (colstone, v030 pack)",
           "languages": [
             "ja"
           ],
@@ -155,9 +155,9 @@
           "author": "colstone"
         },
         {
-          "id": "labelmakr-colstone_ko",
+          "id": "sofa-pack-colstone_ko",
           "folder": "colstone_ko",
-          "name": "Korean SOFA v0.0.1b (colstone, LabelMakr pack)",
+          "name": "Korean SOFA v0.0.1b (colstone, v030 pack)",
           "languages": [
             "ko"
           ],
@@ -167,7 +167,7 @@
       ]
     },
     {
-      "id": "labelmakr-tgm-en-v100",
+      "id": "sofa-en-tgm-v1.0.0",
       "type": "pack",
       "engine": "sofa",
       "name": "English SOFA tgm v1.0.0 (tigermeat)",
@@ -176,7 +176,7 @@
       ],
       "text_frontend": "en",
       "homepage": "https://github.com/spicytigermeat/LabelMakr/releases/tag/tgm_en_v100",
-      "prefix": "labelmakr-",
+      "prefix": "sofa-pack-",
       "defaults": {
         "rule_sets": [
           "en_fixes"
@@ -191,10 +191,10 @@
       "size_hint": "362 MB",
       "author": "tigermeat",
       "version": "1.0.0",
-      "description": "Newer English model than the v0.0.5 in the LabelMakr pack (other weights, same dictionary and G2P); trained only on data labelled or checked by hand by its author.",
+      "description": "Newer English model than the v0.0.5 in the v030 pack (other weights, same dictionary and G2P); trained only on data labelled or checked by hand by its author.",
       "models": [
         {
-          "id": "labelmakr-tgm_en_v100",
+          "id": "sofa-tgm_en_v100",
           "folder": "tgm_en_v100",
           "name": "English SOFA tgm v1.0.0 (tigermeat)",
           "author": "tigermeat",

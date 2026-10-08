@@ -62,6 +62,31 @@ class ModelStore:
         self.home = home
         self.settings = settings
         self.catalog = catalog
+        self._migrate_ids()
+
+    def _migrate_ids(self) -> None:
+        """Models installed under ids of earlier catalogs get their current ids (folder and manifest)."""
+        from .catalog import LEGACY_IDS  # noqa: PLC0415
+
+        for old, new in LEGACY_IDS.items():
+            src = self.home.models / _safe(old)
+            dst = self.home.models / _safe(new)
+            if not (src / "model.json").exists() or dst.exists():
+                continue
+            try:
+                src.rename(dst)
+                manifest = dst / "model.json"
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+                data["id"] = new
+                manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            except OSError:
+                pass
+
+    def get_installed(self, model_id: str) -> InstalledModel | None:
+        from .catalog import LEGACY_IDS  # noqa: PLC0415
+
+        model_id = LEGACY_IDS.get(model_id, model_id)
+        return self._get_installed(model_id)
 
     # ---------- installed models ----------
 
@@ -76,7 +101,7 @@ class ModelStore:
             result[model.id] = model
         return result
 
-    def get_installed(self, model_id: str) -> InstalledModel | None:
+    def _get_installed(self, model_id: str) -> InstalledModel | None:
         manifest = self.home.models / _safe(model_id) / "model.json"
         if not manifest.exists():
             return None
@@ -112,6 +137,9 @@ class ModelStore:
         engines = [engine] if isinstance(engine, str) else list(engine)
         if model.startswith("path:") or Path(model).expanduser().is_absolute():
             return self.resolve_local(engines, model.removeprefix("path:"))
+        from .catalog import LEGACY_IDS  # noqa: PLC0415
+
+        model = LEGACY_IDS.get(model, model)
         installed = self.get_installed(model)
         if installed is not None:
             if installed.engine not in engines:
