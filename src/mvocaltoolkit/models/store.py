@@ -26,7 +26,7 @@ from .catalog import Catalog, CatalogEntry, ModelSource
 
 ProgressFunc = Callable[[float | None, str], None]
 
-ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".tar.bz2", ".rar", ".7z")
+ARCHIVE_SUFFIXES = (".zip", ".oudep", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".tar.bz2", ".rar", ".7z")
 CHECKPOINT_SUFFIXES = (".pt", ".pth", ".ckpt", ".safetensors", ".onnx")
 
 
@@ -425,7 +425,8 @@ async def download_file(
 def _extract(archive: Path, target: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     name = archive.name.lower()
-    if name.endswith(".zip"):
+    # .oudep: an OpenUtau dependency package, a zip under another name
+    if name.endswith((".zip", ".oudep")):
         with zipfile.ZipFile(archive) as z:
             for info in z.infolist():
                 # zips made on Windows/Mac sometimes have names in cp437 or with __MACOSX junk

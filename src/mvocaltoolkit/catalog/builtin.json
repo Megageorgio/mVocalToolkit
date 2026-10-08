@@ -531,6 +531,24 @@
       ]
     },
     {
+      "id": "pc-nsf-hifigan-2025.02",
+      "engine": "vocoder",
+      "name": "PC-NSF-HiFiGAN 44.1 kHz (2025.02, OpenVPI)",
+      "version": "2025.02",
+      "author": "OpenVPI",
+      "description": "The vocoder of DiffSinger models, with pitch shifting that keeps the formants. Used to hear a recording with an edited f0. Weights by the OpenVPI team under CC BY-NC-SA 4.0: free for non-commercial use with credit; results can't be used commercially. Downloaded from the official release on first use; the NOTICE and STATEMENTS files of the release are kept in the model folder.",
+      "homepage": "https://github.com/openvpi/vocoders/releases/tag/pc-nsf-hifigan-44.1k-hop512-128bin-2025.02",
+      "license": "CC BY-NC-SA 4.0",
+      "size_hint": "53 MB",
+      "source": {
+        "type": "github_release",
+        "repo": "openvpi/vocoders",
+        "tag": "pc-nsf-hifigan-44.1k-hop512-128bin-2025.02",
+        "asset": "pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.oudep",
+        "sha256": "ba7d43142d41f6900c8264b5662ca7125a50feb8760bb8b9615c61a8f5e6902e"
+      }
+    },
+    {
       "id": "rmvpe",
       "engine": "pitch",
       "name": "RMVPE",

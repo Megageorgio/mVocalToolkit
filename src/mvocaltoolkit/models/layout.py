@@ -131,7 +131,19 @@ def detect_generic(root: Path) -> dict[str, Any] | None:
     return {"checkpoint": ckpt.name} if ckpt is not None else {}
 
 
+def detect_vocoder(root: Path) -> dict[str, Any] | None:
+    """An ONNX vocoder (an OpenUtau .oudep package or a folder with the .onnx and vocoder.yaml)."""
+    onnx = next(iter(_files(root, "*.onnx")), None)
+    if onnx is None:
+        return None
+    layout: dict[str, Any] = {"onnx": onnx.name}
+    if (root / "vocoder.yaml").exists():
+        layout["config"] = "vocoder.yaml"
+    return layout
+
+
 DETECTORS = {
+    "vocoder": detect_vocoder,
     "sofa": detect_sofa,
     "wfl_asr": detect_wfl_asr,
     "game": detect_game,

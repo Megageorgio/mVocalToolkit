@@ -187,6 +187,18 @@ class PitchRequest(BaseModel):
     return_curve: bool = Field(True, description="Include the f0 values in the job result")
 
 
+class ResynthRequest(BaseModel):
+    """A recording (or a part of it) sung again with another f0."""
+
+    input: InputSpec
+    f0: list[float] = Field(description="Hz per step of `hop` from the start of the file; 0 = no value")
+    hop: float = 0.01
+    method: Literal["world", "nsf"] = "world"
+    model: str = Field("pc-nsf-hifigan-2025.02", description="Vocoder model (catalog id) for method nsf")
+    start: float = 0.0
+    end: float | None = None
+
+
 class TempoRequest(BaseModel):
     input: InputSpec
     model: str = "deeprhythm"

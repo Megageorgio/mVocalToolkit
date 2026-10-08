@@ -1,0 +1,16 @@
+name = "vocoder"
+title = "Resynthesis with another pitch (WORLD, NSF-HiFiGAN)"
+description = "Plays a recording with an edited f0: WORLD (instant, a little buzzy) or NSF-HiFiGAN, the vocoder DiffSinger models use (ONNX, CPU is enough)."
+capabilities = ["resynth"]
+python = "3.11"
+torch = false
+size_hint = "~150 MB (onnxruntime, librosa, pyworld); the NSF-HiFiGAN model ~55 MB"
+homepage = "https://github.com/openvpi/vocoders"
+license = "MIT (pyworld), MIT (onnxruntime); the NSF-HiFiGAN weights are CC BY-NC-SA 4.0 (OpenVPI), downloaded separately"
+requirements = [
+    "numpy",
+    "soundfile",
+    "librosa",
+    "onnxruntime",
+    "pyworld",
+]

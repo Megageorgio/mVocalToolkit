@@ -61,8 +61,9 @@ ENGINE_TASKS: dict[str, list[str]] = {
     "tempo": ["tempo"],
     "separation": ["separate"],
     "pitch": ["pitch"],
+    "vocoder": ["resynth"],
 }
-TASKS = ["transcribe", "align", "segment", "midi", "tempo", "pitch", "separate"]
+TASKS = ["transcribe", "align", "segment", "midi", "tempo", "pitch", "separate", "resynth"]
 
 
 def engine_tasks(engine: str) -> list[str]:

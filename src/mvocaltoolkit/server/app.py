@@ -26,6 +26,7 @@ from ..api_models import (
     PitchRequest,
     SegmentRequest,
     SeparateRequest,
+    ResynthRequest,
     TempoRequest,
     TextRequest,
     TranscribeRequest,
@@ -34,7 +35,7 @@ from ..engines.manager import EngineError
 from ..jobs import FINISHED, Job, JobInfo
 from ..models.catalog import ENGINE_TASKS, TASKS
 from ..models.store import ModelNotFound, model_listing
-from ..pipelines.extra import run_midi, run_pitch, run_segment, run_separate, run_tempo, run_text
+from ..pipelines.extra import run_midi, run_pitch, run_resynth, run_segment, run_separate, run_tempo, run_text
 from ..pipelines.label import run_align, run_transcribe
 from ..text.languages import language_info
 from ..text.rules import RULE_SETS
@@ -365,6 +366,11 @@ def create_app(toolkit: Toolkit | None = None) -> FastAPI:
     async def pitch(req: PitchRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
         """f0 curve (RMVPE, FCPE, Parselmouth) for piano rolls and pitch editing."""
         return submit(tk, "pitch", lambda job: run_pitch(tk, job, req), req.model_dump())
+
+    @app.post("/resynth", tags=["operations"], dependencies=[Depends(auth)])
+    async def resynth(req: ResynthRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        """A recording sung again with another f0 (WORLD, or the NSF-HiFiGAN vocoder of DiffSinger)."""
+        return submit(tk, "resynth", lambda job: run_resynth(tk, job, req), req.model_dump())
 
     @app.post("/tempo", tags=["operations"], dependencies=[Depends(auth)])
     async def tempo(req: TempoRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
