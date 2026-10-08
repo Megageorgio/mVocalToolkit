@@ -501,7 +501,7 @@ def _extract_with_tool(archive: Path, target: Path) -> None:
     errors = []
     for cmd in candidates:
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+            r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=1800)
         except OSError as e:
             errors.append(f"{cmd[0]}: {e}")
             continue

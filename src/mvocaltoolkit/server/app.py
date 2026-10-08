@@ -598,7 +598,7 @@ def _query_gpu() -> dict[str, Any] | None:
     try:
         out = subprocess.run(
             [smi, "--query-gpu=name,memory.total,memory.used,driver_version", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, errors="replace", timeout=5,
             creationflags=0x08000000 if os.name == "nt" else 0,
         ).stdout.strip().splitlines()
     except Exception:  # noqa: BLE001

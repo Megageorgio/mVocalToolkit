@@ -93,6 +93,8 @@ class WorkerProcess:
         env["PYTHONPATH"] = os.pathsep.join(paths + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
         env["PYTHONUNBUFFERED"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
+        # text files are read as UTF-8 even by libraries that do not say so (Windows would use its ANSI code page)
+        env["PYTHONUTF8"] = "1"
         env["MVT_DEVICE"] = self.settings.device
         env["MVT_HOME"] = str(self.envs.home.root)
         env["MVT_CACHE"] = str(self.envs.home.cache)
