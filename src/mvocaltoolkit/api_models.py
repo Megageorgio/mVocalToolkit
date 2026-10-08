@@ -162,8 +162,9 @@ class SeparateRequest(BaseModel):
     """Vocal separation. Never part of other pipelines: separation can degrade clean recordings."""
 
     input: InputSpec
-    model: str = Field("separation-vocals-bs-roformer",
-                       description="Catalog id or an audio-separator model file name")
+    model: str = Field("auto",
+                       description="Catalog id or an audio-separator model file name; auto: BS-Roformer with an NVIDIA GPU, "
+                                   "the fast MDX-Net model without one")
     stems: list[str] | None = Field(
         None, description="Keep only these stems, e.g. [\"vocals\"]; default: all stems of the model"
     )

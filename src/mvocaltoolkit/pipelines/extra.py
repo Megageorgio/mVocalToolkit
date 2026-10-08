@@ -156,6 +156,11 @@ async def run_midi(tk: Toolkit, job: Job, req: MidiRequest) -> dict[str, Any]:
 
 async def _separation_model(tk: Toolkit, job: Job, model_id: str) -> tuple[str, str, str]:
     """-> (audio-separator model file name, folder for its files, id)"""
+    if model_id == "auto":
+        # the Roformers take minutes per song on a processor; a lighter model is the better default there
+        from ..engines.env import _cpu_only  # noqa: PLC0415
+
+        model_id = "separation-vocals-mdx-fast" if _cpu_only(tk.settings.torch_backend) else "separation-vocals-bs-roformer"
     if model_id.startswith("path:") or Path(model_id).expanduser().is_absolute():
         path = Path(model_id.removeprefix("path:")).expanduser()
         return path.name, str(path.parent), str(path)

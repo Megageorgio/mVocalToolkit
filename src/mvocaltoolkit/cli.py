@@ -450,7 +450,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("separate", help="Separate vocals (only when you need it: it can degrade clean audio)")
     p.add_argument("paths", nargs="+")
-    p.add_argument("--model", "-m", default="separation-vocals-bs-roformer")
+    p.add_argument("--model", "-m", default="auto")
     p.add_argument("--stems", help="keep only these stems, e.g. vocals")
     p.add_argument("--format", default="wav", choices=["wav", "flac", "mp3"])
     p.add_argument("--out", "-o")

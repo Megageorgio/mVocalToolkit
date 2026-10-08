@@ -483,6 +483,22 @@
       ]
     },
     {
+      "id": "separation-vocals-mdx-fast",
+      "engine": "separation",
+      "name": "Vocals / instrumental: MDX-Net Voc FT (fast)",
+      "description": "Lighter vocal extraction, several times faster without an NVIDIA GPU; a little less clean than the Roformers.",
+      "size_hint": "65 MB",
+      "source": {
+        "type": "engine"
+      },
+      "params": {
+        "model_file": "UVR-MDX-NET-Voc_FT.onnx"
+      },
+      "tags": [
+        "vocals"
+      ]
+    },
+    {
       "id": "separation-vocals-melband-roformer",
       "engine": "separation",
       "name": "Vocals / instrumental: MelBand Roformer (Kim)",

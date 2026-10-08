@@ -54,6 +54,11 @@ def _separator(model_file: str, model_dir: str, output_format: str, single_stem:
         "sample_rate": sample_rate,
         "use_soundfile": True,
     }
+    if "mdxc_params" not in options:
+        # Roformer / MDXC models: audio-separator overlaps every chunk 8 times by default; 2 sounds the same in
+        # practice and is about four times faster (a bigger batch helps a GPU)
+        options = {**options, "mdxc_params": {"segment_size": 256, "override_model_segment_size": False,
+                                              "batch_size": 2 if rt.device().startswith("cuda") else 1, "overlap": 2, "pitch_shift": 0}}
     for arch in ("mdx_params", "vr_params", "demucs_params", "mdxc_params"):
         if arch in options:
             kwargs[arch] = options[arch]
