@@ -142,7 +142,24 @@ def detect_vocoder(root: Path) -> dict[str, Any] | None:
     return layout
 
 
+def detect_refiner(root: Path) -> dict[str, Any] | None:
+    """A boundary refiner (mRefinerModel): config.yaml with a "frontend" section, phonemes.txt and the weights."""
+    config = root / "config.yaml"
+    if not config.is_file() or not (root / "phonemes.txt").is_file():
+        return None
+    try:
+        if "frontend:" not in config.read_text(encoding="utf-8", errors="replace"):
+            return None
+    except OSError:
+        return None
+    ckpt = _first(root, "model.pt", "best.pt") or next(iter(_files(root, "*.pt", "*.pth")), None)
+    if ckpt is None:
+        return None
+    return {"checkpoint": ckpt.name, "config": "config.yaml", "phonemes": "phonemes.txt"}
+
+
 DETECTORS = {
+    "refiner": detect_refiner,
     "vocoder": detect_vocoder,
     "sofa": detect_sofa,
     "wfl_asr": detect_wfl_asr,

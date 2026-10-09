@@ -842,6 +842,27 @@
       ],
       "author": "gnloop",
       "description": "Small Italian model, 5 speakers, for testing."
+    },
+    {
+      "id": "mrefiner-ru-v0.1.0",
+      "engine": "refiner",
+      "name": "mRefinerModel Russian v0.1.0",
+      "version": "0.1.0",
+      "languages": [
+        "ru"
+      ],
+      "author": "Megageorgio",
+      "description": "Refines phoneme boundaries after any labeller (trained on Russian singing after WFL-ASR; same phoneme set as the Russian SOFA and WFL-ASR models). With other languages or labelling styles it moves only confident boundaries and not far (safe mode).",
+      "homepage": "https://github.com/Megageorgio/mRefinerModel",
+      "license": "MIT",
+      "size_hint": "7 MB",
+      "source": {
+        "type": "github_release",
+        "repo": "Megageorgio/mRefinerModel",
+        "tag": "Russian_v0.0.1",
+        "asset": "mrefinermodel-ru-v0.1.0.zip",
+        "sha256": "3bf9cded17dab7cc07d55d8ef850eb03c6a494785b4c25d3f79101c42c0f82dd"
+      }
     }
   ]
 }

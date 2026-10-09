@@ -23,6 +23,8 @@ class Item:
     words: list[str] | None = None
     phonemes: list[str] | None = None
     language: str | None = None
+    # ready labels to refine ([start, end, phoneme])
+    segments: list[tuple[float, float, str]] | None = None
     # folder the outputs go to by default, and sub-folder relative to the input folder
     base_dir: Path = Path(".")
     rel_dir: Path = Path(".")
@@ -49,6 +51,7 @@ def resolve_inputs(spec: InputSpec, home: Home) -> list[Item]:
             words=entry.words,
             phonemes=entry.phonemes,
             language=entry.language,
+            segments=[tuple(s) for s in entry.segments] if entry.segments else None,
             base_dir=audio.parent,
         )
         if item.text is None and item.words is None and item.phonemes is None:

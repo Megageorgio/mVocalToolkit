@@ -25,6 +25,7 @@ from ..api_models import (
     MidiRequest,
     ModelImportRequest,
     PitchRequest,
+    RefineRequest,
     SegmentRequest,
     SeparateRequest,
     ResynthRequest,
@@ -36,6 +37,7 @@ from ..engines.manager import EngineError
 from ..jobs import FINISHED, Job, JobInfo
 from ..models.catalog import ENGINE_TASKS, TASKS
 from ..models.store import ModelNotFound, model_listing
+from ..pipelines.refine import run_refine
 from ..pipelines.extra import run_midi, run_pitch, run_resynth, run_segment, run_separate, run_tempo, run_text
 from ..pipelines.label import run_align, run_transcribe
 from ..text.languages import language_info
@@ -405,6 +407,11 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
     async def segment(req: SegmentRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
         """Phoneme segmentation without text (WFL-ASR)."""
         return submit(tk, "segment", lambda job: run_segment(tk, job, req), req.model_dump())
+
+    @app.post("/refine", tags=["operations"], dependencies=[Depends(auth)])
+    async def refine(req: RefineRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        """Moves the phoneme boundaries of ready labels to where they are in the sound (a boundary refiner model)."""
+        return submit(tk, "refine", lambda job: run_refine(tk, job, req), req.model_dump())
 
     @app.post("/midi/extract", tags=["operations"], dependencies=[Depends(auth)])
     async def midi_extract(req: MidiRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:

@@ -258,15 +258,27 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
             if not res.get("ok", True):
                 item.data["error"] = res.get("error", "alignment failed")
                 continue
-            label = _label_from_engine(res)
-            rule_sets = list(req.postprocess.rule_sets)
-            if not rule_sets and req.postprocess.use_model_defaults:
-                rule_sets = list(model.defaults.get("rule_sets", []))
-            if rule_sets or req.postprocess.rules:
-                label = apply_rule_sets(label, rule_sets, req.postprocess.rules)
-            item.data["label"] = label
-            item.data["files"] = writer.write(item, label)
+            item.data["label"] = _label_from_engine(res)
         report((start + len(chunk)) / total, "Aligning")
+
+    # 5. optional refinement of the boundaries (before the rules: the refiner knows the model's phoneme names)
+    if req.refine is not None:
+        from .refine import refine_items  # noqa: PLC0415
+
+        await refine_items(tk, job, to_align, req.refine, _sub_progress(job, 0.95, 0.99, "refine"))
+
+    # 6. rules and files
+    rule_sets = list(req.postprocess.rule_sets)
+    if not rule_sets and req.postprocess.use_model_defaults:
+        rule_sets = list(model.defaults.get("rule_sets", []))
+    for item in to_align:
+        label = item.data.get("label")
+        if "error" in item.data or label is None:
+            continue
+        if rule_sets or req.postprocess.rules:
+            label = apply_rule_sets(label, rule_sets, req.postprocess.rules)
+        item.data["label"] = label
+        item.data["files"] = writer.write(item, label)
 
     csv_files = writer.finalize()
     results_out = []
@@ -285,7 +297,7 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
                 unknown_words=item.data.get("unknown_words"),
                 label=item.data.get("label") if req.output.return_labels else None,
                 files=item.data.get("files", {}),
-                data={"transcription": item.data["transcription"]} if "transcription" in item.data else {},
+                data={k: item.data[k] for k in ("transcription", "refine", "refine_error") if k in item.data},
             ).model_dump(exclude_none=True)
         )
     return {"model": model.id, "engine": model.engine, "language": language, "items": results_out,

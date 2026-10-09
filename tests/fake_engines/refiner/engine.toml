@@ -1,0 +1,4 @@
+name = "refiner"
+title = "fake refiner"
+python = "system"
+capabilities = ["test"]

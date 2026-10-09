@@ -287,3 +287,54 @@ def test_engine_crash_report_has_its_output(tmp_path):
     assert "no encoder weights" in message
     log = home.logs / "engines" / "crasher.log"
     assert "no encoder weights" in log.read_text(encoding="utf-8")
+
+
+def _refiner_model(client, tmp_path):
+    folder = tmp_path / "refiner_src" / "ref"
+    folder.mkdir(parents=True)
+    (folder / "config.yaml").write_text("frontend:\n  sample_rate: 16000\n", encoding="utf-8")
+    (folder / "phonemes.txt").write_text("a\nSP\n", encoding="utf-8")
+    (folder / "model.pt").write_bytes(b"\0" * 16)
+    response = client.post("/models/import", json={"engine": "refiner", "path": str(folder), "id": "ref"})
+    assert response.status_code == 200, response.text
+    return "ref"
+
+
+def test_align_with_refinement(tmp_path):
+    make_wav(tmp_path / "r.wav")
+    with _client(tmp_path) as client:
+        model = _import_model(client, tmp_path)
+        refiner = _refiner_model(client, tmp_path)
+        body = {"input": {"items": [{"path": str(tmp_path / "r.wav"), "text": "hello world"}]}, "model": model,
+                "output": {"formats": [], "return_labels": True}}
+        plain = _wait(client, client.post("/align", json=body).json()["id"])["result"]["items"][0]
+        info = _wait(client, client.post("/align", json={**body, "refine": {"model": refiner, "mode": "safe"}}).json()["id"])
+        assert info["status"] == "done", info
+        item = info["result"]["items"][0]
+        before = plain["label"]["tiers"]["phones"]
+        after = item["label"]["tiers"]["phones"]
+        assert [p["text"] for p in after] == [p["text"] for p in before]
+        assert abs(after[1]["start"] - (before[1]["start"] + 0.01)) < 1e-6
+        # a word that started on a moved phone boundary moves with it
+        assert abs(item["label"]["tiers"]["words"][0]["start"] - after[1]["start"]) < 1e-6
+        assert item["data"]["refine"]["mode"] == "safe"
+
+
+def test_refine_ready_labels(tmp_path):
+    make_wav(tmp_path / "s.wav")
+    (tmp_path / "s.lab").write_text("0 2000000 SP\n2000000 5000000 a\n5000000 10000000 SP\n", encoding="utf-8")
+    with _client(tmp_path) as client:
+        refiner = _refiner_model(client, tmp_path)
+        job = client.post("/refine", json={"input": {"items": [{"path": str(tmp_path / "s.wav")}]}, "model": refiner,
+                                           "output": {"formats": ["htk"], "dir": str(tmp_path / "o"), "layout": "beside"}}).json()
+        info = _wait(client, job["id"])
+        assert info["status"] == "done", info
+        phones = info["result"]["items"][0]["label"]["tiers"]["phones"]
+        assert abs(phones[1]["start"] - 0.21) < 1e-6 and abs(phones[2]["start"] - 0.51) < 1e-6
+        assert (tmp_path / "o" / "s.lab").read_text(encoding="utf-8").splitlines()[1].startswith("2100000 ")
+        # given segments instead of a file
+        job = client.post("/refine", json={"input": {"items": [{"path": str(tmp_path / "s.wav"),
+                                                                "segments": [[0, 0.3, "SP"], [0.3, 1.0, "a"]]}]},
+                                           "model": refiner, "output": {"formats": []}}).json()
+        phones = _wait(client, job["id"])["result"]["items"][0]["label"]["tiers"]["phones"]
+        assert abs(phones[1]["start"] - 0.31) < 1e-6

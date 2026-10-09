@@ -9,6 +9,8 @@ A local API server for automatic labeling of singing voice data. One toolkit, us
   `.safetensors` models, SOFA model packs) or HubertFA (ONNX, multilingual models, breath and other
   non-lexical sound detection). The engine is chosen by the model.
 - **Phoneme segmentation without text** — WFL-ASR.
+- **Boundary refinement** — mRefinerModel moves the boundaries of ready labels (from any aligner or by hand)
+  to where they are in the sound; optional after alignment or segmentation, off by default.
 - **Notes (MIDI)** — GAME, with automatic tempo estimation (DeepRhythm).
 - **Pitch (f0)** — RMVPE, FCPE, Parselmouth: curves for piano rolls and pitch editing.
 - **Vocal separation** — vocals/accompaniment, lead/backing vocals, de-reverb (Roformer, MDX, VR, Demucs
@@ -66,6 +68,8 @@ mvt label ./corpus -m hubertfa-zh-ja-en-v0.0.7 -l ja                # a multilin
 mvt label ./corpus -m sofa-pack-tgm_sofa_en                         # English model and its fixes
 mvt transcribe ./corpus -l ja                                       # writes .txt next to the audio
 mvt segment ./corpus -m wfl-asr-ft-en-ja
+mvt label ./corpus -m sofa-ru-hhskt-v0.0.1 --refine mrefiner-ru-v0.1.0    # + boundary refinement
+mvt refine ./corpus -m mrefiner-ru-v0.1.0 -o ./refined              # refine labels next to the audio
 mvt midi song.wav --tempo auto
 mvt pitch ./corpus -m rmvpe -f csv
 mvt separate song.mp3 --stems vocals                                # only when the audio needs it
@@ -94,6 +98,7 @@ polling with `?wait=`) or `WS /jobs/{id}/events`, `POST /jobs/{id}/cancel` stops
 | `POST /transcribe` | audio → text (+ tokens for alignment) |
 | `POST /align`, `POST /pipelines/label` | audio + text / words / phonemes (or nothing → transcribe) → label files |
 | `POST /segment` | audio → phonemes without text (WFL-ASR) |
+| `POST /refine` | ready labels → the same phonemes with refined boundaries (also `"refine"` in `/align`, `/segment`) |
 | `POST /midi/extract`, `POST /tempo` | notes, BPM |
 | `POST /pitch` | f0 curves |
 | `POST /separate` | vocal separation (explicit only) |

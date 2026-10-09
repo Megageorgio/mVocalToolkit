@@ -216,6 +216,7 @@ def cmd_label(args) -> None:
         skip_unknown_words=args.skip_unknown,
         postprocess=PostprocessOptions(rule_sets=args.rules.split(",") if args.rules else []),
         output=OutputSpec(formats=args.formats.split(","), dir=args.out, return_labels=False),
+        refine=_refine_options(args),
     )
 
     async def main():
@@ -259,7 +260,8 @@ def cmd_segment(args) -> None:
 
     tk = _toolkit(args)
     req = SegmentRequest(input=_input_spec(args.paths), model=args.model, lang_id=args.lang_id,
-                         output=OutputSpec(formats=args.formats.split(","), dir=args.out, return_labels=False))
+                         output=OutputSpec(formats=args.formats.split(","), dir=args.out, return_labels=False),
+                         refine=_refine_options(args))
 
     async def main():
         try:
@@ -269,6 +271,36 @@ def cmd_segment(args) -> None:
 
     result = asyncio.run(main())
     print(f"Done: {sum(1 for i in result['items'] if i.get('ok'))}/{len(result['items'])}")
+
+
+def _refine_options(args):
+    from .api_models import RefineOptions  # noqa: PLC0415
+
+    if not getattr(args, "refine", None):
+        return None
+    return RefineOptions(model=args.refine, mode=args.refine_mode)
+
+
+def cmd_refine(args) -> None:
+    from .api_models import OutputSpec, RefineRequest  # noqa: PLC0415
+    from .pipelines.refine import run_refine  # noqa: PLC0415
+
+    tk = _toolkit(args)
+    req = RefineRequest(input=_input_spec(args.paths), model=args.model, mode=args.mode,
+                        output=OutputSpec(formats=args.formats.split(","), dir=args.out, layout="beside",
+                                          return_labels=False))
+
+    async def main():
+        try:
+            return await _run_job(tk, "refine", lambda job: run_refine(tk, job, req))
+        finally:
+            await tk.stop()
+
+    result = asyncio.run(main())
+    for item in result["items"]:
+        info = item.get("data", {}).get("refine", {})
+        print(f"{item['name']}: " + (f"{info.get('moved')}/{info.get('boundaries')} boundaries moved ({info.get('mode')})"
+                                     if item.get("ok") else "ERROR " + str(item.get("error"))))
 
 
 def cmd_midi(args) -> None:
@@ -420,6 +452,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--no-transcribe", action="store_true")
     p.add_argument("--skip-unknown", action="store_true")
+    _refine_args(p)
     p.set_defaults(func=cmd_label)
 
     p = sub.add_parser("transcribe", help="Transcribe audio files (writes .txt next to them)")
@@ -437,7 +470,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang-id", type=int)
     p.add_argument("--formats", "-f", default="htk")
     p.add_argument("--out", "-o")
+    _refine_args(p)
     p.set_defaults(func=cmd_segment)
+
+    p = sub.add_parser("refine", help="Refine the phoneme boundaries of ready labels (the label file next to each audio)")
+    p.add_argument("paths", nargs="+", help="audio files or a folder (labels: .lab, .TextGrid or .json next to them)")
+    p.add_argument("--model", "-m", default="mrefiner-ru-v0.1.0")
+    p.add_argument("--mode", choices=["auto", "normal", "safe"], default="auto")
+    p.add_argument("--formats", "-f", default="htk")
+    p.add_argument("--out", "-o", required=True, help="output folder (the input labels are not overwritten)")
+    p.set_defaults(func=cmd_refine)
 
     p = sub.add_parser("midi", help="Extract notes (GAME)")
     p.add_argument("paths", nargs="+")
@@ -488,6 +530,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--apply", action="store_true", help="upgrade (uv tool installs)")
     p.set_defaults(func=cmd_update)
     return parser
+
+
+def _refine_args(p) -> None:
+    p.add_argument("--refine", metavar="MODEL", help="refine the boundaries with this refiner model, e.g. mrefiner-ru-v0.1.0")
+    p.add_argument("--refine-mode", choices=["auto", "normal", "safe"], default="auto")
 
 
 def main(argv: list[str] | None = None) -> None:

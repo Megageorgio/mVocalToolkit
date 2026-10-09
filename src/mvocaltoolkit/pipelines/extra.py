@@ -89,11 +89,19 @@ async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, A
             if not res.get("ok", True):
                 item.data["error"] = res.get("error", "segmentation failed")
                 continue
-            label = Label(tiers={"phones": [Interval(start=s, end=e, text=t) for s, e, t, *_ in res["phones"]]})
-            if req.postprocess.rule_sets or req.postprocess.rules:
-                label = apply_rule_sets(label, req.postprocess.rule_sets, req.postprocess.rules)
-            item.data["label"] = label
-            item.data["files"] = writer.write(item, label)
+            item.data["label"] = Label(tiers={"phones": [Interval(start=s, end=e, text=t) for s, e, t, *_ in res["phones"]]})
+    if req.refine is not None:
+        from .refine import refine_items  # noqa: PLC0415
+
+        await refine_items(tk, job, items, req.refine, _sub_progress(job, 0.95, 0.99, "refine"))
+    for item in items:
+        label = item.data.get("label")
+        if "error" in item.data or label is None:
+            continue
+        if req.postprocess.rule_sets or req.postprocess.rules:
+            label = apply_rule_sets(label, req.postprocess.rule_sets, req.postprocess.rules)
+        item.data["label"] = label
+        item.data["files"] = writer.write(item, label)
     csv_files = writer.finalize()
     return {"model": model.id, "items": _results(job, items, req.output.return_labels), "csv": csv_files}
 

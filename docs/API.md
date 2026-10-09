@@ -8,7 +8,7 @@ Authentication: requests from the same machine are allowed without a token. Othe
 
 ## Choosing a model in a GUI
 
-Each model belongs to a **task**: `transcribe`, `align`, `segment`, `midi`, `tempo`, `pitch`, `separate`.
+Each model belongs to a **task**: `transcribe`, `align`, `segment`, `midi`, `tempo`, `pitch`, `separate`, `refine`.
 
 1. `GET /tasks` — tasks, their engines, and whether the models depend on the language.
 2. `GET /languages?task=align` — languages with their models:
@@ -186,6 +186,24 @@ Built-in sets: `en_fixes` (common English fixes), `cleanup` (`pau`/`sil` → `SP
 ```json
 {"input": {"folder": "D:/voice"}, "model": "wfl-asr-ft-en-ja", "lang_id": null, "confidence_threshold": 0.3}
 ```
+
+## Boundary refinement
+
+A refiner model (mRefinerModel) moves the boundaries between touching phonemes to where they are in the sound;
+the phonemes, their order and a minimum length stay. Off by default: add `"refine"` to `/align` or `/segment`
+(applied before the rules, so the refiner sees the model's phoneme names), or refine ready labels:
+
+```json
+{"input": {"items": [{"path": "a.wav", "segments": [[0, 0.31, "SP"], [0.31, 0.52, "k"], [0.52, 1.0, "a"]]}]},
+ "model": "mrefiner-ru-v0.1.0", "mode": "auto", "output": {"formats": [], "return_labels": true}}
+```
+
+Without `segments` the label file next to the audio (`.lab`, `.TextGrid`, `.json`) is used. `mode`: `normal` (the
+model's own language and labelling style), `safe` (only confident boundaries, not far: other languages or styles),
+`auto` (safe when most phonemes are unknown to the model). `phone_map` renames other phoneme names to the model's;
+`min_confidence` and `max_shift_ms` override the mode. `data.refine` of an item: `mode`, `boundaries`, `moved`.
+Any refiner model works: `POST /models/import` with `engine: "refiner"` and a folder with `config.yaml`,
+`phonemes.txt` and `model.pt`.
 
 ## Notes
 

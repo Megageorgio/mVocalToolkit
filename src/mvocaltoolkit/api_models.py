@@ -22,6 +22,9 @@ class InputItem(BaseModel):
     words: list[str] | None = Field(None, description="Normalized tokens (words / syllables) for the dictionary")
     phonemes: list[str] | None = Field(None, description="Phoneme sequence (skips G2P)")
     language: str | None = None
+    segments: list[tuple[float, float, str]] | None = Field(
+        None, description="/refine: the labels to refine, [start, end, phoneme] in seconds (default: the label file next to the audio)"
+    )
 
 
 class InputSpec(BaseModel):
@@ -86,6 +89,18 @@ class PostprocessOptions(BaseModel):
     )
 
 
+class RefineOptions(BaseModel):
+    """Refinement of the phoneme boundaries by a boundary refiner model (mRefinerModel)."""
+
+    model: str = Field("mrefiner-ru-v0.1.0", description="Refiner model id or path:")
+    mode: Literal["auto", "normal", "safe"] = Field(
+        "auto", description="safe: only confident boundaries, not far (other languages / labelling styles); auto: safe when most phonemes are unknown to the model"
+    )
+    phone_map: dict[str, str] = Field(default_factory=dict, description="Other phoneme names -> the model's ones")
+    min_confidence: float | None = None
+    max_shift_ms: float | None = None
+
+
 class AlignRequest(BaseModel):
     input: InputSpec
     model: str = Field(
@@ -118,6 +133,7 @@ class AlignRequest(BaseModel):
     # pause after transcription so that a GUI can show and edit the texts (POST /jobs/{id}/resume)
     review_transcription: bool = False
     skip_unknown_words: bool = Field(False, description="Drop words missing in the dictionary instead of failing")
+    refine: RefineOptions | None = Field(None, description="Refine the boundaries before the rules (off by default)")
     postprocess: PostprocessOptions = Field(default_factory=PostprocessOptions)
     output: OutputSpec = Field(default_factory=OutputSpec)
 
@@ -137,7 +153,15 @@ class SegmentRequest(BaseModel):
     viterbi_bias: float = 5.0
     silence_threshold: float = 0.005
     min_silence_duration: float = 0.5
+    refine: RefineOptions | None = Field(None, description="Refine the boundaries before the rules (off by default)")
     postprocess: PostprocessOptions = Field(default_factory=PostprocessOptions)
+    output: OutputSpec = Field(default_factory=OutputSpec)
+
+
+class RefineRequest(RefineOptions):
+    """Refines ready labels: each item's segments, or the label file next to its audio (.lab, .TextGrid, .json)."""
+
+    input: InputSpec
     output: OutputSpec = Field(default_factory=OutputSpec)
 
 

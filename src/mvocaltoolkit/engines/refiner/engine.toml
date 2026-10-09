@@ -1,0 +1,20 @@
+name = "refiner"
+title = "Phoneme boundary refiner (mRefinerModel)"
+description = "Moves the phoneme boundaries of ready labels (from any aligner or by hand) to where they are in the sound; never changes the phonemes. A small CNN, fast on CPU too."
+capabilities = ["refine"]
+python = "3.11"
+torch = true
+size_hint = "~2.5 GB with CUDA, ~800 MB CPU-only"
+homepage = "https://github.com/Megageorgio/mRefinerModel"
+license = "MIT"
+requirements = [
+    "torch",
+    "torchaudio",
+    "numpy",
+    "soundfile",
+    "PyYAML",
+]
+
+[source]
+repo = "Megageorgio/mRefinerModel"
+commit = "02d319541bfa826a5c8bdca4218a72f68c8d8a05"
