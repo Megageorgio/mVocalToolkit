@@ -94,5 +94,6 @@ def read(path: Path, fmt: str | None = None) -> Label:
 
 def write(label: Label, path: Path, fmt: str, tier: str = "phones") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(dumps(label, fmt, tier=tier), encoding="utf-8")
+    # "\n" on every system: with "\r\n" from Windows other tools read the "\r" as part of the last label
+    path.write_text(dumps(label, fmt, tier=tier), encoding="utf-8", newline="\n")
     return path

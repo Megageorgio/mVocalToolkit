@@ -57,7 +57,7 @@ def segment(
                 audio = work / f"{index}{Path(item['audio']).suffix.lower() or '.wav'}"
                 shutil.copyfile(item["audio"], audio)
                 if item.get("phonemes"):
-                    audio.with_suffix(".txt").write_text(" ".join(item["phonemes"]), encoding="utf-8")
+                    audio.with_suffix(".txt").write_text(" ".join(item["phonemes"]), encoding="utf-8", newline="\n")
                 segments = infer_audio(
                     audio_path=str(audio),
                     config_path=str(config),
