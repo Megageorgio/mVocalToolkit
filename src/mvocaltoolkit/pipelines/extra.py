@@ -21,6 +21,9 @@ from ..jobs import Job
 from ..labels import Interval, Label
 from ..models.store import InstalledModel, ModelNotFound
 from ..text.dictionary import Dictionary
+from ..text.g2p import dictionary_path as dictionary_path_of
+from ..text.g2p import guess as guess_words
+from ..text.g2p import load_user_words
 from ..text.rules import apply_rule_sets
 from ..toolkit import Toolkit
 from .io import OutputWriter, output_folder, resolve_inputs
@@ -369,11 +372,12 @@ async def run_text(tk: Toolkit, job: Job | None, req: TextRequest, validate_only
     tokens = await text_frontend(tk, dummy, language, req.texts)  # type: ignore[arg-type]
     items = []
     dictionary = None
-    dictionary_path = _dictionary_path(model, language) if model is not None else None
+    dictionary_path = dictionary_path_of(model, language) if model is not None else None
     if dictionary_path is not None:
         dictionary = Dictionary.load(dictionary_path)
-    if req.extra_words:
-        dictionary = (dictionary or Dictionary({})).with_extra(req.extra_words)
+    own_words = {**(load_user_words(tk.home, model.id) if model is not None else {}), **req.extra_words}
+    if own_words:
+        dictionary = (dictionary or Dictionary({})).with_extra(own_words)
     for text, toks in zip(req.texts, tokens):
         entry: dict[str, Any] = {"text": text, "tokens": toks}
         if dictionary is not None:
@@ -382,12 +386,13 @@ async def run_text(tk: Toolkit, job: Job | None, req: TextRequest, validate_only
                 entry["phonemes"] = [dictionary.lookup(t) for t in toks]
         items.append(entry)
     unknown = sorted({w for e in items for w in e.get("unknown_words", [])})
-    if (unknown and req.g2p == "auto" and model is not None and model.engine == "sofa" and model.layout.get("g2p")
-            and not validate_only):
-        guessed = await tk.engines.call(
-            "sofa", "g2p", {"model": {"path": model.path, "layout": model.layout}, "words": unknown}
-        )
+    if unknown and req.g2p == "auto" and model is not None:
+        # the model's own G2P, or that of another SOFA model of the language whose phonemes this model knows
+        guessed = await guess_words(tk, model, language, unknown, dictionary.phonemes() if dictionary else None)
         for entry in items:
+            if validate_only:
+                entry["guessed"] = {w: guessed.get(w) for w in entry.get("unknown_words", [])}
+                continue
             entry["phonemes"] = [
                 p if p is not None else guessed.get(t) for p, t in zip(entry["phonemes"], entry["tokens"])
             ]
@@ -403,6 +408,7 @@ async def _text_own_g2p(tk: Toolkit, model: InstalledModel, req: TextRequest, la
         {"model": {"path": model.path, "layout": model.layout}, "texts": req.texts, "language": language},
     )
     items = []
+    own = {**load_user_words(tk.home, model.id), **req.extra_words}
     for text, res in zip(req.texts, converted):
         if not res.get("ok"):
             items.append({"text": text, "tokens": [], "unknown_words": [text], "error": res.get("error")})
@@ -410,7 +416,7 @@ async def _text_own_g2p(tk: Toolkit, model: InstalledModel, req: TextRequest, la
         words = res.get("words", [])
         entry: dict[str, Any] = {"text": text, "tokens": [w["text"] for w in words], "unknown_words": []}
         entry["phonemes"] = [
-            req.extra_words.get(w["text"]) or (w["candidates"][0]["phonemes"] if w["candidates"] else None)
+            own.get(w["text"]) or (w["candidates"][0]["phonemes"] if w["candidates"] else None)
             for w in words
         ]
         candidates = {w["text"]: [c["phonemes"] for c in w["candidates"]] for w in words if len(w["candidates"]) > 1}
@@ -418,21 +424,6 @@ async def _text_own_g2p(tk: Toolkit, model: InstalledModel, req: TextRequest, la
             entry["candidates"] = candidates
         items.append(entry)
     return {"language": language, "model": model.id, "items": items}
-
-
-def _dictionary_path(model: InstalledModel, language: str | None) -> Path | None:
-    if model.engine == "hubertfa":
-        dictionaries: dict[str, str] = model.layout.get("dictionaries") or {}
-        if not dictionaries:
-            return None
-        name = dictionaries.get(language or "")
-        if name is None and language:
-            base = language.lower().split("_")[0].split("-")[0]
-            name = next((v for k, v in dictionaries.items() if k.lower().split("_")[0] == base), None)
-        if name is None and len(dictionaries) == 1:
-            name = next(iter(dictionaries.values()))
-        return Path(model.path) / name if name else None
-    return model.file("dictionary")
 
 
 class _NullJob:

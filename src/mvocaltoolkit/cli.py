@@ -365,6 +365,42 @@ def cmd_fix(args) -> None:
             print(f"  failed {item['path']}: {item['error']}")
 
 
+def cmd_g2p(args) -> None:
+    from .api_models import TextRequest  # noqa: PLC0415
+    from .pipelines.extra import run_text  # noqa: PLC0415
+
+    tk = _toolkit(args)
+    req = TextRequest(texts=args.text, language=args.language, model=args.model)
+    result = asyncio.run(run_text(tk, None, req, validate_only=args.validate))
+    if args.json:
+        _print(result)
+        return
+    for item in result["items"]:
+        if args.validate:
+            unknown = item.get("unknown_words", [])
+            print(f"{item['text']}: " + (", ".join(unknown) if unknown else "all words are known"))
+            continue
+        guessed = item.get("guessed", {})
+        for token, phonemes in zip(item.get("tokens", []), item.get("phonemes", [])):
+            mark = " (guessed)" if guessed.get(token) else ""
+            print(f"{token}\t{' '.join(phonemes) if phonemes else '?'}{mark}")
+
+
+def cmd_words(args) -> None:
+    from .text.g2p import load_user_words, save_user_words  # noqa: PLC0415
+
+    home = Home(args.home)
+    words = load_user_words(home, args.model)
+    if args.action == "add":
+        words[args.word] = args.phonemes
+        save_user_words(home, args.model, words)
+    elif args.action == "remove":
+        words.pop(args.word, None)
+        save_user_words(home, args.model, words)
+    for word, phonemes in sorted(load_user_words(home, args.model).items()):
+        print(f"{word}\t{' '.join(phonemes)}")
+
+
 def cmd_convert(args) -> None:
     label = formats.read(Path(args.input), args.from_format)
     fmt = args.to_format or formats.detect_format(Path(args.output))
@@ -531,6 +567,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--from", dest="from_format")
     p.add_argument("--to", dest="to_format")
     p.set_defaults(func=cmd_convert)
+
+    p = sub.add_parser("g2p", help="Words to phonemes with an aligner model's dictionary, own words and G2P")
+    p.add_argument("text", nargs="+", help="texts (one argument per text)")
+    p.add_argument("--model", "-m", required=True, help="aligner model id")
+    p.add_argument("--language", "-l")
+    p.add_argument("--validate", action="store_true", help="only list the words missing in the dictionary")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_g2p)
+
+    p = sub.add_parser("words", help="Own words of an aligner model, used by every request with it")
+    p.add_argument("action", choices=["list", "add", "remove"])
+    p.add_argument("model", help="aligner model id")
+    p.add_argument("word", nargs="?")
+    p.add_argument("phonemes", nargs="*")
+    p.set_defaults(func=cmd_words)
 
     p = sub.add_parser("config", help="Show or change settings")
     p.add_argument("action", choices=["show", "set", "token"])

@@ -265,10 +265,16 @@ separation can make clean recordings worse.
 
 - `POST /text/normalize` `{"texts": [...], "language": "ja"}` → tokens.
 - `POST /text/g2p` `{"texts": [...], "model": "sofa-ru-hhskt-v0.0.1"}` → tokens, phonemes per token,
-  `unknown_words`, `guessed` (phonemes from the G2P model).
+  `unknown_words`, `guessed` (phonemes from the G2P model). A model without a G2P model of its own (HubertFA,
+  SOFA without `g2p/`) borrows the G2P of another installed SOFA model of the language; a guess is used only when
+  the model knows every phoneme of it.
   With a TIFA model: its own G2P; tokens are the words it found, phonemes are the first reading, and
   `candidates` lists all readings of words that have several (alignment picks one by the audio).
-- `POST /text/validate` — like g2p, only the unknown words.
+- `POST /text/validate` — like g2p, only the unknown words (with `guessed` when a G2P can spell them).
+- `GET /models/{id}/words`, `PUT /models/{id}/words` `{"word": ["ph", ...]}` — the user's own words of an aligner
+  model, kept in `<home>/dictionaries/<id>.txt` and used by every request with that model (`/align`, `/text/*`).
+  Alignment also adds G2P guesses for words the dictionary lacks (with `g2p: "auto"`), so a word fails only
+  when no G2P can spell it. CLI: `mvt g2p "text" -m <model> [--validate]`, `mvt words list|add|remove <model> [word phonemes…]`.
 - `POST /convert` `{"content": "...", "from_format": "textgrid", "to_format": "htk"}` or `{"path": ...}`.
 
 ## Engines and models

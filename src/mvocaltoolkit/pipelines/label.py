@@ -12,6 +12,7 @@ from ..api_models import AlignRequest, ItemResult, TranscribeOptions, Transcribe
 from ..jobs import Job
 from ..labels import Interval, Label
 from ..text import normalize as text_normalize
+from ..text.g2p import fill_unknown, load_user_words
 from ..text.rules import apply_rule_sets
 from ..toolkit import Toolkit
 from .io import Item, OutputWriter, resolve_inputs
@@ -161,7 +162,8 @@ def _label_from_engine(res: dict[str, Any]) -> Label:
     return label
 
 
-def _align_params(model, req: AlignRequest, chunk: list[Item], language: str | None) -> dict[str, Any]:
+def _align_params(model, req: AlignRequest, chunk: list[Item], language: str | None,
+                  extra_words: dict[str, list[str]] | None = None) -> dict[str, Any]:
     params: dict[str, Any] = {
         "model": {"path": model.path, "layout": model.layout},
         "items": [{"audio": str(i.audio), "name": i.name, "words": i.words, "phonemes": i.phonemes, "text": i.text}
@@ -169,8 +171,9 @@ def _align_params(model, req: AlignRequest, chunk: list[Item], language: str | N
         "g2p": req.g2p,
         "skip_unknown_words": req.skip_unknown_words,
     }
-    if req.extra_words:
-        params["extra_words"] = req.extra_words
+    words = req.extra_words if extra_words is None else extra_words
+    if words:
+        params["extra_words"] = words
     if model.engine == "tifa":
         params.update({"language": language, "extra_languages": req.extra_languages})
     elif model.engine == "hubertfa":
@@ -239,8 +242,18 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
             if not toks:
                 item.data["error"] = "Empty text after normalization"
 
-    # 4. alignment
+    # 4. alignment, with the user's own words and G2P guesses for the words the dictionary lacks
     to_align = [i for i in items if "error" not in i.data]
+    extra_words = dict(req.extra_words)
+    if req.g2p == "auto" or model.engine in OWN_G2P_ENGINES:
+        try:
+            if model.engine in OWN_G2P_ENGINES:
+                extra_words = {**load_user_words(tk.home, model.id), **extra_words}
+            else:
+                extra_words = await fill_unknown(tk, model, language, [i.words or [] for i in to_align if i.phonemes is None],
+                                                 extra_words)
+        except Exception as e:  # noqa: BLE001
+            job.log(f"own words / G2P: {e}")
     report = _sub_progress(job, 0.45, 0.95, "align")
     writer = OutputWriter(req.output, tk.home, job.id)
     total = max(1, len(to_align))
@@ -259,7 +272,7 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
             report(done / total, data.get("message", "Aligning"), {"items_done": int(done), "items_total": len(to_align)})
 
         results = await tk.engines.call(
-            model.engine, "align", _align_params(model, req, chunk, language), on_progress=on_progress, log=job.log
+            model.engine, "align", _align_params(model, req, chunk, language, extra_words), on_progress=on_progress, log=job.log
         )
         for item, res in zip(chunk, results):
             if res.get("unknown_words"):
