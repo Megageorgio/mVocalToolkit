@@ -40,6 +40,7 @@ from ..models.store import ModelNotFound, model_listing
 from ..pipelines.refine import run_refine
 from ..pipelines.extra import run_midi, run_pitch, run_resynth, run_segment, run_separate, run_tempo, run_text
 from ..pipelines.label import run_align, run_transcribe
+from ..text.g2p import load_user_words, save_user_words
 from ..text.languages import language_info
 from ..text.rules import RULE_SETS
 from ..clients import STALE_SECONDS, Clients
@@ -177,8 +178,11 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
                 data[secret] = "***"
         return data
 
+    # POST too: some HTTP clients (Java's HttpURLConnection) can't send PATCH
+    @app.post("/settings", tags=["system"], dependencies=[Depends(auth)])
     @app.patch("/settings", tags=["system"], dependencies=[Depends(auth)])
     async def patch_settings(values: dict[str, Any], tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        device = tk.settings.device
         for key, value in values.items():
             if key in ("host", "port", "token"):
                 continue  # need a restart / CLI
@@ -187,6 +191,9 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
             else:
                 tk.settings.extra[key] = value
         tk.home.save_settings(tk.settings)
+        if tk.settings.device != device:
+            # engines read the device when they start; busy ones change after their work
+            await tk.engines.stop_idle()
         return await get_settings(tk)
 
     @app.post("/shutdown", tags=["system"], dependencies=[Depends(auth)])
@@ -369,6 +376,16 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         if not tk.models.remove(model_id):
             raise HTTPException(404, "Not installed")
         return {"ok": True}
+
+    @app.get("/models/{model_id}/words", tags=["models"], dependencies=[Depends(auth)])
+    async def model_words(model_id: str, tk: Toolkit = Depends(get_tk)) -> dict[str, list[str]]:
+        """The user's own words of an aligner model (used by every request with it)."""
+        return load_user_words(tk.home, model_id)
+
+    @app.put("/models/{model_id}/words", tags=["models"], dependencies=[Depends(auth)])
+    async def put_model_words(model_id: str, words: dict[str, list[str]], tk: Toolkit = Depends(get_tk)) -> dict[str, list[str]]:
+        """Replaces the user's own words of a model: {"word": ["ph", ...]}; {} removes them all."""
+        return save_user_words(tk.home, model_id, words)
 
     @app.post("/models/import", tags=["models"], dependencies=[Depends(auth)])
     async def import_model(req: ModelImportRequest, tk: Toolkit = Depends(get_tk)):

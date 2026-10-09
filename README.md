@@ -78,6 +78,8 @@ mvt separate song.mp3 --stems vocals                                # only when 
 mvt models import --engine sofa --path my_model.zip                 # a local model (folder or zip)
 mvt engines list | install <name> | remove <name> | info <name>
 mvt convert a.TextGrid a.lab
+mvt g2p "hello world" -m hubertfa-zh-ja-en-v0.0.7 -l en             # words -> phonemes, guesses for unknown words
+mvt words add sofa-ru-hhskt-v0.0.1 мурмур m u r m u r               # own words of a model, used by every request
 ```
 
 `label` transcribes files that have no text (`<name>.txt` or `<name>.lab` next to the audio is used as lyrics

@@ -399,3 +399,48 @@ def test_storage_usage_and_cleanup(tmp_path):
         client.post("/storage/cleanup", json={})
         assert not any((home / "outputs").iterdir()) and not any((home / "jobs").iterdir())
         assert (home / "models" / model).is_dir()
+
+
+def test_own_words_and_borrowed_g2p(tmp_path):
+    make_wav(tmp_path / "w.wav")
+    with _client(tmp_path) as client:
+        folder = make_hubertfa_model(tmp_path / "hfa_src" / "hfa")
+        (folder / "dictionaries" / "en.txt").write_text("hello\thh ah l ow\nex\tx\n", encoding="utf-8")
+        client.post("/models/import", json={"engine": "hubertfa", "path": str(folder), "id": "hfa"})
+
+        def align(text):
+            job = client.post("/align", json={
+                "input": {"items": [{"path": str(tmp_path / "w.wav"), "text": text}]}, "model": "hfa",
+                "language": "en", "non_lexical_phonemes": [], "output": {"formats": [], "return_labels": True},
+            }).json()
+            return _wait(client, job["id"])
+
+        # HubertFA has no G2P: a word missing in the dictionary fails the file
+        check = client.post("/text/validate", json={"texts": ["hello nope"], "model": "hfa", "language": "en"}).json()
+        assert check["items"][0]["unknown_words"] == ["nope"]
+        assert align("hello nope")["result"]["items"][0]["ok"] is False
+        # an installed English SOFA model lends its G2P (the fake one spells every word "x", a phoneme hfa knows)
+        _import_model(client, tmp_path)
+        g2p = client.post("/text/g2p", json={"texts": ["hello nope"], "model": "hfa", "language": "en"}).json()
+        assert g2p["items"][0]["phonemes"][1] == ["x"] and g2p["items"][0]["guessed"] == {"nope": ["x"]}
+        info = align("hello nope")
+        assert info["status"] == "done", info
+        assert [p["text"] for p in info["result"]["items"][0]["label"]["tiers"]["phones"]] == ["SP", "hh", "ah", "l", "ow", "x", "SP"]
+        # own words win over guesses and stay with the model
+        assert client.put("/models/hfa/words", json={"nope": ["hh", "ow"], "": ["x"]}).json() == {"nope": ["hh", "ow"]}
+        assert client.get("/models/hfa/words").json() == {"nope": ["hh", "ow"]}
+        check = client.post("/text/validate", json={"texts": ["hello nope"], "model": "hfa", "language": "en"}).json()
+        assert check["items"][0]["unknown_words"] == []
+        phones = [p["text"] for p in align("hello nope")["result"]["items"][0]["label"]["tiers"]["phones"]]
+        assert phones == ["SP", "hh", "ah", "l", "ow", "hh", "ow", "SP"]
+        assert client.put("/models/hfa/words", json={}).json() == {}
+        assert client.get("/models/hfa/words").json() == {}
+
+
+def test_device_change_restarts_idle_engines(tmp_path):
+    with _client(tmp_path) as client:
+        model = _import_model(client, tmp_path)
+        client.post("/text/g2p", json={"texts": ["hello nope"], "model": model})  # starts the sofa engine
+        assert {e["name"]: e for e in client.get("/engines").json()}["sofa"]["running"] is True
+        assert client.post("/settings", json={"device": "cpu"}).json()["device"] == "cpu"
+        assert {e["name"]: e for e in client.get("/engines").json()}["sofa"]["running"] is False
