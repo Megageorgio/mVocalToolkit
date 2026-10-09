@@ -338,7 +338,7 @@ Source types: `url`, `github_release` (`asset` is a file name pattern or a list 
 
 ## Settings
 
-`GET /settings`, `PATCH /settings` (or `mvt config show|set`):
+`GET /settings`, `PATCH /settings` (also `POST`; changing `device` restarts the idle engines) (or `mvt config show|set`):
 
 | key | default | |
 |---|---|---|

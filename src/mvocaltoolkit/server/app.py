@@ -178,6 +178,8 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
                 data[secret] = "***"
         return data
 
+    # POST too: some HTTP clients (Java's HttpURLConnection) can't send PATCH
+    @app.post("/settings", tags=["system"], dependencies=[Depends(auth)])
     @app.patch("/settings", tags=["system"], dependencies=[Depends(auth)])
     async def patch_settings(values: dict[str, Any], tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
         device = tk.settings.device

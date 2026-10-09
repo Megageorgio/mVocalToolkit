@@ -442,5 +442,5 @@ def test_device_change_restarts_idle_engines(tmp_path):
         model = _import_model(client, tmp_path)
         client.post("/text/g2p", json={"texts": ["hello nope"], "model": model})  # starts the sofa engine
         assert {e["name"]: e for e in client.get("/engines").json()}["sofa"]["running"] is True
-        assert client.patch("/settings", json={"device": "cpu"}).json()["device"] == "cpu"
+        assert client.post("/settings", json={"device": "cpu"}).json()["device"] == "cpu"
         assert {e["name"]: e for e in client.get("/engines").json()}["sofa"]["running"] is False
