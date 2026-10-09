@@ -323,6 +323,15 @@ class EngineManager:
         if worker is not None:
             await worker.stop()
 
+    async def stop_idle(self) -> list[str]:
+        """Stops the engines that aren't working on something (they start again with the current settings)."""
+        stopped = []
+        for name, worker in list(self.workers.items()):
+            if not worker.lock.locked():
+                await self.stop(name)
+                stopped.append(name)
+        return stopped
+
     async def stop_all(self) -> None:
         for name in list(self.workers):
             await self.stop(name)

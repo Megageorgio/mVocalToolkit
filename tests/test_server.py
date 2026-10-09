@@ -435,3 +435,12 @@ def test_own_words_and_borrowed_g2p(tmp_path):
         assert phones == ["SP", "hh", "ah", "l", "ow", "hh", "ow", "SP"]
         assert client.put("/models/hfa/words", json={}).json() == {}
         assert client.get("/models/hfa/words").json() == {}
+
+
+def test_device_change_restarts_idle_engines(tmp_path):
+    with _client(tmp_path) as client:
+        model = _import_model(client, tmp_path)
+        client.post("/text/g2p", json={"texts": ["hello nope"], "model": model})  # starts the sofa engine
+        assert {e["name"]: e for e in client.get("/engines").json()}["sofa"]["running"] is True
+        assert client.patch("/settings", json={"device": "cpu"}).json()["device"] == "cpu"
+        assert {e["name"]: e for e in client.get("/engines").json()}["sofa"]["running"] is False

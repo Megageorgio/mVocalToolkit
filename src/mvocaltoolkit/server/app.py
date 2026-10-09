@@ -180,6 +180,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
 
     @app.patch("/settings", tags=["system"], dependencies=[Depends(auth)])
     async def patch_settings(values: dict[str, Any], tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        device = tk.settings.device
         for key, value in values.items():
             if key in ("host", "port", "token"):
                 continue  # need a restart / CLI
@@ -188,6 +189,9 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
             else:
                 tk.settings.extra[key] = value
         tk.home.save_settings(tk.settings)
+        if tk.settings.device != device:
+            # engines read the device when they start; busy ones change after their work
+            await tk.engines.stop_idle()
         return await get_settings(tk)
 
     @app.post("/shutdown", tags=["system"], dependencies=[Depends(auth)])
