@@ -1,6 +1,6 @@
 [project]
 name = "mvocaltoolkit"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local API server for automatic phoneme labeling and singing voice dataset tools"
 readme = "README.md"
 license = { text = "MIT" }
