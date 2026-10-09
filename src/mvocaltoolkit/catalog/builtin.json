@@ -81,7 +81,7 @@
         "type": "github_release",
         "repo": "Megageorgio/SOFA-Models",
         "tag": "Russian_v0.0.1",
-        "asset": "*safetensors*.zip"
+        "asset": "hhskt_ru_v0.0.1_safetensors.zip"
       }
     },
     {
@@ -356,7 +356,7 @@
         "type": "github_release",
         "repo": "wolfgitpr/HubertFA",
         "tag": "v0.0.7",
-        "asset": "*hfa_model*.zip"
+        "asset": "1218_hfa_model_new_dict.zip"
       },
       "version": "0.0.7",
       "size_hint": "245 MB"
@@ -439,7 +439,7 @@
         "type": "github_release",
         "repo": "openvpi/GAME",
         "tag": "v1.0.3",
-        "asset": "*-large-onnx.zip"
+        "asset": "GAME-1.0.3-large-onnx.zip"
       },
       "size_hint": "345 MB"
     },
@@ -458,7 +458,7 @@
         "type": "github_release",
         "repo": "openvpi/GAME",
         "tag": "v1.0.3",
-        "asset": "*-medium-onnx.zip"
+        "asset": "GAME-1.0.3-medium-onnx.zip"
       },
       "size_hint": "171 MB"
     },
@@ -478,7 +478,7 @@
         "type": "github_release",
         "repo": "openvpi/GAME",
         "tag": "v1.0.3",
-        "asset": "*-small-onnx.zip"
+        "asset": "GAME-1.0.3-small-onnx.zip"
       },
       "size_hint": "44 MB"
     },
