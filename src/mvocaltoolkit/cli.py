@@ -134,7 +134,7 @@ def cmd_models(args) -> None:
         if entry is None:
             raise SystemExit(f"{args.id} is not in the catalogs")
 
-        def progress(value, message):
+        def progress(value, message, _detail=None):
             pct = f"{value * 100:5.1f}%" if value is not None else "      "
             print(f"\r{pct} {message[:100]:<100}", end="", file=sys.stderr)
 
@@ -404,6 +404,16 @@ def cmd_update(args) -> None:
         raise SystemExit(self_update())
 
 
+def cmd_storage(args) -> None:
+    from . import storage  # noqa: PLC0415
+
+    home = Home(args.home)
+    if args.action == "cleanup":
+        _print(storage.cleanup(home, None if args.all else float(args.days)))
+    else:
+        _print(storage.usage(home))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mvt", description="mVocalToolkit")
     parser.add_argument("--home", help="Toolkit folder (default: MVT_HOME or ~/mVocalToolkit)")
@@ -527,6 +537,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("key", nargs="?")
     p.add_argument("value", nargs="?")
     p.set_defaults(func=cmd_config)
+
+    p = sub.add_parser("storage", help="Disk space used by models, engines and job leftovers; remove old leftovers")
+    p.add_argument("action", choices=["show", "cleanup"], nargs="?", default="show")
+    p.add_argument("--days", type=float, default=0, help="cleanup: only what is older than this many days")
+    p.add_argument("--all", action="store_true", help="cleanup: everything, whatever its age")
+    p.set_defaults(func=cmd_storage)
 
     p = sub.add_parser("update", help="Check for a new version")
     p.add_argument("--apply", action="store_true", help="upgrade (uv tool installs)")

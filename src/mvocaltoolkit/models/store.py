@@ -24,7 +24,9 @@ from ..settings import Home, Settings
 from . import layout as layouts
 from .catalog import Catalog, CatalogEntry, ModelSource
 
-ProgressFunc = Callable[[float | None, str], None]
+# (fraction or None, message, detail=None); detail of a download: file, file_index, files, done, total (bytes),
+# speed (bytes/s), eta (s)
+ProgressFunc = Callable[..., None]
 
 ARCHIVE_SUFFIXES = (".zip", ".oudep", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".tar.bz2", ".rar", ".7z")
 CHECKPOINT_SUFFIXES = (".pt", ".pth", ".ckpt", ".safetensors", ".onnx")
@@ -167,7 +169,7 @@ class ModelStore:
     # ---------- download ----------
 
     async def download(self, entry: CatalogEntry, progress: ProgressFunc | None = None) -> list[InstalledModel]:
-        progress = progress or (lambda _v, _m: None)
+        progress = _with_detail(progress) if progress else (lambda _v, _m, _d=None: None)
         if entry.source.type == "engine":
             # the engine downloads it on first use; register so that it shows as installed
             target = self.home.models / _safe(entry.id)
@@ -179,7 +181,7 @@ class ModelStore:
         work = self.home.cache / "work" / _safe(entry.id)
         work.mkdir(parents=True, exist_ok=True)
         files = await self._fetch(entry.source, work, progress)
-        progress(None, "Extracting")
+        progress(None, "Extracting", {})
         content = work / "content"
         shutil.rmtree(content, ignore_errors=True)
         content.mkdir()
@@ -208,7 +210,7 @@ class ModelStore:
             shutil.move(str(model_root), str(target))
             installed = [self._register(entry, target, detected, source=entry.id)]
         shutil.rmtree(work, ignore_errors=True)
-        progress(1.0, "Installed")
+        progress(1.0, "Installed", {})
         return installed
 
     def _register_pack(self, entry: CatalogEntry, root: Path) -> list[InstalledModel]:
@@ -354,7 +356,9 @@ class ModelStore:
                     secs = int((length - done) / 2**20 / speed)
                     left = f", {secs // 60}:{secs % 60:02d} left"
                 files_text = f" [{i + 1}/{total}]" if total > 1 else ""
-                progress(overall, f"Downloading {name}{files_text}: {size_text}, {speed:.1f} MB/s{left}")
+                detail = {"file": name, "file_index": i + 1, "files": total, "done": done, "total": length,
+                          "speed": speed * 2**20, "eta": int((length - done) / 2**20 / speed) if length and speed > 0.05 else None}
+                progress(overall, f"Downloading {name}{files_text}: {size_text}, {speed:.1f} MB/s{left}", detail)
 
             await download_file(url, target, file_progress, sha256=source.sha256 if total == 1 else None,
                                 headers=self._auth_headers(url))
@@ -421,6 +425,19 @@ class ModelStore:
             raise
         cache.write_text(json.dumps(data), encoding="utf-8")
         return data
+
+
+def _with_detail(progress: Callable[..., None]) -> Callable[..., None]:
+    """[progress] as a function of (value, message, detail); older ones take (value, message) only."""
+    import inspect  # noqa: PLC0415
+
+    try:
+        params = inspect.signature(progress).parameters.values()
+        takes_three = any(p.kind == p.VAR_POSITIONAL for p in params) or len(
+            [p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]) >= 3
+    except (TypeError, ValueError):
+        takes_three = False
+    return progress if takes_three else (lambda v, m, _d=None: progress(v, m))
 
 
 async def download_file(

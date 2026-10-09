@@ -82,8 +82,12 @@ download them with `GET /files/download?path=...`.
 ```
 
 - `GET /jobs/{id}?wait=10` — current state, waits up to 10 s for completion.
-- `WS /jobs/{id}/events` — `state`, `progress` (`progress`, `stage`, `message`), `log`, `item_error`,
+- `WS /jobs/{id}/events` — `state`, `progress` (`progress`, `stage`, `message`, `detail`), `log`, `item_error`,
   `paused`, `resumed`, `finished`.
+
+`detail` (also in `GET /jobs/{id}`) holds the numbers of the current step, for a progress display: while a model
+downloads `file`, `file_index`, `files`, `done` and `total` (bytes, `total` null when unknown), `speed` (bytes/s),
+`eta` (seconds or null); while files are transcribed or aligned `items_done`, `items_total`. Empty otherwise.
 - `POST /jobs/{id}/cancel`
 - `POST /jobs/{id}/resume` — continue a paused job.
 
@@ -279,6 +283,15 @@ separation can make clean recordings worse.
   several models inside are imported separately.
 - `GET /catalogs`, `POST /catalogs {"ref": "https://.../catalog.json"}`, `POST /catalogs/refresh`.
 
+### Disk space
+
+- `GET /storage` (`mvt storage`) — bytes of each model (`models`), each engine's environment with its sources
+  (`engines`), files the engines downloaded themselves such as Whisper models (`engine_downloads`) and the
+  leftovers of jobs (`temporary`: `uploads`, `outputs`, `jobs`, `cache/work` with unfinished downloads).
+- `POST /storage/cleanup {"older_than_days": 7, "parts": ["uploads"]}` (`mvt storage cleanup --days 7`) — removes
+  leftovers; without `older_than_days` all of them, without `parts` every temporary part. While a job runs only
+  entries older than a day go. Leftovers older than `keep_files_days` are removed when the server starts.
+
 ### Catalog format
 
 ```json
@@ -331,3 +344,4 @@ Source types: `url`, `github_release` (`asset` is a file name pattern or a list 
 | `catalogs` | [] | extra catalogs |
 | `github_token`, `hf_token` | | optional |
 | `max_parallel_jobs` | 2 | |
+| `keep_files_days` | 14 | uploads, results in `<home>/outputs` and job history older than this are removed at start; 0 = kept |

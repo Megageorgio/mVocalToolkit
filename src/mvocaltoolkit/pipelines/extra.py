@@ -245,13 +245,13 @@ def _write_f0(folder: Path, name: str, hop: float, f0: list[float], fmts: list[s
         if fmt == "csv":
             path = folder / f"{name}.f0.csv"
             lines = ["time,f0"] + [f"{i * hop:.4f},{v:.3f}" for i, v in enumerate(f0)]
-            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
         elif fmt == "json":
             path = folder / f"{name}.f0.json"
             path.write_text(json.dumps({"hop": hop, "f0": f0}), encoding="utf-8")
         elif fmt == "txt":
             path = folder / f"{name}.f0.txt"
-            path.write_text("\n".join(f"{v:.3f}" for v in f0) + "\n", encoding="utf-8")
+            path.write_text("\n".join(f"{v:.3f}" for v in f0) + "\n", encoding="utf-8", newline="\n")
         else:
             raise ValueError(f"Unknown f0 format {fmt!r} (csv, json, txt)")
         files[fmt] = str(path)

@@ -364,3 +364,38 @@ def test_refine_ready_labels(tmp_path):
                                            "model": refiner, "output": {"formats": []}}).json()
         phones = _wait(client, job["id"])["result"]["items"][0]["label"]["tiers"]["phones"]
         assert abs(phones[1]["start"] - 0.31) < 1e-6
+
+
+def test_storage_usage_and_cleanup(tmp_path):
+    import os  # noqa: PLC0415
+
+    wav = make_wav(tmp_path / "up.wav")
+    with _client(tmp_path) as client:
+        model = _import_model(client, tmp_path)
+        with open(wav, "rb") as f:
+            uploaded = client.post("/files", files={"file": ("up.wav", f, "audio/wav")}).json()
+        job = client.post("/align", json={
+            "input": {"items": [{"file_id": uploaded["file_id"], "text": "hello"}]},
+            "model": model, "output": {"formats": ["htk"]},
+        }).json()
+        info = _wait(client, job["id"])
+        assert info["status"] == "done" and "detail" in info
+        usage = client.get("/storage").json()
+        assert [m["id"] for m in usage["models"]] == [model] and usage["models"][0]["bytes"] > 0
+        assert usage["temporary"]["uploads"] > 0 and usage["temporary"]["outputs"] > 0
+        assert usage["keep_files_days"] == 14
+        # recent leftovers stay when only old ones are asked for
+        assert client.post("/storage/cleanup", json={"older_than_days": 7}).json()["removed"] == 0
+        home = tmp_path / "home"
+        old = time.time() - 30 * 86400
+        for entry in (home / "uploads").iterdir():
+            for root, _dirs, files in os.walk(entry):
+                for name in files:
+                    os.utime(os.path.join(root, name), (old, old))
+            os.utime(entry, (old, old))
+        result = client.post("/storage/cleanup", json={"older_than_days": 7, "parts": ["uploads"]}).json()
+        assert result["removed"] == 1 and result["freed"] > 0
+        assert not any((home / "uploads").iterdir()) and any((home / "outputs").iterdir())
+        client.post("/storage/cleanup", json={})
+        assert not any((home / "outputs").iterdir()) and not any((home / "jobs").iterdir())
+        assert (home / "models" / model).is_dir()
