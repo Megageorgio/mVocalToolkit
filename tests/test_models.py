@@ -3,12 +3,13 @@ import json
 import http.server
 import threading
 import zipfile
+from pathlib import Path
 from functools import partial
 
-from conftest import make_hubertfa_model, make_sofa_model
+from conftest import make_hubertfa_model, make_sofa_model, make_tifa_model
 
 from mvocaltoolkit.models.catalog import Catalog, CatalogEntry, ModelSource
-from mvocaltoolkit.models.layout import detect_hubertfa, detect_sofa, find_model_dirs
+from mvocaltoolkit.models.layout import detect_hubertfa, detect_sofa, detect_tifa, find_model_dirs
 from mvocaltoolkit.models.store import ModelStore, model_listing
 from mvocaltoolkit.settings import Home
 
@@ -97,6 +98,20 @@ def test_hubertfa_layout_and_import(tmp_path):
     # an aligner model is found by path for any of the aligner engines
     resolved = store.resolve_local(["sofa", "hubertfa"], str(folder))
     assert resolved.engine == "hubertfa"
+
+
+def test_tifa_layout_and_import(tmp_path):
+    _home, store = _store(tmp_path)
+    folder = make_tifa_model(tmp_path / "tifa" / "TIFA-1.0-ST")
+    layout = detect_tifa(folder)
+    assert layout["checkpoint"] == "model.pt" and layout["languages"] == ["en", "ja", "zh"]
+    # not taken for a model of another aligner
+    assert detect_sofa(folder) is None and detect_hubertfa(folder) is None
+    installed = store.import_local("tifa", str(tmp_path / "tifa"))
+    assert installed[0].languages == ["en", "ja", "zh"] and installed[0].tasks == ["align"]
+    assert (Path(installed[0].path) / "dictionaries" / "zh.txt").exists()
+    resolved = store.resolve_local(["sofa", "hubertfa", "tifa"], str(folder))
+    assert resolved.engine == "tifa"
 
 
 def test_pack_members_are_listed_and_downloaded_on_use(tmp_path):

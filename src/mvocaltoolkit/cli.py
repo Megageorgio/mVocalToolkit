@@ -209,6 +209,7 @@ def cmd_label(args) -> None:
         input=_input_spec(args.paths),
         model=args.model,
         language=args.lang,
+        extra_languages=args.also_lang.split(",") if args.also_lang else [],
         mode=args.mode,
         ap_detector="none" if args.no_breath else "loudness_spectral_centroid",
         dictionary=args.dictionary,
@@ -438,10 +439,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task", default="align")
     p.set_defaults(func=cmd_languages)
 
-    p = sub.add_parser("label", help="Transcribe (if needed) and align audio files (SOFA or HubertFA)")
+    p = sub.add_parser("label", help="Transcribe (if needed) and align audio files (SOFA, HubertFA or TIFA)")
     p.add_argument("paths", nargs="+", help="audio files or a folder")
     p.add_argument("--model", "-m", required=True, help="aligner model id (see: mvt languages) or path:")
     p.add_argument("--lang", "-l")
+    p.add_argument("--also-lang", "-L", help="TIFA: other languages in the texts, e.g. en for English words in zh")
     p.add_argument("--mode", choices=["force", "match"], default="force")
     p.add_argument("--dictionary", help="custom dictionary file")
     p.add_argument("--no-breath", action="store_true", help="don't detect breaths (AP)")

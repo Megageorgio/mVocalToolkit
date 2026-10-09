@@ -118,7 +118,7 @@ If the GPU runs out of memory, the batch size is halved automatically.
 ## Alignment
 
 `POST /align` (`POST /pipelines/label` is the same with all steps). The aligner is chosen by the model:
-SOFA or HubertFA.
+SOFA, HubertFA or TIFA.
 
 ```json
 {
@@ -143,6 +143,17 @@ SOFA or HubertFA.
 - `model`: catalog/installed id, or `path:D:/models/my_sofa` for a model folder that isn't installed.
   Catalog models are downloaded automatically on first use.
 - `language`: language of the texts. Multilingual models (HubertFA) use the dictionary of this language.
+- `extra_languages` (TIFA): other languages that may occur in the texts, in priority order, e.g. `["en"]` for
+  English words in Chinese lyrics. Phonemes of the main language come without a prefix, the others with it
+  (`en/s`).
+- TIFA takes the text as it is and does its own G2P (dictionaries, MeCab for Japanese, an LSTM model for
+  unknown English words); when a word has several readings it picks the one heard in the audio.
+  `words` (fixed word boundaries) and `phonemes` (known phonemes) items work too; `extra_words` fixes the
+  phonemes of given words. Each item gets `data.diagnosis` with self-check scores (`agreement` 0..1: how well
+  the text fits the audio; `confidence` −1..1: how well each phoneme's span fits it; `determinacy`,
+  `monotonicity`; `skipped_phonemes`: phonemes the model found no room for, kept as 1 ms intervals). Low values
+  mark files worth checking. The label has a `texts` tier (written words, e.g. 猫) when it differs from the
+  `words` tier (readings, e.g. ne ko).
 - `mode` (SOFA): `force` uses every phoneme; `match` allows the alignment to skip phonemes that aren't sung.
 - `g2p`: `auto` = dictionary, then the model's G2P model (`g2p/` folder, SOFA) for unknown words;
   `dictionary` = dictionary only; `none` = tokens are already phonemes.
@@ -251,6 +262,8 @@ separation can make clean recordings worse.
 - `POST /text/normalize` `{"texts": [...], "language": "ja"}` → tokens.
 - `POST /text/g2p` `{"texts": [...], "model": "sofa-ru-hhskt-v0.0.1"}` → tokens, phonemes per token,
   `unknown_words`, `guessed` (phonemes from the G2P model).
+  With a TIFA model: its own G2P; tokens are the words it found, phonemes are the first reading, and
+  `candidates` lists all readings of words that have several (alignment picks one by the audio).
 - `POST /text/validate` — like g2p, only the unknown words.
 - `POST /convert` `{"content": "...", "from_format": "textgrid", "to_format": "htk"}` or `{"path": ...}`.
 
@@ -296,7 +309,7 @@ separation can make clean recordings worse.
 }
 ```
 
-`engine`: `sofa`, `hubertfa`, `whisperx`, `wfl_asr`, `game`, `tempo`, `pitch`, `separation`. The task comes from
+`engine`: `sofa`, `hubertfa`, `tifa`, `whisperx`, `wfl_asr`, `game`, `tempo`, `pitch`, `separation`. The task comes from
 the engine; `"tasks": [...]` overrides it. Pack `models` are optional: listed members are offered by language
 before the pack is downloaded (`folder` = folder name inside the archive); unlisted folders are registered as
 `<prefix><folder>` after the download.

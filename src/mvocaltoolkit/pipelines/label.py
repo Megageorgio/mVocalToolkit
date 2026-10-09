@@ -1,7 +1,7 @@
 """Transcription and forced alignment.
 
 transcribe:  audio -> text (WhisperX: batched, VAD) -> tokens (text frontend)
-align:       audio + text|words|phonemes (or transcribed) -> phoneme/word label (SOFA or HubertFA) -> rules -> files
+align:       audio + text|words|phonemes (or transcribed) -> phoneme/word label (SOFA, HubertFA or TIFA) -> rules -> files
 """
 
 from __future__ import annotations
@@ -17,7 +17,9 @@ from ..toolkit import Toolkit
 from .io import Item, OutputWriter, resolve_inputs
 
 CHUNK = 32  # items per engine request (progress & cancellation granularity)
-ALIGN_ENGINES = ("sofa", "hubertfa")
+ALIGN_ENGINES = ("sofa", "hubertfa", "tifa")
+# aligners that take the text as it is and do their own G2P (no text frontend, no dictionary of ours)
+OWN_G2P_ENGINES = ("tifa",)
 
 
 def _sub_progress(job: Job, start: float, end: float, stage: str):
@@ -152,21 +154,25 @@ def _label_from_engine(res: dict[str, Any]) -> Label:
         phones.append(Interval(start=float(start), end=float(end), text=str(text),
                                confidence=float(confidence) if confidence is not None else None))
     label.tiers["phones"] = phones
-    if res.get("words"):
-        label.tiers["words"] = [Interval(start=float(s), end=float(e), text=str(t)) for s, e, t, *_ in res["words"]]
+    for tier in ("words", "texts"):
+        if res.get(tier):
+            label.tiers[tier] = [Interval(start=float(s), end=float(e), text=str(t)) for s, e, t, *_ in res[tier]]
     return label
 
 
 def _align_params(model, req: AlignRequest, chunk: list[Item], language: str | None) -> dict[str, Any]:
     params: dict[str, Any] = {
         "model": {"path": model.path, "layout": model.layout},
-        "items": [{"audio": str(i.audio), "name": i.name, "words": i.words, "phonemes": i.phonemes} for i in chunk],
+        "items": [{"audio": str(i.audio), "name": i.name, "words": i.words, "phonemes": i.phonemes, "text": i.text}
+                  for i in chunk],
         "g2p": req.g2p,
         "skip_unknown_words": req.skip_unknown_words,
     }
     if req.extra_words:
         params["extra_words"] = req.extra_words
-    if model.engine == "hubertfa":
+    if model.engine == "tifa":
+        params.update({"language": language, "extra_languages": req.extra_languages})
+    elif model.engine == "hubertfa":
         params.update({
             "language": language,
             "non_lexical_phonemes": req.non_lexical_phonemes if req.ap_detector != "none" else [],
@@ -220,7 +226,8 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
 
     # 3. text frontend
     job.progress(0.4, stage="frontend")
-    pending = [i for i in items if "error" not in i.data and i.words is None and i.phonemes is None]
+    pending = [i for i in items if "error" not in i.data and i.words is None and i.phonemes is None
+               and model.engine not in OWN_G2P_ENGINES]
     by_lang: dict[str | None, list[Item]] = {}
     for item in pending:
         by_lang.setdefault(item.language or language, []).append(item)
@@ -258,6 +265,8 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
             if not res.get("ok", True):
                 item.data["error"] = res.get("error", "alignment failed")
                 continue
+            if res.get("diagnosis"):
+                item.data["diagnosis"] = res["diagnosis"]
             item.data["label"] = _label_from_engine(res)
         report((start + len(chunk)) / total, "Aligning")
 
@@ -297,7 +306,7 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
                 unknown_words=item.data.get("unknown_words"),
                 label=item.data.get("label") if req.output.return_labels else None,
                 files=item.data.get("files", {}),
-                data={k: item.data[k] for k in ("transcription", "refine", "refine_error") if k in item.data},
+                data={k: item.data[k] for k in ("transcription", "diagnosis", "refine", "refine_error") if k in item.data},
             ).model_dump(exclude_none=True)
         )
     return {"model": model.id, "engine": model.engine, "language": language, "items": results_out,

@@ -6,8 +6,9 @@ A local API server for automatic labeling of singing voice data. One toolkit, us
 - **Transcription** of lyrics — WhisperX (faster-whisper, batched, Silero VAD to skip silence and noise,
   automatic batch reduction on GPU out-of-memory).
 - **Forced alignment** — SOFA (dictionaries, G2P models for unknown words, breath (AP) detection, `.ckpt` and
-  `.safetensors` models, SOFA model packs) or HubertFA (ONNX, multilingual models, breath and other
-  non-lexical sound detection). The engine is chosen by the model.
+  `.safetensors` models, SOFA model packs), HubertFA (ONNX, multilingual models, breath and other
+  non-lexical sound detection) or TIFA (speech and singing, several languages in one text, picks the
+  pronunciation heard in the audio, self-check scores per file). The engine is chosen by the model.
 - **Phoneme segmentation without text** — WFL-ASR.
 - **Boundary refinement** — mRefinerModel moves the boundaries of ready labels (from any aligner or by hand)
   to where they are in the sound; optional after alignment or segmentation, off by default.
@@ -65,6 +66,7 @@ mvt languages --task align                                          # languages 
 mvt models list --task align --lang ru
 mvt label ./corpus -m sofa-ru-hhskt-v0.0.1 -f htk,textgrid,ds_csv
 mvt label ./corpus -m hubertfa-zh-ja-en-v0.0.7 -l ja                # a multilingual HubertFA model
+mvt label ./corpus -m tifa-1.0-st -l zh -L en                       # TIFA: Chinese lyrics with English words
 mvt label ./corpus -m sofa-pack-tgm_sofa_en                         # English model and its fixes
 mvt transcribe ./corpus -l ja                                       # writes .txt next to the audio
 mvt segment ./corpus -m wfl-asr-ft-en-ja
@@ -118,7 +120,7 @@ See [docs/API.md](docs/API.md) for details and examples.
 ## Models and catalogs
 
 Models come from catalogs (JSON). The built-in one contains Whisper models, Russian SOFA, the SOFA model
-packs, HubertFA, WFL-ASR, GAME, separation and pitch models.
+packs, HubertFA, TIFA, WFL-ASR, GAME, separation and pitch models.
 
 How a GUI uses them: it asks `GET /languages?task=align`, shows the languages, then the models of the chosen
 language (e.g. `person1-ru`, `hhskt-ru` for Russian), and starts `POST /align` with `"model": "<id>"`. If the
@@ -137,6 +139,7 @@ Model folders (detected automatically inside archives):
 SOFA:      model.ckpt + dict.txt [+ g2p/cfg.yaml + g2p/model.ptsd]
            model.safetensors + dict.txt + vocab.yaml + train_config.yaml + global_config.yaml [+ g2p/...]
 HubertFA:  model.onnx + vocab.json + config.json + VERSION + dictionaries (languages are read from vocab.json)
+TIFA:      model.pt + config.yaml + vocabulary.json [+ dictionaries/ + assets/] (languages: prefixes in vocabulary.json)
 ```
 
 ## Development

@@ -2,7 +2,7 @@
 
 import time
 
-from conftest import FAKE_ENGINES, make_hubertfa_model, make_sofa_model, make_wav
+from conftest import FAKE_ENGINES, make_hubertfa_model, make_sofa_model, make_tifa_model, make_wav
 from fastapi.testclient import TestClient
 
 from mvocaltoolkit.server.app import create_app
@@ -175,7 +175,33 @@ def test_languages_and_models_by_task(tmp_path):
         assert [lang["code"] for lang in separate] == ["*"]
         tasks = {t["task"]: t for t in client.get("/tasks").json()}
         assert tasks["align"]["language_specific"] and not tasks["pitch"]["language_specific"]
-        assert tasks["align"]["engines"] == ["hubertfa", "sofa"]
+        assert tasks["align"]["engines"] == ["hubertfa", "sofa", "tifa"]
+
+
+def test_align_with_tifa_model(tmp_path):
+    make_wav(tmp_path / "t.wav")
+    with _client(tmp_path) as client:
+        folder = make_tifa_model(tmp_path / "tifa_src" / "tifa")
+        assert client.post("/models/import", json={"engine": "tifa", "path": str(folder), "id": "tf"}).status_code == 200
+        job = client.post("/align", json={
+            "input": {"items": [{"path": str(tmp_path / "t.wav"), "text": "Ab, cd!"}]},
+            "model": "tf", "language": "zh", "extra_languages": ["en"],
+            "output": {"formats": ["textgrid"], "dir": str(tmp_path / "o")},
+        }).json()
+        info = _wait(client, job["id"])
+        assert info["status"] == "done", info
+        item = info["result"]["items"][0]
+        # the text reaches TIFA as it is (it does its own G2P), not through our text frontend
+        phones = [p["text"] for p in item["label"]["tiers"]["phones"]]
+        assert phones == ["SP", "A", "b", ",", "c", "d", "!", "SP"]
+        assert item["label"]["tiers"]["texts"][0]["text"] == "T"
+        assert item["data"]["diagnosis"]["agreement"] == 0.9
+        assert item["data"]["diagnosis"]["extra_languages"] == ["en"]
+        assert (tmp_path / "o" / "textgrid" / "t.TextGrid").exists()
+        g2p = client.post("/text/g2p", json={"texts": ["to read"], "model": "tf", "language": "en"}).json()
+        entry = g2p["items"][0]
+        assert entry["tokens"] == ["to", "read"] and entry["phonemes"][0] == ["t", "o"]
+        assert entry["candidates"] == {"read": [["r", "e", "a", "d"], ["x"]]}
 
 
 def test_align_with_hubertfa_model(tmp_path):

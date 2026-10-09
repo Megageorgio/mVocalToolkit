@@ -41,6 +41,19 @@ def make_sofa_model(folder: Path, words: dict[str, str] | None = None, safetenso
     return folder
 
 
+def make_tifa_model(folder: Path) -> Path:
+    import json  # noqa: PLC0415
+
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "model.pt").write_bytes(b"\0" * 16)
+    (folder / "config.yaml").write_text("model: {}\ninference:\n  g2p: {}\n", encoding="utf-8")
+    symbols = {"AP": 3, "en/hh": 4, "en/ah": 5, "zh/a": 6, "ja/a": 6}
+    (folder / "vocabulary.json").write_text(json.dumps({"symbols": symbols}), encoding="utf-8")
+    (folder / "dictionaries").mkdir(exist_ok=True)
+    (folder / "dictionaries" / "zh.txt").write_text("a\ta\n", encoding="utf-8")
+    return folder
+
+
 def make_hubertfa_model(folder: Path) -> Path:
     import json  # noqa: PLC0415
 

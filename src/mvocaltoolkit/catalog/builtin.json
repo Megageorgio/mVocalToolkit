@@ -362,6 +362,30 @@
       "size_hint": "245 MB"
     },
     {
+      "id": "tifa-1.0-st",
+      "engine": "tifa",
+      "name": "TIFA 1.0-ST (Mandarin, Cantonese, Japanese, English)",
+      "languages": [
+        "zh",
+        "yue",
+        "ja",
+        "en"
+      ],
+      "description": "Speech and singing aligner by OpenVPI. Languages can be mixed in one text; when a word can be read in several ways it picks the reading heard in the audio; gives self-check scores so badly aligned files can be found without listening to everything. Phonemes: DiffSinger sets (ds-zh-pinyin-lite, jyutping, Japanese romaji, ds_cmudict-07b).",
+      "author": "OpenVPI",
+      "license": "MIT",
+      "homepage": "https://github.com/openvpi/TIFA/releases/tag/v1.0.0",
+      "source": {
+        "type": "github_release",
+        "repo": "openvpi/TIFA",
+        "tag": "v1.0.0",
+        "asset": "TIFA-1.0-ST.zip",
+        "sha256": "6da6832cd2cb981aae1ccc2d9330f8f7c085ce7977d1eb13bff63531d038a88b"
+      },
+      "version": "1.0",
+      "size_hint": "151 MB"
+    },
+    {
       "id": "wfl-ru-hhskt-v0.0.1",
       "engine": "wfl_asr",
       "name": "WFL-ASR Russian hhskt_ru small v0.0.1 (m & HHS_kt)",

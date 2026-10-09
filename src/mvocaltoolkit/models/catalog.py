@@ -55,6 +55,7 @@ class ModelSource(BaseModel):
 ENGINE_TASKS: dict[str, list[str]] = {
     "sofa": ["align"],
     "hubertfa": ["align"],
+    "tifa": ["align"],
     "whisperx": ["transcribe"],
     "wfl_asr": ["segment"],
     "game": ["midi"],

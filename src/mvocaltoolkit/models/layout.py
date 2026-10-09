@@ -126,6 +126,24 @@ def detect_hubertfa(root: Path) -> dict[str, Any] | None:
     return layout
 
 
+def detect_tifa(root: Path) -> dict[str, Any] | None:
+    """A TIFA model: model.pt + config.yaml (with the inference G2P) + vocabulary.json (+ dictionaries/, assets/)."""
+    vocabulary, config = root / "vocabulary.json", root / "config.yaml"
+    if not vocabulary.is_file() or not config.is_file():
+        return None
+    ckpt = _first(root, "model.pt") or next(iter(_files(root, "*.pt", "*.ckpt")), None)
+    if ckpt is None:
+        return None
+    try:
+        symbols = json.loads(vocabulary.read_text(encoding="utf-8")).get("symbols")
+    except (OSError, ValueError):
+        return None
+    if not isinstance(symbols, dict):
+        return None
+    languages = sorted({s.split("/", 1)[0] for s in symbols if "/" in s})
+    return {"checkpoint": ckpt.name, "config": "config.yaml", "vocabulary": "vocabulary.json", "languages": languages}
+
+
 def detect_generic(root: Path) -> dict[str, Any] | None:
     ckpt = next(iter(_files(root, *(f"*{ext}" for ext in CHECKPOINT_EXT))), None)
     return {"checkpoint": ckpt.name} if ckpt is not None else {}
@@ -165,6 +183,7 @@ DETECTORS = {
     "wfl_asr": detect_wfl_asr,
     "game": detect_game,
     "hubertfa": detect_hubertfa,
+    "tifa": detect_tifa,
 }
 
 

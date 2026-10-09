@@ -24,7 +24,7 @@ from ..text.dictionary import Dictionary
 from ..text.rules import apply_rule_sets
 from ..toolkit import Toolkit
 from .io import OutputWriter, output_folder, resolve_inputs
-from .label import ALIGN_ENGINES, CHUNK, _sub_progress, text_frontend
+from .label import ALIGN_ENGINES, CHUNK, OWN_G2P_ENGINES, _sub_progress, text_frontend
 
 
 def _lang_id(model: InstalledModel, language: str) -> int | None:
@@ -363,6 +363,8 @@ async def run_text(tk: Toolkit, job: Job | None, req: TextRequest, validate_only
     language = req.language or (model.text_frontend if model else None) or (
         model.languages[0] if model and model.languages else None
     )
+    if model is not None and model.engine in OWN_G2P_ENGINES:
+        return await _text_own_g2p(tk, model, req, language)
     dummy = job if job is not None else _NullJob()
     tokens = await text_frontend(tk, dummy, language, req.texts)  # type: ignore[arg-type]
     items = []
@@ -391,6 +393,31 @@ async def run_text(tk: Toolkit, job: Job | None, req: TextRequest, validate_only
             ]
             entry["guessed"] = {w: guessed.get(w) for w in entry.get("unknown_words", [])}
     return {"language": language, "model": model.id if model else None, "items": items}
+
+
+async def _text_own_g2p(tk: Toolkit, model: InstalledModel, req: TextRequest, language: str | None) -> dict[str, Any]:
+    """Aligners with their own G2P (TIFA): words and the first reading of each, as the aligner will see them;
+    "candidates" lists every reading when a word has several (the aligner picks one by the audio)."""
+    converted = await tk.engines.call(
+        model.engine, "phonemize",
+        {"model": {"path": model.path, "layout": model.layout}, "texts": req.texts, "language": language},
+    )
+    items = []
+    for text, res in zip(req.texts, converted):
+        if not res.get("ok"):
+            items.append({"text": text, "tokens": [], "unknown_words": [text], "error": res.get("error")})
+            continue
+        words = res.get("words", [])
+        entry: dict[str, Any] = {"text": text, "tokens": [w["text"] for w in words], "unknown_words": []}
+        entry["phonemes"] = [
+            req.extra_words.get(w["text"]) or (w["candidates"][0]["phonemes"] if w["candidates"] else None)
+            for w in words
+        ]
+        candidates = {w["text"]: [c["phonemes"] for c in w["candidates"]] for w in words if len(w["candidates"]) > 1}
+        if candidates:
+            entry["candidates"] = candidates
+        items.append(entry)
+    return {"language": language, "model": model.id, "items": items}
 
 
 def _dictionary_path(model: InstalledModel, language: str | None) -> Path | None:

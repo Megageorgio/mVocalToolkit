@@ -104,11 +104,16 @@ class RefineOptions(BaseModel):
 class AlignRequest(BaseModel):
     input: InputSpec
     model: str = Field(
-        ..., description="Aligner model id (SOFA or HubertFA, catalog/installed) or path:/folder/of/model"
+        ..., description="Aligner model id (SOFA, HubertFA or TIFA, catalog/installed) or path:/folder/of/model"
     )
     language: str | None = Field(
         None, description="Language of the texts (text frontend, dictionary of multilingual models); "
         "default: the model's language"
+    )
+    extra_languages: list[str] = Field(
+        default_factory=list,
+        description="TIFA: more languages that may occur in the texts, in priority order (e.g. English words in "
+        "Chinese lyrics); their phonemes keep the language prefix (en/aa)",
     )
     mode: Literal["force", "match"] = Field("force", description="SOFA only")
     g2p: Literal["auto", "dictionary", "none"] = Field(
@@ -232,7 +237,7 @@ class TempoRequest(BaseModel):
 class TextRequest(BaseModel):
     texts: list[str]
     language: str | None = None
-    model: str | None = Field(None, description="Aligner model (SOFA / HubertFA) whose dictionary / G2P is used")
+    model: str | None = Field(None, description="Aligner model (SOFA / HubertFA / TIFA) whose dictionary / G2P is used")
     g2p: Literal["auto", "dictionary"] = "auto"
     extra_words: dict[str, list[str]] = Field(default_factory=dict, description="Words added to the dictionary")
 

@@ -1,0 +1,38 @@
+name = "tifa"
+title = "TIFA forced aligner"
+description = "Token-Imputing Forced Aligner by OpenVPI: speech and singing, several languages in one text, picks the pronunciation that matches the audio, self-check scores for every file. Does its own G2P (dictionaries + MeCab for Japanese + LSTM for unknown English words)."
+capabilities = ["align", "g2p"]
+python = "3.11"
+torch = true
+size_hint = "~2.5 GB with CUDA, ~800 MB CPU-only (torch is shared with other engines through the uv cache)"
+homepage = "https://github.com/openvpi/TIFA"
+license = "MIT"
+requirements = [
+    "torch",
+    "lightning",
+    "torchmetrics",
+    "einops>=0.7.0",
+    "g2pflow[ja,lstm]>=0.3.0,<0.4.0",
+    "unidic-lite",  # small Japanese dictionary for MeCab instead of the 770 MB download of the full UniDic
+    "pydantic>=2.11,<3.0",
+    "omegaconf",
+    "librosa>=0.10.0",
+    "resampy",
+    "soundfile",
+    "scipy>=1.10.0",
+    "numpy",
+    "numba",
+    "sympy",
+    "h5py",
+    "colorednoise",
+    "praat-parselmouth",
+    "matplotlib",
+    "textgrid",
+    "loguru",
+    "click",
+    "tqdm",
+]
+
+[source]
+repo = "openvpi/TIFA"
+commit = "614a277d2580efe5e4b84faf4c34753dbc5a062c"

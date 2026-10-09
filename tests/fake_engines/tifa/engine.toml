@@ -1,0 +1,4 @@
+name = "tifa"
+title = "fake tifa"
+python = "system"
+capabilities = ["test"]
