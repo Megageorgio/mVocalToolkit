@@ -54,6 +54,9 @@ class JobInfo(BaseModel):
     # data shown while paused (e.g. transcriptions to review)
     pause_data: Any = None
     error: str | None = None
+    # numbers of the current step for a progress display, e.g. of a download: file, done and total bytes, speed
+    # (bytes/s), eta (s); of files being processed: items_done, items_total. Empty when the step has none.
+    detail: dict[str, Any] = Field(default_factory=dict)
     item_errors: list[ItemError] = Field(default_factory=list)
 
 
@@ -83,14 +86,20 @@ class Job:
         for queue in list(self._subscribers):
             queue.put_nowait(payload)
 
-    def progress(self, value: float | None = None, stage: str | None = None, message: str | None = None, **extra: Any):
+    def progress(self, value: float | None = None, stage: str | None = None, message: str | None = None,
+                 detail: dict[str, Any] | None = None, **extra: Any):
         if value is not None:
             self.info.progress = max(0.0, min(1.0, value))
+        if detail is not None:
+            self.info.detail = detail
+        elif stage is not None and stage != self.info.stage:
+            self.info.detail = {}  # the numbers were of the step before
         if stage is not None:
             self.info.stage = stage
         if message is not None:
             self.info.message = message
-        self.emit("progress", progress=self.info.progress, stage=self.info.stage, message=self.info.message, **extra)
+        self.emit("progress", progress=self.info.progress, stage=self.info.stage, message=self.info.message,
+                  detail=self.info.detail, **extra)
 
     def item_error(self, item: str, error: str) -> None:
         self.info.item_errors.append(ItemError(item=item, error=error))

@@ -43,6 +43,7 @@ from ..pipelines.label import run_align, run_transcribe
 from ..text.languages import language_info
 from ..text.rules import RULE_SETS
 from ..clients import STALE_SECONDS, Clients
+from .. import storage
 from ..toolkit import Toolkit
 from ..update import check_update
 
@@ -81,6 +82,9 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         tk = toolkit or Toolkit()
         tk_holder["tk"] = tk
         await tk.start()
+        if tk.settings.keep_files_days > 0:
+            # leftovers of old jobs, away from the start: a big outputs folder takes a while to walk
+            asyncio.get_running_loop().run_in_executor(None, storage.cleanup, tk.home, float(tk.settings.keep_files_days))
         watcher = asyncio.create_task(watch_unused(tk)) if exit_when_unused > 0 else None
         yield
         if watcher is not None:
@@ -228,6 +232,35 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
 
     # ---------------- engines ----------------
 
+    # ---------------- disk space ----------------
+
+    def _busy(tk: Toolkit) -> bool:
+        return any(j.info.status not in FINISHED for j in tk.jobs.jobs.values())
+
+    @app.get("/storage", tags=["system"], dependencies=[Depends(auth)])
+    async def storage_usage(tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        """Bytes used by each model, each engine (environment and sources) and the temporary folders of the home."""
+        data = await asyncio.to_thread(storage.usage, tk.home)
+        data["keep_files_days"] = tk.settings.keep_files_days
+        return data
+
+    @app.post("/storage/cleanup", tags=["system"], dependencies=[Depends(auth)])
+    async def storage_cleanup(body: dict[str, Any] | None = None, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        """Removes uploads, results in <home>/outputs, job history and unfinished downloads.
+
+        Body (all optional): {"older_than_days": 7} (default: all of them), {"parts": ["uploads", "outputs", "jobs",
+        "cache/work"]}. While a job runs only entries older than a day are removed."""
+        body = body or {}
+        days = body.get("older_than_days")
+        parts = tuple(body.get("parts") or storage.TEMPORARY)
+        busy = _busy(tk)
+        result = await asyncio.to_thread(storage.cleanup, tk.home, float(days) if days is not None else None, parts, busy)
+        if "jobs" in parts:
+            # finished jobs are forgotten too, as if the server had been restarted
+            for job_id in [j.id for j in tk.jobs.jobs.values() if j.info.status in FINISHED and not (tk.home.jobs / f"{j.id}.json").exists()]:
+                tk.jobs.jobs.pop(job_id, None)
+        return {**result, "busy": busy}
+
     @app.get("/engines", tags=["engines"], dependencies=[Depends(auth)])
     async def engines(tk: Toolkit = Depends(get_tk)) -> list[dict[str, Any]]:
         return tk.engines.list()
@@ -326,7 +359,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
             raise HTTPException(409, "Already installed (use force=true to reinstall)")
 
         async def work(job: Job):
-            installed = await tk.models.download(entry, lambda v, m: job.progress(v, stage="download", message=m))
+            installed = await tk.models.download(entry, lambda v, m, d=None: job.progress(v, stage="download", message=m, detail=d))
             return {"installed": [m.id for m in installed]}
 
         return submit(tk, "model_download", work, {"model": model_id})

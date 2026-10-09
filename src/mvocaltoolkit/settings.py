@@ -56,6 +56,8 @@ class Settings:
     auto_update: bool = True
     # Max number of jobs running at the same time. Jobs that use the same engine are queued anyway.
     max_parallel_jobs: int = 2
+    # Uploads, results in <home>/outputs and the job history are removed after this many days. 0 = kept.
+    keep_files_days: int = 14
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod

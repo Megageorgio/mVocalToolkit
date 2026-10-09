@@ -23,11 +23,11 @@ OWN_G2P_ENGINES = ("tifa",)
 
 
 def _sub_progress(job: Job, start: float, end: float, stage: str):
-    def report(value: float | None, message: str = "") -> None:
+    def report(value: float | None, message: str = "", detail: dict[str, Any] | None = None) -> None:
         if value is None:
-            job.progress(None, stage=stage, message=message)
+            job.progress(None, stage=stage, message=message, detail=detail)
         else:
-            job.progress(start + (end - start) * max(0.0, min(1.0, value)), stage=stage, message=message)
+            job.progress(start + (end - start) * max(0.0, min(1.0, value)), stage=stage, message=message, detail=detail)
 
     return report
 
@@ -67,7 +67,8 @@ async def transcribe_items(
 
                 return
             inner = float(data.get("progress", 0.0))
-            report((offset + inner * size) / total, data.get("message", "Transcribing"))
+            report((offset + inner * size) / total, data.get("message", "Transcribing"),
+                   {"items_done": int(offset + inner * size), "items_total": total})
 
         result = await tk.engines.call(
             "whisperx",
@@ -254,7 +255,8 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
                 job.progress(None, stage="install", message=data.get("message"))
 
                 return
-            report((offset + float(data.get("progress", 0.0)) * size) / total, data.get("message", "Aligning"))
+            done = offset + float(data.get("progress", 0.0)) * size
+            report(done / total, data.get("message", "Aligning"), {"items_done": int(done), "items_total": len(to_align)})
 
         results = await tk.engines.call(
             model.engine, "align", _align_params(model, req, chunk, language), on_progress=on_progress, log=job.log
