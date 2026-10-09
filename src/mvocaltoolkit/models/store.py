@@ -369,25 +369,14 @@ class ModelStore:
     async def _github_assets(self, source: ModelSource) -> list[tuple[str, str, int | None]]:
         if not source.repo or not source.tag:
             raise ValueError("github_release source needs repo and tag")
-        headers = {"Accept": "application/vnd.github+json"}
-        if self.settings.github_token:
-            headers["Authorization"] = f"Bearer {self.settings.github_token}"
-        cache = self.home.dir("cache/github") / (_safe(f"{source.repo}@{source.tag}") + ".json")
-        data: dict[str, Any] | None = None
-        if cache.exists() and time.time() - cache.stat().st_mtime < 3600:
-            data = json.loads(cache.read_text(encoding="utf-8"))
-        if data is None:
-            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-                if source.tag == "latest":
-                    url = f"https://api.github.com/repos/{source.repo}/releases/latest"
-                else:
-                    url = f"https://api.github.com/repos/{source.repo}/releases/tags/{source.tag}"
-                response = await client.get(url, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-            cache.write_text(json.dumps(data), encoding="utf-8")
-        assets = data.get("assets", [])
         patterns = source.asset if isinstance(source.asset, list) else [source.asset or "*"]
+        if not any(any(c in p for c in "*?[") for p in patterns):
+            # Exact asset names: direct download links, no GitHub API (60 requests/hour without a token)
+            base = f"https://github.com/{source.repo}/releases"
+            base += "/latest/download" if source.tag == "latest" else f"/download/{source.tag}"
+            return [(f"{base}/{name}", name, None) for name in dict.fromkeys(patterns)]
+        data = await self._github_release(source.repo, source.tag)
+        assets = data.get("assets", [])
         selected = []
         for pattern in patterns:
             matched = [a for a in assets if fnmatch.fnmatch(a["name"], pattern)]
@@ -400,6 +389,38 @@ class ModelStore:
                 if asset not in selected:
                     selected.append(asset)
         return [(a["browser_download_url"], a["name"], a.get("size")) for a in selected]
+
+    async def _github_release(self, repo: str, tag: str) -> dict[str, Any]:
+        """Release metadata from the GitHub API, cached for an hour (a stale cache is used when the API fails)."""
+        cache = self.home.dir("cache/github") / (_safe(f"{repo}@{tag}") + ".json")
+        if cache.exists() and time.time() - cache.stat().st_mtime < 3600:
+            return json.loads(cache.read_text(encoding="utf-8"))
+        headers = {"Accept": "application/vnd.github+json"}
+        token = self.settings.github_token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        if tag == "latest":
+            url = f"https://api.github.com/repos/{repo}/releases/latest"
+        else:
+            url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+        try:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPError as e:
+            if cache.exists():
+                return json.loads(cache.read_text(encoding="utf-8"))
+            status = e.response.status_code if isinstance(e, httpx.HTTPStatusError) else None
+            if status in (403, 429):
+                raise RuntimeError(
+                    f"GitHub API rate limit exceeded while looking up release {tag} of {repo}. Try again in an hour, "
+                    "or set github_token in config.yaml (or the GITHUB_TOKEN environment variable) to a GitHub "
+                    "personal access token; it needs no scopes."
+                ) from e
+            raise
+        cache.write_text(json.dumps(data), encoding="utf-8")
+        return data
 
 
 async def download_file(

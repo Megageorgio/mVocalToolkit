@@ -48,7 +48,7 @@ class Settings:
     auto_download_models: bool = True
     # Extra catalogs (URLs or file paths) merged with the built-in catalog.
     catalogs: list[str] = field(default_factory=list)
-    # Optional token for the GitHub API (raises rate limits when resolving release assets).
+    # Optional token for the GitHub API (raises its rate limit; only needed for catalog assets given as patterns).
     github_token: str = ""
     # Optional Hugging Face token (some models need it).
     hf_token: str = ""
