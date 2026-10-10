@@ -12,7 +12,7 @@ from ..api_models import AlignRequest, ItemResult, TranscribeOptions, Transcribe
 from ..jobs import Job
 from ..labels import Interval, Label
 from ..text import normalize as text_normalize
-from ..text.g2p import fill_unknown, load_user_words
+from ..text.g2p import fill_unknown, plain_tokens
 from ..text.rules import apply_rule_sets
 from ..toolkit import Toolkit
 from .io import Item, OutputWriter, resolve_inputs
@@ -249,11 +249,10 @@ async def run_align(tk: Toolkit, job: Job, req: AlignRequest) -> dict[str, Any]:
     extra_words = dict(req.extra_words)
     if req.g2p == "auto" or model.engine in OWN_G2P_ENGINES:
         try:
-            if model.engine in OWN_G2P_ENGINES:
-                extra_words = {**load_user_words(tk.home, model.id), **extra_words}
-            else:
-                extra_words = await fill_unknown(tk, model, language, [i.words or [] for i in to_align if i.phonemes is None],
-                                                 extra_words)
+            # a model with its own G2P gets plain text: its words are found as its G2P finds them
+            tokens = [i.words if i.words is not None or model.engine not in OWN_G2P_ENGINES else plain_tokens(i.text or "")
+                      for i in to_align if i.phonemes is None]
+            extra_words = await fill_unknown(tk, model, language, [t or [] for t in tokens], extra_words)
         except Exception as e:  # noqa: BLE001
             job.log(f"own words / G2P: {e}")
     report = _sub_progress(job, 0.45, 0.95, "align")

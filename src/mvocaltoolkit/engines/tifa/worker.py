@@ -7,6 +7,7 @@ fixed words and known phonemes go in as PFML.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import warnings
 from pathlib import Path
@@ -137,16 +138,27 @@ def _source(item: dict[str, Any], g2p: str, extra_words: dict[str, list[str]] | 
         return "".join(parts), True
     text = (item.get("text") or "").strip()
     tokens = text.split()
-    if (extra_words and any(t in extra_words for t in tokens)) or (breaths and text):
-        # user words in a plain text: fixed as words with the given phonemes, the rest goes through G2P
+    extra = extra_words or {}
+    if any(_known(t, extra) for t in tokens) or (breaths and text):
+        # user words and G2P guesses in a plain text: fixed as words with the given phonemes, the rest goes
+        # through the model's G2P
         parts = [lead]
         for t in tokens:
-            parts.append(_pfml_word(t, extra_words[t], language) if extra_words and t in extra_words
-                         else _escape(t) + " ")
+            fixed = _known(t, extra)
+            parts.append(_pfml_word(_bare(t), fixed, language) if fixed else _escape(t) + " ")
             if breaths and t[-1] in BREATH_PUNCTUATION:
                 parts.append(lead)
         return "".join(parts), True
     return text, False
+
+
+def _bare(token: str) -> str:
+    """A word of a plain text as it is looked up: lower case, without the punctuation around it."""
+    return token.lower().strip(".,!?;:…—–\"'«»()[]-")
+
+
+def _known(token: str, extra: dict[str, list[str]]) -> list[str] | None:
+    return extra.get(token) or extra.get(_bare(token))
 
 
 def _escape(text: str) -> str:
@@ -170,6 +182,7 @@ def _make_dataset(model: LoadedModel, items: list[dict[str, Any]], sources: list
             self.language = languages
             self.oov_handling = "force" if skip_unknown else "discard"
             self.errors: dict[str, str] = {}
+            self.unknown: dict[str, list[str]] = {}
 
         def __len__(self):
             return len(items)
@@ -192,7 +205,13 @@ def _make_dataset(model: LoadedModel, items: list[dict[str, Any]], sources: list
                 data, lexicon, texts = encode_paths(g2p_words, self.vocabulary, self.oov_handling,
                                                     languages=self.language)
             except G2PEncodingError as e:
-                self.errors[identifier] = f"Unknown phonemes: {e}"
+                # a word the dictionary lacks goes through as its own spelling
+                word = re.search(r"in word '(.+?)'", str(e))
+                if word:
+                    self.unknown[identifier] = [word.group(1)]
+                    self.errors[identifier] = f"Unknown words: {word.group(1)}"
+                else:
+                    self.errors[identifier] = f"Unknown phonemes: {e}"
                 return _skip(identifier, self.errors[identifier])
             if not data["paths"].any():
                 self.errors[identifier] = "Nothing to align (no known words)"
@@ -319,7 +338,10 @@ def _predict(loaded: LoadedModel, items: list[dict[str, Any]], sources: list[tup
             identifier = f"{index:05d}"
             path = Path(tmp) / f"{identifier}.TextGrid"
             if not path.exists():
-                results.append({"ok": False, "error": dataset.errors.get(identifier, "Alignment failed")})
+                failed: dict[str, Any] = {"ok": False, "error": dataset.errors.get(identifier, "Alignment failed")}
+                if identifier in dataset.unknown:
+                    failed["unknown_words"] = dataset.unknown[identifier]
+                results.append(failed)
                 continue
             duration, tiers = _read_textgrid(path)
             record = records.get(identifier, {})

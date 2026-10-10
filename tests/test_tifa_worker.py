@@ -27,6 +27,14 @@ def test_optional_breaths_in_text_words_and_phonemes():
     assert BREATH not in worker._source({"words": ["раз", "SP", "два"]}, "auto", None, "ru")[0]
 
 
+def test_guessed_words_are_found_in_plain_text():
+    # a word the dictionary lacks, written with a capital and a comma, gets the guessed phonemes
+    text, pfml = worker._source({"text": "Открой Цвери, двери"}, "auto", {"цвери": ["ts", "vy", "e", "ry", "i"]}, "ru")
+    assert pfml
+    assert 'text="цвери"' in text and 'phonemes="ts vy e ry i"' in text
+    assert "Открой " in text and "двери " in text
+
+
 def test_unheard_breaths_are_dropped():
     rows = [[0.0, 0.5, "a"], [0.5, 0.52, "AP"], [0.52, 1.0, "b"], [1.0, 1.4, "AP"]]
     assert worker._drop_unheard_breaths(rows) == [[0.0, 0.52, "a"], [0.52, 1.0, "b"], [1.0, 1.4, "AP"]]
