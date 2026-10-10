@@ -386,6 +386,26 @@
       "size_hint": "151 MB"
     },
     {
+      "id": "tifa-ru-hhskt-v0.0.1",
+      "engine": "tifa",
+      "name": "TIFA Russian hhskt_ru v0.0.1 (m & hhs_kt)",
+      "version": "0.0.1",
+      "languages": [
+        "ru"
+      ],
+      "author": "m & hhs_kt",
+      "description": "Russian singing aligner (TIFA by OpenVPI) trained by m and hhs_kt on about 10 hours of Russian singing; also post-trained on long sequences, so whole songs align as well as phrases. Same 51-phoneme set as the Russian SOFA and WFL-ASR models (modified cmusphinx-ru-5.2 dictionary, 534k words). Works best with optional breaths on. When you label with it, please link the model page or the hhs_kt channel (t.me/hhs_kt_666).",
+      "homepage": "https://github.com/Megageorgio/TIFA-Models/releases/tag/Russian_v0.0.1",
+      "source": {
+        "type": "github_release",
+        "repo": "Megageorgio/TIFA-Models",
+        "tag": "Russian_v0.0.1",
+        "asset": "hhskt_ru_v0.0.1.zip",
+        "sha256": "5c6682f4907b352c94a403ab5fe66d896b364aabece8c8d9ff02762cb8b698ba"
+      },
+      "size_hint": "150 MB"
+    },
+    {
       "id": "wfl-ru-hhskt-v0.0.1",
       "engine": "wfl_asr",
       "name": "WFL-ASR Russian hhskt_ru small v0.0.1 (m & HHS_kt)",
