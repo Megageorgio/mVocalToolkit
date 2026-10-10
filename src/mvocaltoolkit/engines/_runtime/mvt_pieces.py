@@ -1,4 +1,4 @@
-"""Long recordings aligned again in pieces cut at pauses: finding clear silences, choosing the cuts from a first
+"""Long recordings aligned again by segments cut at pauses: finding clear silences, choosing the cuts from a first
 pass, and filling the gaps of the joined result with SP. Shared by the aligners' workers."""
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def silences(audio, sr: int, min_silence: float, below_db: float = 30.0) -> list
 def cut_points(duration: float, silences: list[tuple[float, float]], phones: list[list[Any]],
                max_length: float, min_piece: float = 1.0, min_breath: float = 0.15) -> list[float]:
     """Cuts between phrases: in the middle of clear silences where the first pass has no sound (only SP),
-    and at the start of breaths (AP, the breath goes to the next piece). Pieces of up to max_length seconds
+    and at the start of breaths (AP, the breath goes to the next segment). Segments of up to max_length seconds
     when the pauses allow it."""
     sounds = [(s, e) for s, e, p in phones if p != SILENCE]
     candidates = [c for c in ((a + b) / 2 for a, b in silences)

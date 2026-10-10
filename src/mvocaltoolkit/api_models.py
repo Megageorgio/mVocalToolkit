@@ -120,10 +120,10 @@ class AlignRequest(BaseModel):
         "punctuation when it hears one; breaths it doesn't hear are left out"
     )
     split_silence: bool = Field(
-        False, description="TIFA and SOFA: files longer than split_max_length are aligned again in pieces cut only at "
-        "pauses (clear silence or a breath), each piece with its own words; a cut never falls inside a word"
+        False, description="TIFA and SOFA: files longer than split_max_length are aligned again by segments cut only at "
+        "pauses (clear silence or a breath), each segment with its own words; a cut never falls inside a word"
     )
-    split_max_length: float = Field(25.0, gt=1, description="split_silence: longest piece in seconds when "
+    split_max_length: float = Field(25.0, gt=1, description="split_silence: longest segment in seconds when "
                                     "the pauses allow it")
     split_min_silence: float = Field(0.3, gt=0, description="split_silence: shortest silence to cut at, seconds")
     mode: Literal["force", "match"] = Field("force", description="SOFA only")

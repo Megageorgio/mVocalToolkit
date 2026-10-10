@@ -495,7 +495,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--breaths", action="store_true",
                    help="TIFA: optional breaths (AP) at the start, at SP marks and after punctuation")
     p.add_argument("--split", action="store_true",
-                   help="TIFA, SOFA: align long files again in pieces cut at pauses (silence or a breath)")
+                   help="TIFA, SOFA: align long files again by segments cut at pauses (silence or a breath)")
     p.add_argument("--mode", choices=["force", "match"], default="force")
     p.add_argument("--dictionary", help="custom dictionary file")
     p.add_argument("--no-breath", action="store_true", help="don't detect breaths (AP)")

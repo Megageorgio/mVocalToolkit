@@ -233,9 +233,9 @@ def align(model: dict[str, Any], items: list[dict[str, Any]], mode: str = "force
 
 def _realign_in_pieces(loaded: "LoadedModel", items: list[dict[str, Any]], results: list[dict[str, Any]],
                        options: tuple, max_length: float, min_silence: float) -> list[dict[str, Any]]:
-    """Long files: cut at clear silences and breaths into pieces of up to max_length seconds and align each
-    piece again with the words the first pass put there (SOFA drifts on long audio). A cut never falls inside
-    a word; if a piece fails, the whole-file alignment is kept."""
+    """Long files: cut at clear silences and breaths into segments of up to max_length seconds and align each
+    segment again with the words the first pass put there (SOFA drifts on long audio). A cut never falls inside
+    a word; if a segment fails, the whole-file alignment is kept."""
     import librosa  # noqa: PLC0415
     import soundfile as sf  # noqa: PLC0415
 
@@ -269,7 +269,7 @@ def _realign_in_pieces(loaded: "LoadedModel", items: list[dict[str, Any]], resul
     for index, spans in plan:
         failed = [again[p] for _, _, p in spans if p is not None and not again[p].get("ok")]
         if failed:
-            rt.log(f"{items[index].get('name') or index}: a piece failed ({failed[0].get('error')}), "
+            rt.log(f"{items[index].get('name') or index}: a segment failed ({failed[0].get('error')}), "
                    "the whole-file alignment is kept")
             continue
         phones, words, scores = [], [], []
@@ -284,7 +284,7 @@ def _realign_in_pieces(loaded: "LoadedModel", items: list[dict[str, Any]], resul
         result["phones"] = with_silence(phones, result["duration"])
         result["words"] = with_silence(words, result["duration"])
         result["confidence"] = sum(scores) / len(scores)
-        result["pieces"] = len(spans)
+        result["segments"] = len(spans)
     return results
 
 
