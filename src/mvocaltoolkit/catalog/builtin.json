@@ -400,8 +400,7 @@
         "type": "github_release",
         "repo": "Megageorgio/TIFA-Models",
         "tag": "Russian_v0.0.1",
-        "asset": "hhskt_ru_v0.0.1.zip",
-        "sha256": "8104b1dd1f3b2fa563bd2f83a5f0c1be04e6537762c46587f816d970be09e531"
+        "asset": "hhskt_ru_v0.0.1.zip"
       },
       "size_hint": "150 MB"
     },
@@ -421,8 +420,7 @@
         "type": "github_release",
         "repo": "Megageorgio/WFL-ASR-hhskt-ru",
         "tag": "Russian_v0.0.1",
-        "asset": "hhskt-ru-small.zip",
-        "sha256": "7b14d5fc4d1bf6bbcc16b957aeb850b5e0ac3daaf6ddd56054288556d2bcba7c"
+        "asset": "hhskt-ru-small.zip"
       }
     },
     {
@@ -904,8 +902,7 @@
         "type": "github_release",
         "repo": "Megageorgio/mRefinerModel",
         "tag": "Russian_v0.0.1",
-        "asset": "mrefinermodel-ru-v0.1.0.zip",
-        "sha256": "3bf9cded17dab7cc07d55d8ef850eb03c6a494785b4c25d3f79101c42c0f82dd"
+        "asset": "mrefinermodel-ru-v0.1.0.zip"
       }
     }
   ]
