@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import warnings
 from pathlib import Path
 from typing import Any
 
 import mvt_engine as rt
+from mvt_pieces import cut_points, silences, with_silence
 
 warnings.filterwarnings("ignore")
 
@@ -211,7 +213,8 @@ def build_sequence(model: LoadedModel, item: dict[str, Any], g2p: str, skip_unkn
 @rt.method()
 def align(model: dict[str, Any], items: list[dict[str, Any]], mode: str = "force", g2p: str = "auto",
           ap_detector: str = "loudness_spectral_centroid", skip_unknown_words: bool = False,
-          dictionary: str | None = None, extra_words: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
+          dictionary: str | None = None, extra_words: dict[str, list[str]] | None = None,
+          split_silence: bool = False, split_max_length: float = 25.0, split_min_silence: float = 0.3) -> list[dict[str, Any]]:
     loaded = _get_model(model)
     original = loaded.dictionary
     if dictionary:
@@ -219,9 +222,70 @@ def align(model: dict[str, Any], items: list[dict[str, Any]], mode: str = "force
     if extra_words:
         loaded.dictionary = {**loaded.dictionary, **{w: list(p) for w, p in extra_words.items() if w and p}}
     try:
-        return _align(loaded, items, mode, g2p, ap_detector, skip_unknown_words)
+        results = _align(loaded, items, mode, g2p, ap_detector, skip_unknown_words)
+        if split_silence:
+            results = _realign_in_pieces(loaded, items, results, (mode, g2p, ap_detector, skip_unknown_words),
+                                         split_max_length, split_min_silence)
+        return results
     finally:
         loaded.dictionary = original
+
+
+def _realign_in_pieces(loaded: "LoadedModel", items: list[dict[str, Any]], results: list[dict[str, Any]],
+                       options: tuple, max_length: float, min_silence: float) -> list[dict[str, Any]]:
+    """Long files: cut at clear silences and breaths into pieces of up to max_length seconds and align each
+    piece again with the words the first pass put there (SOFA drifts on long audio). A cut never falls inside
+    a word; if a piece fails, the whole-file alignment is kept."""
+    import librosa  # noqa: PLC0415
+    import soundfile as sf  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory(prefix="mvt-sofa-split-") as tmp:
+        plan = []  # (item index, [(start, end, piece index or None)])
+        pieces: list[dict[str, Any]] = []
+        for index, (item, result) in enumerate(zip(items, results)):
+            if not result.get("ok") or result["duration"] <= max_length:
+                continue
+            audio, sr = librosa.load(item["audio"], sr=None, mono=True)
+            duration = len(audio) / sr
+            cuts = cut_points(duration, silences(audio, sr, min_silence), result["phones"], max_length)
+            if not cuts:
+                continue
+            bounds = [0.0, *cuts, duration]
+            spans = []
+            for k in range(len(bounds) - 1):
+                a, b = bounds[k], bounds[k + 1]
+                words = [w for s, e, w in result["words"] if w not in ("SP", "AP", "") and a <= (s + e) / 2 < b]
+                piece = None
+                if words:
+                    path = Path(tmp) / f"{index:05d}_{k:03d}.wav"
+                    sf.write(str(path), audio[int(round(a * sr)):int(round(b * sr))], sr)
+                    piece = len(pieces)
+                    pieces.append({"audio": str(path), "name": path.stem, "words": words})
+                spans.append((a, b, piece))
+            plan.append((index, spans))
+        if not pieces:
+            return results
+        again = _align(loaded, pieces, *options)
+    for index, spans in plan:
+        failed = [again[p] for _, _, p in spans if p is not None and not again[p].get("ok")]
+        if failed:
+            rt.log(f"{items[index].get('name') or index}: a piece failed ({failed[0].get('error')}), "
+                   "the whole-file alignment is kept")
+            continue
+        phones, words, scores = [], [], []
+        for a, b, p in spans:
+            if p is None:
+                continue
+            res = again[p]
+            for tier, rows in (("phones", phones), ("words", words)):
+                rows += [[a + s, min(a + e, b), text] for s, e, text in res[tier] if text != "SP" and a + s < b - 1e-6]
+            scores.append(res["confidence"])
+        result = results[index]
+        result["phones"] = with_silence(phones, result["duration"])
+        result["words"] = with_silence(words, result["duration"])
+        result["confidence"] = sum(scores) / len(scores)
+        result["pieces"] = len(spans)
+    return results
 
 
 def _align(loaded: "LoadedModel", items: list[dict[str, Any]], mode: str, g2p: str, ap_detector: str,

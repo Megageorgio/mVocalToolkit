@@ -174,10 +174,11 @@ def _align_params(model, req: AlignRequest, chunk: list[Item], language: str | N
     words = req.extra_words if extra_words is None else extra_words
     if words:
         params["extra_words"] = words
+    split = {"split_silence": req.split_silence, "split_max_length": req.split_max_length,
+             "split_min_silence": req.split_min_silence}
     if model.engine == "tifa":
         params.update({"language": language, "extra_languages": req.extra_languages,
-                       "optional_breaths": req.optional_breaths, "split_silence": req.split_silence,
-                       "split_max_length": req.split_max_length, "split_min_silence": req.split_min_silence})
+                       "optional_breaths": req.optional_breaths, **split})
     elif model.engine == "hubertfa":
         params.update({
             "language": language,
@@ -187,7 +188,7 @@ def _align_params(model, req: AlignRequest, chunk: list[Item], language: str | N
             "dictionary": req.dictionary,
         })
     else:
-        params.update({"mode": req.mode, "ap_detector": req.ap_detector})
+        params.update({"mode": req.mode, "ap_detector": req.ap_detector, **split})
         if req.dictionary:
             params["dictionary"] = req.dictionary
     return params

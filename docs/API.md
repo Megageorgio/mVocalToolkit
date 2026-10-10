@@ -153,7 +153,7 @@ SOFA, HubertFA or TIFA.
 - `optional_breaths` (TIFA, default `false`): an optional breath at the start of each item, at `SP` marks of
   `words`/`phonemes` and after punctuation of a text. TIFA places `AP` where it hears a breath; the ones it
   doesn't hear (squeezed to a frame or so, shorter than 60 ms) are left out. Needs an `AP` phoneme in the model.
-- `split_silence` (TIFA, default `false`): files longer than `split_max_length` (25 s) are aligned once as a
+- `split_silence` (TIFA and SOFA, default `false`): files longer than `split_max_length` (25 s) are aligned once as a
   whole, then cut only at pauses (the middle of a silence of at least `split_min_silence` = 0.3 s, at least
   30 dB below the loud parts, where the first pass has no sound; or the start of a breath) into pieces of up
   to 25 s when the pauses allow it, and each piece is aligned again with its own words (with the pronunciation
