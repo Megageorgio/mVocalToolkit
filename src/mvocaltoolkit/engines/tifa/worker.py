@@ -7,6 +7,7 @@ fixed words and known phonemes go in as PFML.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import warnings
 from pathlib import Path
@@ -14,11 +15,18 @@ from typing import Any
 from xml.sax.saxutils import quoteattr
 
 import mvt_engine as rt
+from mvt_pieces import cut_points as _cut_points
+from mvt_pieces import silences as _silences
+from mvt_pieces import with_silence as _with_silence
 
 warnings.filterwarnings("ignore")
 
 _models: dict[str, "LoadedModel"] = {}
 SILENCE = "SP"
+BREATH = "AP"
+# an optional breath the aligner did not hear is squeezed to a frame or so; shorter ones are not kept
+BREATH_MIN = 0.06
+BREATH_PUNCTUATION = set(",.!?;:…—–-")
 
 
 def _japanese_dictionary() -> str | None:
@@ -106,28 +114,54 @@ def _pfml_word(text: str, phonemes: list[str] | None = None, language: str | Non
     return f"<word {attrs}/>"
 
 
+def _breath_word() -> str:
+    """A breath the aligner may place or leave out: two pronunciations, AP or nothing."""
+    return (f'<word text="{BREATH}"><path><phoneme>{BREATH}</phoneme></path>'
+            '<path><group phonemes=""/></path></word>')
+
+
 def _source(item: dict[str, Any], g2p: str, extra_words: dict[str, list[str]] | None,
-            language: str | None) -> tuple[str, bool]:
-    """(text, is_pfml) for one item: plain text, fixed words, or known phonemes."""
-    if item.get("phonemes"):
-        phones = [p for p in item["phonemes"] if p and p != SILENCE]
-        return "".join(_pfml_word(p, [p], language) for p in phones), True
-    if item.get("words"):
-        words = [w for w in item["words"] if w and w != SILENCE]
-        if g2p == "none":
-            return "".join(_pfml_word(w, [w], language) for w in words), True
+            language: str | None, breaths: bool = False) -> tuple[str, bool]:
+    """(text, is_pfml) for one item: plain text, fixed words, or known phonemes.
+    breaths: an optional breath at the start, at SP marks and after punctuation."""
+    lead = _breath_word() if breaths else ""
+    if item.get("phonemes") or item.get("words"):
+        phonemes = bool(item.get("phonemes"))
         extra = extra_words or {}
-        return "".join(_pfml_word(w, extra.get(w), language) for w in words), True
+        parts = [lead]
+        for token in item["phonemes"] if phonemes else item["words"]:
+            if not token:
+                continue
+            if token == SILENCE:
+                if breaths and parts[-1] != lead:
+                    parts.append(lead)
+                continue
+            fixed = [token] if phonemes or g2p == "none" else extra.get(token)
+            parts.append(_pfml_word(token, fixed, language))
+        return "".join(parts), True
     text = (item.get("text") or "").strip()
-    if extra_words and text:
-        # user words in a plain text: fixed as words with the given phonemes, the rest goes through G2P
-        tokens = text.split()
-        if any(t in extra_words for t in tokens):
-            parts = []
-            for t in tokens:
-                parts.append(_pfml_word(t, extra_words[t], language) if t in extra_words else _escape(t) + " ")
-            return "".join(parts), True
+    tokens = text.split()
+    extra = extra_words or {}
+    if any(_known(t, extra) for t in tokens) or (breaths and text):
+        # user words and G2P guesses in a plain text: fixed as words with the given phonemes, the rest goes
+        # through the model's G2P
+        parts = [lead]
+        for t in tokens:
+            fixed = _known(t, extra)
+            parts.append(_pfml_word(_bare(t), fixed, language) if fixed else _escape(t) + " ")
+            if breaths and t[-1] in BREATH_PUNCTUATION:
+                parts.append(lead)
+        return "".join(parts), True
     return text, False
+
+
+def _bare(token: str) -> str:
+    """A word of a plain text as it is looked up: lower case, without the punctuation around it."""
+    return token.lower().strip(".,!?;:…—–\"'«»()[]-")
+
+
+def _known(token: str, extra: dict[str, list[str]]) -> list[str] | None:
+    return extra.get(token) or extra.get(_bare(token))
 
 
 def _escape(text: str) -> str:
@@ -151,6 +185,7 @@ def _make_dataset(model: LoadedModel, items: list[dict[str, Any]], sources: list
             self.language = languages
             self.oov_handling = "force" if skip_unknown else "discard"
             self.errors: dict[str, str] = {}
+            self.unknown: dict[str, list[str]] = {}
 
         def __len__(self):
             return len(items)
@@ -173,7 +208,13 @@ def _make_dataset(model: LoadedModel, items: list[dict[str, Any]], sources: list
                 data, lexicon, texts = encode_paths(g2p_words, self.vocabulary, self.oov_handling,
                                                     languages=self.language)
             except G2PEncodingError as e:
-                self.errors[identifier] = f"Unknown phonemes: {e}"
+                # a word the dictionary lacks goes through as its own spelling
+                word = re.search(r"in word '(.+?)'", str(e))
+                if word:
+                    self.unknown[identifier] = [word.group(1)]
+                    self.errors[identifier] = f"Unknown words: {word.group(1)}"
+                else:
+                    self.errors[identifier] = f"Unknown phonemes: {e}"
                 return _skip(identifier, self.errors[identifier])
             if not data["paths"].any():
                 self.errors[identifier] = "Nothing to align (no known words)"
@@ -205,45 +246,40 @@ def _read_textgrid(path: Path) -> tuple[float, dict[str, list[list[Any]]]]:
     return float(tg.maxTime), tiers
 
 
-def _with_silence(rows: list[list[Any]], duration: float, min_gap: float = 0.015) -> list[list[Any]]:
-    """Gaps (empty intervals and uncovered time) become SP, as in the other aligners' labels.
-    A gap of a frame or so (left by an omitted zero-width phoneme) goes to the interval before it."""
-    out: list[list[Any]] = []
-    t = 0.0
-    for start, end, text in rows:
-        if out and t + 1e-6 < start < t + min_gap:
-            out[-1][1] = start
-        elif start > t + 1e-6:
-            out.append([t, start, SILENCE])
-        out.append([start, end, text or SILENCE])
-        t = end
-    if duration > t + 1e-6:
-        out.append([t, duration, SILENCE])
-    merged: list[list[Any]] = []
-    for row in out:
-        if merged and row[2] == SILENCE and merged[-1][2] == SILENCE:
-            merged[-1][1] = row[1]
-        else:
-            merged.append(row)
-    return merged
-
-
 @rt.method()
 def align(model: dict[str, Any], items: list[dict[str, Any]], language: str | None = None,
           extra_languages: list[str] | None = None, g2p: str = "auto", skip_unknown_words: bool = False,
           extra_words: dict[str, list[str]] | None = None, batch_size: int = 4,
-          score_unit: str = "levenshtein", skip_penalty: float = 0.5) -> list[dict[str, Any]]:
+          score_unit: str = "levenshtein", skip_penalty: float = 0.5, optional_breaths: bool = False,
+          split_silence: bool = False, split_max_length: float = 25.0,
+          split_min_silence: float = 0.3) -> list[dict[str, Any]]:
+    loaded = _get_model(model)
+    lang = loaded.resolve_language(language)
+    languages = loaded.languages_for(lang, extra_languages)
+    if optional_breaths and BREATH not in getattr(loaded.vocabulary, "symbol_to_id", {}):
+        rt.log(f"optional breaths: the model has no {BREATH} phoneme, the option is ignored")
+        optional_breaths = False
+    sources = [_source(item, g2p, extra_words, lang, optional_breaths) for item in items]
+    run = dict(loaded=loaded, languages=languages, lang=lang, skip_unknown=skip_unknown_words,
+               batch_size=batch_size, score_unit=score_unit, skip_penalty=skip_penalty, breaths=optional_breaths)
+    results = _predict(items=items, sources=sources, progress=(0.0, 0.5 if split_silence else 1.0), **run)
+    if split_silence:
+        results = _realign_in_pieces(items, results, run, split_max_length, split_min_silence)
+    rt.progress(1.0, "Aligned")
+    return results
+
+
+def _predict(loaded: LoadedModel, items: list[dict[str, Any]], sources: list[tuple[str, bool]],
+             languages: list[str] | None, lang: str | None, skip_unknown: bool, batch_size: int, score_unit: str,
+             skip_penalty: float, breaths: bool, progress: tuple[float, float]) -> list[dict[str, Any]]:
     import lightning.pytorch as pl  # noqa: PLC0415
     import torch  # noqa: PLC0415
     from inference.callbacks import SaveTextGridCallback, StatisticsCallback  # noqa: PLC0415
     from inference.module import ForcedAlignmentInferenceModule  # noqa: PLC0415
 
-    loaded = _get_model(model)
-    lang = loaded.resolve_language(language)
-    languages = loaded.languages_for(lang, extra_languages)
-    sources = [_source(item, g2p, extra_words, lang) for item in items]
-    dataset = _make_dataset(loaded, items, sources, languages, skip_unknown_words)
+    dataset = _make_dataset(loaded, items, sources, languages, skip_unknown)
     total = len(items)
+    low, high = progress
 
     class Progress(pl.callbacks.ProgressBar):
         """Progress events instead of a console bar; TIFA's warnings (skipped phonemes...) go to the log."""
@@ -255,7 +291,7 @@ def align(model: dict[str, Any], items: list[dict[str, Any]], language: str | No
 
         def on_predict_batch_end(self, trainer, pl_module, outputs, batch, *args, **kwargs):
             self.done += len(batch.get("identifier", [])) + len(batch.get("warning", []))
-            rt.progress(min(1.0, self.done / max(1, total)), "Aligning")
+            rt.progress(low + (high - low) * min(1.0, self.done / max(1, total)), "Aligning")
 
     class Diagnosis(StatisticsCallback):
         def _save(self):  # keep the records in memory, no files and plots
@@ -273,7 +309,7 @@ def align(model: dict[str, Any], items: list[dict[str, Any]], language: str | No
         )
         loader = torch.utils.data.DataLoader(dataset, batch_size=max(1, batch_size), num_workers=0, shuffle=False,
                                              collate_fn=dataset.collate)
-        rt.progress(0.0, "Aligning")
+        rt.progress(low, "Aligning")
         trainer.predict(ForcedAlignmentInferenceModule(loaded.backend, score_unit=score_unit,
                                                        skip_penalty=skip_penalty), loader)
         records = {r["identifier"]: r for r in diagnosis._metric_records}
@@ -282,7 +318,10 @@ def align(model: dict[str, Any], items: list[dict[str, Any]], language: str | No
             identifier = f"{index:05d}"
             path = Path(tmp) / f"{identifier}.TextGrid"
             if not path.exists():
-                results.append({"ok": False, "error": dataset.errors.get(identifier, "Alignment failed")})
+                failed: dict[str, Any] = {"ok": False, "error": dataset.errors.get(identifier, "Alignment failed")}
+                if identifier in dataset.unknown:
+                    failed["unknown_words"] = dataset.unknown[identifier]
+                results.append(failed)
                 continue
             duration, tiers = _read_textgrid(path)
             record = records.get(identifier, {})
@@ -290,12 +329,16 @@ def align(model: dict[str, Any], items: list[dict[str, Any]], language: str | No
                     if record.get(k) is not None}
             if record.get("num_skipped_tokens"):
                 diag["skipped_phonemes"] = int(record["num_skipped_tokens"])
+            phones = [r for r in tiers.get("phones", []) if r[2]]
+            words = [r for r in tiers.get("words", []) if r[2]]
+            if breaths:
+                phones, words = _drop_unheard_breaths(phones), _drop_unheard_breaths(words, join=False)
             result = {
                 "ok": True,
                 "duration": duration,
                 "confidence": diag.get("confidence"),
-                "phones": _with_silence([r for r in tiers.get("phones", []) if r[2]], duration),
-                "words": _with_silence([r for r in tiers.get("words", []) if r[2]], duration),
+                "phones": _with_silence(phones, duration),
+                "words": _with_silence(words, duration),
                 "language": lang,
                 "diagnosis": diag,
             }
@@ -303,7 +346,130 @@ def align(model: dict[str, Any], items: list[dict[str, Any]], language: str | No
             if [r[2] for r in texts] != [r[2] for r in tiers.get("words", []) if r[2]]:
                 result["texts"] = texts  # written words (e.g. 猫) when they differ from the readings (ne, ko)
             results.append(result)
-    rt.progress(1.0, "Aligned")
+    return results
+
+
+def _drop_unheard_breaths(rows: list[list[Any]], join: bool = True) -> list[list[Any]]:
+    """Optional breaths the aligner squeezed to almost nothing: the time goes to the interval before
+    (join) or becomes a gap (words tier, filled with SP later)."""
+    out: list[list[Any]] = []
+    for row in rows:
+        if row[2] == BREATH and row[1] - row[0] < BREATH_MIN:
+            if join and out and abs(out[-1][1] - row[0]) < 1e-6:
+                out[-1] = [out[-1][0], row[1], out[-1][2]]
+            continue
+        out.append(list(row))
+    return out
+
+
+def _piece_source(result: dict[str, Any], start: float, end: float, lang: str | None,
+                  breaths: bool) -> tuple[str, bool] | None:
+    """The words of the first pass inside [start, end), with the pronunciation it chose (None: no words)."""
+    phones = [r for r in result["phones"] if r[2] != SILENCE]
+    breath = _breath_word()
+    parts = [breath] if breaths else []
+    words = 0
+    for ws, we, word in result["words"]:
+        if word == SILENCE or not start <= (ws + we) / 2 < end:
+            continue
+        if breaths and word == BREATH:
+            if parts and parts[-1] != breath:
+                parts.append(breath)
+            continue
+        symbols = [p for s, e, p in phones if ws - 1e-6 <= (s + e) / 2 <= we + 1e-6]
+        if not symbols:
+            continue
+        inner = "".join(
+            f"<phoneme symbol={quoteattr(p)}/>" if "/" in p or not lang or p in (BREATH, SILENCE)
+            else f"<phoneme language={quoteattr(lang)} symbol={quoteattr(p)}/>" for p in symbols)
+        parts.append(f"<word text={quoteattr(word)}>{inner}</word>")
+        words += 1
+    return ("".join(parts), True) if words else None
+
+
+def _move_texts(texts: list[list[Any]], old_words: list[list[Any]],
+                new_words: list[list[Any]]) -> list[list[Any]] | None:
+    """The written-words tier follows the words it covers to their new times (None: the words differ)."""
+    def spoken(rows):
+        return [r for r in rows if r[2] not in (SILENCE, BREATH)]
+
+    old, new = spoken(old_words), spoken(new_words)
+    if len(old) != len(new):  # same words in the same order; only the labels of readings may be spelled differently
+        return None
+    out = []
+    for start, end, text in texts:
+        covered = [i for i, (s, e, _) in enumerate(old) if start - 1e-6 <= (s + e) / 2 <= end + 1e-6]
+        if covered:
+            out.append([new[covered[0]][0], new[covered[-1]][1], text])
+    return out
+
+
+def _realign_in_pieces(items: list[dict[str, Any]], results: list[dict[str, Any]], run: dict[str, Any],
+                       max_length: float, min_silence: float) -> list[dict[str, Any]]:
+    """Long files: cut at clear silences into segments of up to max_length seconds and align each segment again
+    with its own words (TIFA is most accurate on phrase-long audio). The first pass decides which words go
+    to which segment, so a cut never falls inside a word."""
+    import librosa  # noqa: PLC0415
+    import soundfile as sf  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory(prefix="mvt-tifa-split-") as tmp:
+        plan = []  # (item index, [(start, end, piece index or None)])
+        pieces: list[dict[str, Any]] = []
+        sources: list[tuple[str, bool]] = []
+        for index, (item, result) in enumerate(zip(items, results)):
+            if not result.get("ok") or result["duration"] <= max_length:
+                continue
+            audio, sr = librosa.load(item["audio"], sr=None, mono=True)
+            duration = len(audio) / sr
+            cuts = _cut_points(duration, _silences(audio, sr, min_silence), result["phones"], max_length)
+            if not cuts:
+                continue
+            bounds = [0.0, *cuts, duration]
+            spans = []
+            for k in range(len(bounds) - 1):
+                a, b = bounds[k], bounds[k + 1]
+                source = _piece_source(result, a, b, run["lang"], run["breaths"])
+                piece = None
+                if source is not None:
+                    path = Path(tmp) / f"{index:05d}_{k:03d}.wav"
+                    sf.write(str(path), audio[int(round(a * sr)):int(round(b * sr))], sr)
+                    piece = len(pieces)
+                    pieces.append({"audio": str(path), "name": path.stem})
+                    sources.append(source)
+                spans.append((a, b, piece))
+            plan.append((index, spans))
+        if not pieces:
+            return results
+        realigned = _predict(items=pieces, sources=sources, progress=(0.5, 1.0), **run)
+    for index, spans in plan:
+        failed = [realigned[p] for _, _, p in spans if p is not None and not realigned[p].get("ok")]
+        if failed:
+            rt.log(f"{items[index].get('name') or index}: a segment failed ({failed[0].get('error')}), "
+                   "the whole-file alignment is kept")
+            continue
+        phones, words, scores = [], [], []
+        for a, b, p in spans:
+            if p is None:
+                continue
+            res = realigned[p]
+            for tier, rows in (("phones", phones), ("words", words)):
+                rows += [[a + s, min(a + e, b), text] for s, e, text in res[tier] if a + s < b - 1e-6]
+            if res.get("confidence") is not None:
+                scores.append(res["confidence"])
+        result = results[index]
+        words = [r for r in words if r[2] != SILENCE]
+        if result.get("texts"):
+            texts = _move_texts(result["texts"], result["words"], words)
+            if texts is None:
+                rt.log(f"{items[index].get('name') or index}: the written words could not be matched after the "
+                       "split, the whole-file alignment is kept")
+                continue
+            result["texts"] = texts
+        result["phones"] = _with_silence([r for r in phones if r[2] != SILENCE], result["duration"])
+        result["words"] = _with_silence(words, result["duration"])
+        result["diagnosis"] = {**result.get("diagnosis", {}), "segments": len(spans)}
+        if scores:
+            result["confidence"] = result["diagnosis"]["confidence"] = sum(scores) / len(scores)
     return results
 
 

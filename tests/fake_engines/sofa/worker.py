@@ -17,7 +17,7 @@ def _dictionary(model):
 
 @rt.method()
 def align(model, items, mode="force", g2p="auto", ap_detector="none", skip_unknown_words=False,
-          dictionary=None, extra_words=None):
+          dictionary=None, extra_words=None, split_silence=False, split_max_length=25.0, split_min_silence=0.3):
     dictionary = {**_dictionary(model), **(extra_words or {})}
     results = []
     for index, item in enumerate(items):

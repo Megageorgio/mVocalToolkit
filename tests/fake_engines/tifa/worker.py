@@ -7,7 +7,7 @@ import mvt_engine as rt
 
 @rt.method()
 def align(model, items, language=None, extra_languages=None, g2p="auto", skip_unknown_words=False,
-          extra_words=None, **_):
+          extra_words=None, optional_breaths=False, split_silence=False, **_):
     results = []
     for item in items:
         with wave.open(item["audio"]) as w:
@@ -22,7 +22,9 @@ def align(model, items, language=None, extra_languages=None, g2p="auto", skip_un
         results.append({"ok": True, "duration": duration, "confidence": 0.5, "phones": phones,
                         "words": [[step, duration - step, " ".join(words)]], "texts": [[step, duration - step, "T"]],
                         "language": language, "diagnosis": {"agreement": 0.9, "confidence": 0.5,
-                                                            "extra_languages": extra_languages}})
+                                                            "extra_languages": extra_languages,
+                                                            "optional_breaths": optional_breaths,
+                                                            "split_silence": split_silence}})
     return results
 
 

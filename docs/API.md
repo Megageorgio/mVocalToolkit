@@ -150,6 +150,15 @@ SOFA, HubertFA or TIFA.
 - `extra_languages` (TIFA): other languages that may occur in the texts, in priority order, e.g. `["en"]` for
   English words in Chinese lyrics. Phonemes of the main language come without a prefix, the others with it
   (`en/s`).
+- `optional_breaths` (TIFA, default `false`): an optional breath at the start of each item, at `SP` marks of
+  `words`/`phonemes` and after punctuation of a text. TIFA places `AP` where it hears a breath; the ones it
+  doesn't hear (squeezed to a frame or so, shorter than 60 ms) are left out. Needs an `AP` phoneme in the model.
+- `split_silence` (TIFA and SOFA, default `false`): files longer than `split_max_length` (25 s) are aligned once as a
+  whole, then cut only at pauses (the middle of a silence of at least `split_min_silence` = 0.3 s, at least
+  30 dB below the loud parts, where the first pass has no sound; or the start of a breath) into segments of up
+  to 25 s when the pauses allow it, and each segment is aligned again with its own words (with the pronunciation
+  chosen by the first pass). A cut never falls inside a word. `data.diagnosis.segments` tells how many segments
+  were used; if a segment fails, the whole-file alignment is kept.
 - TIFA takes the text as it is and does its own G2P (dictionaries, MeCab for Japanese, an LSTM model for
   unknown English words); when a word has several readings it picks the one heard in the audio.
   `words` (fixed word boundaries) and `phonemes` (known phonemes) items work too; `extra_words` fixes the

@@ -54,7 +54,35 @@ def save_user_words(home: Home, model_id: str, words: dict[str, list[str]]) -> d
     return clean
 
 
+def plain_tokens(text: str) -> list[str]:
+    """Words of a plain text as a model's own G2P (TIFA) looks them up: lower case, without punctuation."""
+    return [t.strip("-'") for t in re.findall(r"[\w'-]+", text.lower()) if t.strip("-'")]
+
+
+def _tifa_dictionary(model: InstalledModel, language: str | None) -> Path | None:
+    """The dictionary of a TIFA model's G2P (config.yaml, inference.g2p.converters) for the language."""
+    import yaml  # noqa: PLC0415
+
+    try:
+        config = yaml.safe_load((Path(model.path) / model.layout.get("config", "config.yaml")).read_text(encoding="utf-8"))
+        converters = config["inference"]["g2p"]["converters"]
+    except (OSError, KeyError, TypeError, ValueError, yaml.YAMLError):
+        return None
+    found = [(c.get("language"), (c.get("kwargs") or {}).get("dict_path")) for c in converters
+             if isinstance(c, dict) and c.get("id") == "dictionary"]
+    found = [(lang, p) for lang, p in found if isinstance(p, str)]
+    pick = next((p for lang, p in found if language and lang and _base(lang) == _base(language)), None)
+    if pick is None and len(found) == 1:
+        pick = found[0][1]
+    if pick is None:
+        return None
+    # "@" is the model folder
+    return Path(model.path) / pick[1:].lstrip("/\\") if pick.startswith("@") else Path(pick)
+
+
 def dictionary_path(model: InstalledModel, language: str | None) -> Path | None:
+    if model.engine == "tifa":
+        return _tifa_dictionary(model, language)
     if model.engine == "hubertfa":
         dictionaries: dict[str, str] = model.layout.get("dictionaries") or {}
         if not dictionaries:
