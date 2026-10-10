@@ -210,6 +210,8 @@ def cmd_label(args) -> None:
         model=args.model,
         language=args.lang,
         extra_languages=args.also_lang.split(",") if args.also_lang else [],
+        optional_breaths=args.breaths,
+        split_silence=args.split,
         mode=args.mode,
         ap_detector="none" if args.no_breath else "loudness_spectral_centroid",
         dictionary=args.dictionary,
@@ -490,6 +492,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", "-m", required=True, help="aligner model id (see: mvt languages) or path:")
     p.add_argument("--lang", "-l")
     p.add_argument("--also-lang", "-L", help="TIFA: other languages in the texts, e.g. en for English words in zh")
+    p.add_argument("--breaths", action="store_true",
+                   help="TIFA: optional breaths (AP) at the start, at SP marks and after punctuation")
+    p.add_argument("--split", action="store_true",
+                   help="TIFA: align long files again in pieces cut at pauses (silence or a breath)")
     p.add_argument("--mode", choices=["force", "match"], default="force")
     p.add_argument("--dictionary", help="custom dictionary file")
     p.add_argument("--no-breath", action="store_true", help="don't detect breaths (AP)")

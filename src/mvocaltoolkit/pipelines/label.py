@@ -175,7 +175,9 @@ def _align_params(model, req: AlignRequest, chunk: list[Item], language: str | N
     if words:
         params["extra_words"] = words
     if model.engine == "tifa":
-        params.update({"language": language, "extra_languages": req.extra_languages})
+        params.update({"language": language, "extra_languages": req.extra_languages,
+                       "optional_breaths": req.optional_breaths, "split_silence": req.split_silence,
+                       "split_max_length": req.split_max_length, "split_min_silence": req.split_min_silence})
     elif model.engine == "hubertfa":
         params.update({
             "language": language,

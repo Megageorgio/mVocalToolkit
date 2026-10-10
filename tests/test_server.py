@@ -197,6 +197,7 @@ def test_align_with_tifa_model(tmp_path):
         assert item["label"]["tiers"]["texts"][0]["text"] == "T"
         assert item["data"]["diagnosis"]["agreement"] == 0.9
         assert item["data"]["diagnosis"]["extra_languages"] == ["en"]
+        assert item["data"]["diagnosis"]["optional_breaths"] is False and item["data"]["diagnosis"]["split_silence"] is False
         assert (tmp_path / "o" / "textgrid" / "t.TextGrid").exists()
         g2p = client.post("/text/g2p", json={"texts": ["to read"], "model": "tf", "language": "en"}).json()
         entry = g2p["items"][0]
@@ -444,3 +445,19 @@ def test_device_change_restarts_idle_engines(tmp_path):
         assert {e["name"]: e for e in client.get("/engines").json()}["sofa"]["running"] is True
         assert client.post("/settings", json={"device": "cpu"}).json()["device"] == "cpu"
         assert {e["name"]: e for e in client.get("/engines").json()}["sofa"]["running"] is False
+
+
+def test_align_tifa_options_reach_the_engine(tmp_path):
+    make_wav(tmp_path / "t.wav")
+    with _client(tmp_path) as client:
+        folder = make_tifa_model(tmp_path / "tifa_src" / "tifa")
+        assert client.post("/models/import", json={"engine": "tifa", "path": str(folder), "id": "tf"}).status_code == 200
+        job = client.post("/align", json={
+            "input": {"items": [{"path": str(tmp_path / "t.wav"), "text": "Ab, cd!"}]},
+            "model": "tf", "language": "zh", "optional_breaths": True, "split_silence": True,
+            "output": {"formats": ["textgrid"], "dir": str(tmp_path / "o")},
+        }).json()
+        info = _wait(client, job["id"])
+        assert info["status"] == "done", info
+        diagnosis = info["result"]["items"][0]["data"]["diagnosis"]
+        assert diagnosis["optional_breaths"] is True and diagnosis["split_silence"] is True

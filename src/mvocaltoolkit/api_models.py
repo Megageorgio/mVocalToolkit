@@ -115,6 +115,17 @@ class AlignRequest(BaseModel):
         description="TIFA: more languages that may occur in the texts, in priority order (e.g. English words in "
         "Chinese lyrics); their phonemes keep the language prefix (en/aa)",
     )
+    optional_breaths: bool = Field(
+        False, description="TIFA: the aligner may place a breath (AP) at the start, at SP marks and after "
+        "punctuation when it hears one; breaths it doesn't hear are left out"
+    )
+    split_silence: bool = Field(
+        False, description="TIFA: files longer than split_max_length are aligned again in pieces cut only at "
+        "pauses (clear silence or a breath), each piece with its own words; a cut never falls inside a word"
+    )
+    split_max_length: float = Field(25.0, gt=1, description="TIFA, split_silence: longest piece in seconds when "
+                                    "the pauses allow it")
+    split_min_silence: float = Field(0.3, gt=0, description="TIFA, split_silence: shortest silence to cut at, seconds")
     mode: Literal["force", "match"] = Field("force", description="SOFA only")
     g2p: Literal["auto", "dictionary", "none"] = Field(
         "auto", description="auto: dictionary + the model's G2P for unknown words; none: tokens are phonemes"
