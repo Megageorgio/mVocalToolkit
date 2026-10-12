@@ -159,6 +159,11 @@ class SegmentRequest(BaseModel):
     model: str = Field(..., description="WFL-ASR model id or path:")
     lang_id: int | None = None
     language: str | None = Field(None, description="Language code; turned into lang_id with the model's langs.txt")
+    extra_languages: list[str] = Field(default_factory=list, description="Other languages in the song (multilingual models): "
+                                       "without lyrics every phrase gets the best-fitting of these languages; "
+                                       "with phonemes, other-language ones are written lang/phoneme")
+    language_prefix: Literal["auto", "always", "never"] = Field("auto", description="lang/ in front of labels: "
+                                                                 "auto = other languages only")
     sample: bool = False
     top_k: int = 0
     top_p: float = 0.0

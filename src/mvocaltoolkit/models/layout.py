@@ -64,8 +64,19 @@ def detect_wfl_asr(root: Path) -> dict[str, Any] | None:
     config = _first(root, "config.yaml") or next(iter(_files(root, "*.yaml", "*/*.yaml")), None)
     if ckpt is None or config is None:
         return None
-    return {"checkpoint": str(ckpt.relative_to(root)), "config": str(config.relative_to(root)),
-            "generation": wfl_generation(ckpt, config)}
+    layout: dict[str, Any] = {"checkpoint": str(ckpt.relative_to(root)), "config": str(config.relative_to(root)),
+                              "generation": wfl_generation(ckpt, config)}
+    # the model's languages ("ru,0" per line): a multilingual model is listed under each of them
+    langs = _first(root, "langs.txt") or next(iter(_files(root, "*/langs.txt")), None)
+    if langs is not None:
+        try:
+            codes = [line.split(",")[0].strip().lower() for line in langs.read_text(encoding="utf-8").splitlines()
+                     if line.strip()]
+            if codes:
+                layout["languages"] = codes
+        except OSError:
+            pass
+    return layout
 
 
 def wfl_generation(ckpt: Path, config: Path) -> int:

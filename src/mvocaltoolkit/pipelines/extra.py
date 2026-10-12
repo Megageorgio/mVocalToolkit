@@ -75,6 +75,8 @@ async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, A
                 "items": [{"audio": str(i.audio), "name": i.name, "phonemes": i.phonemes} for i in chunk],
                 "lang_id": req.lang_id if req.lang_id is not None else (
                     _lang_id(model, req.language) if req.language else model.params.get("lang_id")),
+                "extra_lang_ids": [i for i in (_lang_id(model, lg) for lg in req.extra_languages) if i is not None],
+                "language_prefix": req.language_prefix,
                 "decoder": req.decoder,
                 "viterbi_bias": req.viterbi_bias,
                 "silence_threshold": req.silence_threshold,

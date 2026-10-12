@@ -303,7 +303,9 @@ class ModelStore:
                 id=mid,
                 engine=engine,
                 name=name or model_dir.name,
-                languages=languages or list(detected.get("languages") or []) or _guess_languages(model_dir.name),
+                # a model that names its languages itself (WFL-ASR langs.txt) is registered under all of them;
+                # otherwise the languages given, or guessed from the name
+                languages=list(detected.get("languages") or []) or languages or _guess_languages(model_dir.name),
                 text_frontend=text_frontend or _guess_frontend(model_dir.name),
             )
             target = self.home.models / _safe(mid)
