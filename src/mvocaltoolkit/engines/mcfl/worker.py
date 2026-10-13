@@ -36,6 +36,7 @@ def _load(path: str, layout: dict[str, Any] | None = None) -> Any:
         else:
             threads = max(1, min(4, os.cpu_count() or 1))
             _models[path] = _runtime(root).MCFL(str(root), threads=threads)
+        _models[path]._dir = str(root)
     return _models[path]
 
 
@@ -115,6 +116,79 @@ def _plain_model(root: Path, config: str = "model.json") -> Any:
     return Plain()
 
 
+def _forced(m: Any, path: str, lang: str, phones: list[str], confidence: bool) -> list[list[Any]]:
+    """Places known [phones] (in order, the language's own names): the best path through their B-/I- tags, each
+    at least one frame; a phoneme the model doesn't know may take any label of the language. Continuous segments
+    with exactly the given names (as mLabeler's built-in model does)."""
+    import numpy as np  # noqa: PLC0415
+
+    import mcfl_infer as mi  # noqa: PLC0415
+
+    a = mi.load_audio(path)
+    a = a / (np.abs(a).max() + 1e-8)
+    lid = m.langs[lang]
+    lp, off = m.frames(a, lid)
+    lang_phonemes = m.h.get("lang_phonemes") if hasattr(m, "h") else None
+    if lang_phonemes is None:
+        import json  # noqa: PLC0415
+        lang_phonemes = json.loads((Path(m._dir) / "lang_phonemes.json").read_text(encoding="utf-8"))
+    keep = set(lang_phonemes.get(lang, [])) | set(mi.SHARED)
+    cols = [i for i, lab in enumerate(m.labels) if lab != "O" and lab[2:] in keep]
+    sub = lp[:, cols].astype(np.float64)
+    mx = sub.max(1, keepdims=True)
+    sub = sub - mx - np.log(np.exp(sub - mx).sum(1, keepdims=True))
+    col = {m.labels[c]: j for j, c in enumerate(cols)}
+    to_canon = {native: canon for canon, per in m.merge.items() for lg, native in per.items() if lg == lang}
+    canon = [to_canon.get(p, p) for p in phones]
+    t, k = len(sub), len(phones)
+    if k > t:
+        raise ValueError(f"{k} phonemes don't fit in {t * m.fd:.2f} s")
+    best = sub.max(1)
+    b = np.stack([sub[:, col[f"B-{c}"]] if f"B-{c}" in col and f"I-{c}" in col else best for c in canon], 1)
+    i_ = np.stack([sub[:, col[f"I-{c}"]] if f"B-{c}" in col and f"I-{c}" in col else best for c in canon], 1)
+    logb = np.log(m.cfg.get("viterbi_bias", 1.0))
+    neg = -1e18
+    sb = np.full(k, neg); si = np.full(k, neg)
+    sb[0] = b[0, 0]
+    from_b = np.zeros((t, k), bool)
+    start_from_b = np.zeros((t, k), bool)
+    for f in range(1, t):
+        start_from_b[f, 1:] = sb[:-1] >= si[:-1]
+        prev_end = np.concatenate([[neg], np.maximum(sb[:-1], si[:-1])])
+        from_b[f] = sb >= si
+        sb, si = prev_end + b[f], np.maximum(sb, si) + logb + i_[f]
+    j = k - 1
+    in_b = sb[j] >= si[j]
+    starts = [0] * k
+    for f in range(t - 1, 0, -1):
+        if in_b:
+            starts[j] = f
+            in_b = bool(start_from_b[f, j])
+            j -= 1
+            if j < 0:
+                break
+        else:
+            in_b = bool(from_b[f, j])
+    fd = m.fd
+    p = np.exp(lp)
+    index = {lab: n for n, lab in enumerate(m.labels)}
+    dur = len(a) / mi.SR
+    out, prev = [], -1.0
+    for n in range(k):
+        f0 = starts[n]
+        f1 = starts[n + 1] - 1 if n + 1 < k else t - 1
+        s = 0.0 if n == 0 else min(dur, max(prev + 1e-4, (f0 + float(off[f0, 0])) * fd))
+        prev = s
+        row = [s, None, phones[n]]
+        if confidence:
+            cs = [index[x] for x in (f"B-{canon[n]}", f"I-{canon[n]}") if x in index]
+            row.append(round(float(p[f0:f1 + 1, cs].sum(1).mean()), 4) if cs else None)
+        out.append(row)
+    for n in range(k):
+        out[n][1] = out[n + 1][0] if n + 1 < k else dur
+    return out
+
+
 def _with_confidence(m: Any, path: str, lang: str) -> list[list[Any]]:
     """As MCFL.label, each segment with the mean probability (B- + I- of its label) over its frames."""
     import numpy as np  # noqa: PLC0415
@@ -165,7 +239,10 @@ def segment(
         name = item.get("name") or Path(item["audio"]).stem
         rt.progress(index / len(items), f"Segmenting {name}")
         try:
-            if confidence:
+            known = [x for x in (item.get("phonemes") or []) if x]
+            if known:  # the phonemes are given: only their boundaries are found
+                results.append({"ok": True, "phones": _forced(m, item["audio"], code, known, confidence)})
+            elif confidence:
                 results.append({"ok": True, "phones": _with_confidence(m, item["audio"], code)})
             else:
                 segments = m.label_file(item["audio"], lang=code)

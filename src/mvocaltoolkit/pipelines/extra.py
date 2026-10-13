@@ -67,13 +67,13 @@ async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, A
                 return
             report((offset + float(data.get("progress", 0.0)) * size) / total, data.get("message", "Segmenting"))
 
-        if mcfl:  # MCFL: one language, its own decoder (the package's settings)
+        if mcfl:  # MCFL: one language, its own decoder (the package's settings); given phonemes are placed
             results = await tk.engines.call(
                 "mcfl",
                 "segment",
                 {
                     "model": {"path": model.path, "layout": model.layout},
-                    "items": [{"audio": str(i.audio), "name": i.name} for i in chunk],
+                    "items": [{"audio": str(i.audio), "name": i.name, "phonemes": i.phonemes} for i in chunk],
                     "language": req.language or (model.languages[0] if model.languages else None),
                     "silence_threshold": req.silence_threshold,
                     "min_silence_duration": req.min_silence_duration,
