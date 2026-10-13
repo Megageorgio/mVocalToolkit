@@ -269,8 +269,42 @@ def test_mcfl_release_format_and_catalog(tmp_path):
     folder.mkdir()
     (folder / "model.json").write_text(json.dumps({"format": "mcfl-v1", "langs": {"ru": 1, "ja": 0}}), encoding="utf-8")
     (folder / "model.safetensors").write_bytes(b"\0" * 16)
-    assert detect_mcfl(folder) == {"model": "model.safetensors", "format": "mcfl-v1", "languages": ["ja", "ru"]}
+    assert detect_mcfl(folder) == {"model": "model.safetensors", "format": "mcfl-v1", "config": "model.json", "languages": ["ja", "ru"]}
     assert find_model_dirs("mcfl", tmp_path) == [folder]
+    # installed, its model.json is kept as mcfl.json next to the toolkit's own model.json
+    _h, st = _store(tmp_path / "i")
+    [m] = st.import_local("mcfl", str(folder))
+    assert m.layout["config"] == "mcfl.json" and json.loads((Path(m.path) / "mcfl.json").read_text())["format"] == "mcfl-v1"
+    assert st.get_installed(m.id).engine == "mcfl" and detect_mcfl(Path(m.path))["config"] == "mcfl.json"
     _home, store = _store(tmp_path / "s")
     ids = {e.id for e in store.catalog.filter("mcfl", "ru", "segment")}
     assert {f"MCFL_multi13_{s}_v0.0.1" for s in ("xxxs", "xxs", "s", "m", "l")} <= ids
+
+
+def test_main_catalog_is_read_at_start_with_fallbacks(tmp_path):
+    import os  # noqa: PLC0415
+
+    home = Home(tmp_path / "home")
+    settings = home.load_settings()
+    main = tmp_path / "catalog.json"
+    model = {"id": "only-in-main", "engine": "sofa", "languages": ["ru"], "source": {"type": "url", "url": "http://x/m.zip"}}
+    future = {"id": "future-engine", "engine": "no-such-engine", "source": {"type": "url", "url": "http://x/f.zip"}}
+    main.write_text(json.dumps({"format": 1, "name": "main", "models": [model, future]}), encoding="utf-8")
+    os.environ["MVT_CATALOG_URL"] = str(main)
+    try:
+        cat = Catalog(home, settings, {"sofa", "wfl_asr"})
+        cat.load(fetch_main=True)
+        # the main catalog replaces the copy inside the toolkit; models of engines this toolkit lacks are left out
+        assert set(cat.entries) == {"only-in-main"} and cat.sources[0] == str(main)
+        main.unlink()  # offline: the last copy read
+        cat.load(fetch_main=True)
+        assert set(cat.entries) == {"only-in-main"} and "copy of" in cat.sources[0]
+        # a newer format is not read: the last good copy is kept
+        main.write_text(json.dumps({"format": 2, "models": []}), encoding="utf-8")
+        cat.load(fetch_main=True)
+        assert set(cat.entries) == {"only-in-main"}
+        (home.dir("catalogs/remote") / "main.json").unlink()
+        cat.load(fetch_main=True)  # nothing usable: the catalog inside the toolkit
+        assert "sofa-ru-hhskt-v0.0.1" in cat.entries
+    finally:
+        os.environ["MVT_CATALOG_URL"] = ""

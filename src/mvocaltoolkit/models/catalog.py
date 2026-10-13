@@ -1,7 +1,9 @@
 """Model catalogs.
 
 A catalog is a JSON file listing models that can be downloaded on demand. The toolkit merges:
-    - the built-in catalog (mvocaltoolkit/catalog/*.json),
+    - the main catalog: github.com/Megageorgio/mVocalToolkit-catalog (settings.catalog_url), read again at every
+      start; when it can't be reached, the last copy read, else the one inside the toolkit (mvocaltoolkit/catalog),
+
     - user catalogs in <home>/catalogs/*.json,
     - remote catalogs listed in settings.catalogs (URLs, cached locally).
 
@@ -24,6 +26,7 @@ separate, pitch. By default the task comes from the engine.
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Literal
@@ -34,6 +37,8 @@ from pydantic import BaseModel, Field
 from ..settings import Home, Settings
 
 BUILTIN_DIR = Path(__file__).parent.parent / "catalog"
+# the catalog format this toolkit reads ("format" in the file; a newer major format is not used)
+FORMAT = 1
 
 
 class ModelSource(BaseModel):
@@ -141,17 +146,58 @@ class CatalogEntry(BaseModel):
 
 
 class Catalog:
-    def __init__(self, home: Home, settings: Settings):
+    def __init__(self, home: Home, settings: Settings, engines: set[str] | None = None):
         self.home = home
         self.settings = settings
+        # engines this toolkit has: models of other engines (a newer catalog) are left out
+        self.engines = engines
         self.entries: dict[str, CatalogEntry] = {}
         self.sources: list[str] = []
 
-    def load(self, refresh_remote: bool = False) -> None:
+    @property
+    def main_url(self) -> str:
+        return os.environ.get("MVT_CATALOG_URL", self.settings.catalog_url).strip()
+
+    def _main(self, fetch: bool) -> tuple[dict[str, Any], str] | None:
+        """The main catalog: fetched now ([fetch]), else the last copy read; None: use the one inside the toolkit."""
+        url = self.main_url
+        if not url:
+            return None
+        cache = self.home.dir("catalogs/remote") / "main.json"
+        if fetch:
+            try:
+                if url.startswith(("http://", "https://")):
+                    response = httpx.get(url, follow_redirects=True, timeout=8)
+                    response.raise_for_status()
+                    data = response.json()
+                else:
+                    data = json.loads(Path(url).expanduser().read_text(encoding="utf-8"))
+                if _readable(data):
+                    cache.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                    return data, url
+            except Exception:  # noqa: BLE001  (offline: the last copy)
+                pass
+        if cache.exists():
+            try:
+                data = json.loads(cache.read_text(encoding="utf-8"))
+                if _readable(data):
+                    return data, f"{url} (copy of {time.strftime('%Y-%m-%d %H:%M', time.localtime(cache.stat().st_mtime))})"
+            except (OSError, ValueError):
+                pass
+        return None
+
+    def load(self, refresh_remote: bool = False, fetch_main: bool = False) -> None:
+        """[fetch_main]: read the main catalog from its URL now (at start and on an update check)."""
         entries: dict[str, CatalogEntry] = {}
         sources: list[str] = []
-        files = sorted(BUILTIN_DIR.glob("*.json")) + sorted(self.home.catalogs.glob("*.json"))
-        for path in files:
+        main = self._main(fetch_main or refresh_remote)
+        if main is not None:
+            self._merge(entries, main[0], main[1])
+            sources.append(main[1])
+            builtin: list[Path] = []
+        else:
+            builtin = sorted(BUILTIN_DIR.glob("*.json"))
+        for path in builtin + sorted(self.home.catalogs.glob("*.json")):
             self._merge(entries, json.loads(path.read_text(encoding="utf-8")), str(path))
             sources.append(str(path))
         for ref in self.settings.catalogs:
@@ -168,7 +214,12 @@ class Catalog:
     def _merge(self, entries: dict[str, CatalogEntry], data: dict[str, Any], origin: str) -> None:
         name = data.get("name") or origin
         for raw in data.get("models", []):
-            entry = CatalogEntry.model_validate({**raw, "catalog": name})
+            if self.engines is not None and raw.get("engine") not in self.engines:
+                continue
+            try:
+                entry = CatalogEntry.model_validate({**raw, "catalog": name})
+            except ValueError:  # a field this toolkit doesn't know how to read
+                continue
             entries[entry.id] = entry
             if entry.type == "pack":
                 for member in entry.models:
@@ -231,6 +282,16 @@ class Catalog:
             self.settings.catalogs.append(ref)
             self.home.save_settings(self.settings)
         self.load(refresh_remote=True)
+
+
+def _readable(data: Any) -> bool:
+    """A catalog this toolkit can read: a "models" list, a format it knows (none = 1)."""
+    if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+        return False
+    try:
+        return int(str(data.get("format", FORMAT)).split(".")[0]) <= FORMAT
+    except ValueError:
+        return False
 
 
 def lang_match(wanted: str, available: str) -> bool:

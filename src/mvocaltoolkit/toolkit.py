@@ -19,10 +19,11 @@ class Toolkit:
         self.home = home or Home()
         self.home.root.mkdir(parents=True, exist_ok=True)
         self.settings = settings or self.home.load_settings()
-        self.catalog = Catalog(self.home, self.settings)
-        self.catalog.load()
-        self.models = ModelStore(self.home, self.settings, self.catalog)
         self.engines = EngineManager(self.home, self.settings, extra_dirs=engine_dirs)
+        self.catalog = Catalog(self.home, self.settings, set(self.engines.specs))
+        # the main catalog is read again at every start (the last copy or the built-in one when offline)
+        self.catalog.load(fetch_main=True)
+        self.models = ModelStore(self.home, self.settings, self.catalog)
         self._jobs: JobManager | None = None
 
     @property

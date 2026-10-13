@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import struct
 import sys
 import wave
@@ -10,6 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 FAKE_ENGINES = Path(__file__).parent / "fake_engines"
+# tests use the catalog inside the toolkit, never the one on GitHub
+os.environ["MVT_CATALOG_URL"] = ""
 
 
 def make_wav(path: Path, seconds: float = 1.0, rate: int = 16000) -> Path:

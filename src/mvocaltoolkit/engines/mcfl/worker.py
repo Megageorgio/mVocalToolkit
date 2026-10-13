@@ -27,18 +27,19 @@ def _runtime(root: Path):
     return mcfl_infer
 
 
-def _load(path: str) -> Any:
+def _load(path: str, layout: dict[str, Any] | None = None) -> Any:
     if path not in _models:
         root = Path(path)
-        if (root / "model.json").is_file() and (root / "model.safetensors").is_file():
-            _models[path] = _plain_model(root)
+        config = (layout or {}).get("config") or ("mcfl.json" if (root / "mcfl.json").is_file() else "model.json")
+        if (root / "model.safetensors").is_file():
+            _models[path] = _plain_model(root, config)
         else:
             threads = max(1, min(4, os.cpu_count() or 1))
             _models[path] = _runtime(root).MCFL(str(root), threads=threads)
     return _models[path]
 
 
-def _plain_model(root: Path) -> Any:
+def _plain_model(root: Path, config: str = "model.json") -> Any:
     """A model of the release format "mcfl-v1" (model.json + model.safetensors, fp16, batch norms folded in): the
     network in numpy, the decoding of mcfl_infer."""
     import json  # noqa: PLC0415
@@ -71,7 +72,7 @@ def _plain_model(root: Path) -> Any:
 
     class Plain(mi.MCFL):
         def __init__(self) -> None:  # noqa: D107  (no onnxruntime session)
-            h = json.loads((root / "model.json").read_text(encoding="utf-8"))
+            h = json.loads((root / config).read_text(encoding="utf-8"))
             if h.get("format") != "mcfl-v1":
                 raise ValueError(f"{root}: unknown MCFL format {h.get('format')!r}")
             self.h = h
@@ -123,7 +124,7 @@ def segment(
     min_silence_duration: float | None = None,
     **_ignored: Any,  # options of the WFL-ASR engines
 ) -> list[dict[str, Any]]:
-    m = _load(model["path"])
+    m = _load(model["path"], model.get("layout"))
     langs = list(m.langs)
     code = (language or "").lower().split("-")[0].split("_")[0]
     if code not in m.langs:

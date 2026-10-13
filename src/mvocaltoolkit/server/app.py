@@ -234,7 +234,9 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         return {"updating": True, "log": str(log)}
 
     @app.get("/update/check", tags=["system"], dependencies=[Depends(auth)])
-    async def update_check() -> dict[str, Any]:
+    async def update_check(tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        # the model catalog is checked too: new models show up without restarting
+        await asyncio.to_thread(tk.catalog.load, False, True)
         return await check_update()
 
     # ---------------- engines ----------------

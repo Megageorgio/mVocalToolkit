@@ -46,7 +46,10 @@ class Settings:
     auto_install_engines: bool = True
     # Download models automatically when a job needs them.
     auto_download_models: bool = True
-    # Extra catalogs (URLs or file paths) merged with the built-in catalog.
+    # The model catalog, read again at every start (and update check); the copy inside the toolkit and the last one
+    # read are used when it can't be reached. Empty: only the copy inside the toolkit. MVT_CATALOG_URL overrides it.
+    catalog_url: str = "https://raw.githubusercontent.com/Megageorgio/mVocalToolkit-catalog/main/catalog.json"
+    # Extra catalogs (URLs or file paths) merged with the main one.
     catalogs: list[str] = field(default_factory=list)
     # Optional token for the GitHub API (raises its rate limit; only needed for catalog assets given as patterns).
     github_token: str = ""

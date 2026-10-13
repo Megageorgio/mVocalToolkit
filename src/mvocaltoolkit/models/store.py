@@ -245,6 +245,10 @@ class ModelStore:
         return installed
 
     def _register(self, entry: CatalogEntry, folder: Path, detected: dict[str, Any], source: str) -> InstalledModel:
+        if detected.get("config") == "model.json":
+            # the model's own model.json (MCFL) would be overwritten by the toolkit's: kept as mcfl.json
+            (folder / "model.json").replace(folder / "mcfl.json")
+            detected = {**detected, "config": "mcfl.json"}
         model = InstalledModel(
             id=entry.id,
             engine=entry.engine,
