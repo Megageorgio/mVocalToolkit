@@ -311,6 +311,7 @@ separation can make clean recordings worse.
 
 ```json
 {
+  "format": 1,
   "name": "my-catalog",
   "models": [
     {
@@ -356,6 +357,7 @@ Source types: `url`, `github_release` (`asset` is a file name pattern or a list 
 | `engine_idle_timeout` | 600 | seconds before an unused engine is stopped |
 | `auto_install_engines` | true | install engines when a job needs them |
 | `auto_download_models` | true | download catalog models when a job needs them |
+| `catalog_url` | raw `catalog.json` of github.com/Megageorgio/mVocalToolkit-catalog | the main catalog, read at every start and update check (offline: the last copy, else the built-in one); `MVT_CATALOG_URL` overrides it, empty = built-in only |
 | `catalogs` | [] | extra catalogs |
 | `github_token`, `hf_token` | | optional |
 | `max_parallel_jobs` | 2 | |

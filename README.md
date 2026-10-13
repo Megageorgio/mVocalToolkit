@@ -123,7 +123,9 @@ See [docs/API.md](docs/API.md) for details and examples.
 
 ## Models and catalogs
 
-Models come from catalogs (JSON). The built-in one contains Whisper models, Russian SOFA, the SOFA model
+Models come from catalogs (JSON). The main one lives in
+[mVocalToolkit-catalog](https://github.com/Megageorgio/mVocalToolkit-catalog) and is read again at every start, so
+new models appear without a new toolkit; offline the last copy is used, else the one inside the toolkit. The built-in one contains Whisper models, Russian SOFA, the SOFA model
 packs, HubertFA, TIFA, WFL-ASR, MCFL, GAME, separation and pitch models.
 
 How a GUI uses them: it asks `GET /languages?task=align`, shows the languages, then the models of the chosen
