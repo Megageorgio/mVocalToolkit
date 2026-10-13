@@ -68,13 +68,13 @@
     {
       "id": "sofa-ru-hhskt-v0.0.1",
       "engine": "sofa",
-      "name": "Russian SOFA hhskt_ru v0.0.1 (m & hhs_kt)",
+      "name": "Russian SOFA hhskt_ru v0.0.1",
       "version": "0.0.1",
       "languages": [
         "ru"
       ],
       "text_frontend": "ru",
-      "author": "m & hhs_kt",
+      "author": "m & HHS_kt",
       "description": "Russian singing aligner trained by m and hhs_kt (the model is named after hhs_kt). Data: hhs_kt, XHR0ME, Miya, m, Gitreti, about 4 hours. Modified cmusphinx-ru-5.2 dictionary and a G2P by m for unknown words. When you label with it, please link the model page or the hhs_kt channel (t.me/hhs_kt_666).",
       "homepage": "https://github.com/Megageorgio/SOFA-Models/releases/tag/Russian_v0.0.1",
       "source": {
@@ -112,7 +112,7 @@
         {
           "id": "sofa-pack-tgm_sofa_en",
           "folder": "tgm_sofa_en",
-          "name": "English SOFA tgm v0.0.5 (tigermeat, v030 pack)",
+          "name": "English SOFA tgm v0.0.5 (v030 pack)",
           "languages": [
             "en"
           ],
@@ -127,7 +127,7 @@
         {
           "id": "sofa-pack-millefeuille_fr",
           "folder": "millefeuille_fr",
-          "name": "French SOFA millefeuille b001 (imsupposedto, v030 pack)",
+          "name": "French SOFA millefeuille b001 (v030 pack)",
           "languages": [
             "fr"
           ],
@@ -137,7 +137,7 @@
         {
           "id": "sofa-pack-suco_zh",
           "folder": "suco_zh",
-          "name": "Mandarin SOFA (suco, v030 pack)",
+          "name": "Mandarin SOFA (v030 pack)",
           "languages": [
             "zh"
           ],
@@ -147,7 +147,7 @@
         {
           "id": "sofa-pack-colstone_jp",
           "folder": "colstone_jp",
-          "name": "Japanese SOFA v0.0.2b (colstone, v030 pack)",
+          "name": "Japanese SOFA v0.0.2b (v030 pack)",
           "languages": [
             "ja"
           ],
@@ -157,7 +157,7 @@
         {
           "id": "sofa-pack-colstone_ko",
           "folder": "colstone_ko",
-          "name": "Korean SOFA v0.0.1b (colstone, v030 pack)",
+          "name": "Korean SOFA v0.0.1b (v030 pack)",
           "languages": [
             "ko"
           ],
@@ -170,7 +170,7 @@
       "id": "sofa-en-tgm-v1.0.0",
       "type": "pack",
       "engine": "sofa",
-      "name": "English SOFA tgm v1.0.0 (tigermeat)",
+      "name": "English SOFA tgm v1.0.0",
       "languages": [
         "en"
       ],
@@ -196,7 +196,7 @@
         {
           "id": "sofa-tgm_en_v100",
           "folder": "tgm_en_v100",
-          "name": "English SOFA tgm v1.0.0 (tigermeat)",
+          "name": "English SOFA tgm v1.0.0",
           "author": "tigermeat",
           "languages": [
             "en"
@@ -213,7 +213,7 @@
     {
       "id": "sofa-ja-akm-v0.0.1",
       "engine": "sofa",
-      "name": "Japanese SOFA akm_ja v0.0.1 (ariikamusic)",
+      "name": "Japanese SOFA akm_ja v0.0.1",
       "version": "0.0.1",
       "languages": [
         "ja"
@@ -233,7 +233,7 @@
     {
       "id": "sofa-ja-greenleaf-test2plus",
       "engine": "sofa",
-      "name": "Japanese SOFA Test2_Plus (Greenleaf2001)",
+      "name": "Japanese SOFA Test2_Plus",
       "version": "Test2_Plus",
       "languages": [
         "ja"
@@ -258,7 +258,7 @@
     {
       "id": "sofa-zh-baishuo-v2.1",
       "engine": "sofa",
-      "name": "Mandarin SOFA v2.1 (BaiShuo)",
+      "name": "Mandarin SOFA v2.1",
       "version": "2.1",
       "languages": [
         "zh"
@@ -279,7 +279,7 @@
     {
       "id": "sofa-zh-acv-beta-0.0.1",
       "engine": "sofa",
-      "name": "Mandarin SOFA ACV beta 0.0.1 (Archivoice)",
+      "name": "Mandarin SOFA ACV beta 0.0.1",
       "version": "0.0.1",
       "languages": [
         "zh"
@@ -300,7 +300,7 @@
     {
       "id": "sofa-yue-ribosomek-v0.1",
       "engine": "sofa",
-      "name": "Cantonese SOFA v0.1 (RibosomeK)",
+      "name": "Cantonese SOFA v0.1",
       "version": "0.1",
       "languages": [
         "yue"
@@ -321,7 +321,7 @@
     {
       "id": "sofa-yue-azairons-250816",
       "engine": "sofa",
-      "name": "Cantonese SOFA 250816 (AzairoNS)",
+      "name": "Cantonese SOFA 250816",
       "version": "250816",
       "languages": [
         "yue"
@@ -388,12 +388,12 @@
     {
       "id": "tifa-ru-hhskt-v0.0.1",
       "engine": "tifa",
-      "name": "TIFA Russian hhskt_ru v0.0.1 (m & hhs_kt)",
+      "name": "TIFA Russian hhskt_ru v0.0.1",
       "version": "0.0.1",
       "languages": [
         "ru"
       ],
-      "author": "m & hhs_kt",
+      "author": "m & HHS_kt",
       "description": "Russian singing aligner (TIFA by OpenVPI) trained by m and hhs_kt on about 10 hours of Russian singing; also post-trained on long sequences, so whole songs align as well as phrases. Same 51-phoneme set as the Russian SOFA and WFL-ASR models (modified cmusphinx-ru-5.2 dictionary, 534k words). Works best with optional breaths on. When you label with it, please link the model page or the hhs_kt channel (t.me/hhs_kt_666).",
       "homepage": "https://github.com/Megageorgio/TIFA-Models/releases/tag/Russian_v0.0.1",
       "source": {
@@ -407,7 +407,7 @@
     {
       "id": "wfl-ru-hhskt-v0.0.1",
       "engine": "wfl_asr",
-      "name": "WFL-ASR Russian hhskt_ru small v0.0.1 (m & HHS_kt)",
+      "name": "WFL-ASR Russian hhskt_ru small v0.0.1",
       "version": "0.0.1",
       "languages": [
         "ru"
@@ -591,7 +591,7 @@
     {
       "id": "pc-nsf-hifigan-2025.02",
       "engine": "vocoder",
-      "name": "PC-NSF-HiFiGAN 44.1 kHz (2025.02, OpenVPI)",
+      "name": "PC-NSF-HiFiGAN 44.1 kHz (2025.02)",
       "version": "2025.02",
       "author": "OpenVPI",
       "description": "The vocoder of DiffSinger models, with pitch shifting that keeps the formants. Used to hear a recording with an edited f0. Weights by the OpenVPI team under CC BY-NC-SA 4.0: free for non-commercial use with credit; results can't be used commercially. Downloaded from the official release on first use; the NOTICE and STATEMENTS files of the release are kept in the model folder.",
@@ -893,7 +893,7 @@
       "languages": [
         "ru"
       ],
-      "author": "Megageorgio",
+      "author": "m & HHS_kt",
       "description": "Refines phoneme boundaries after any labeller (trained on Russian singing after WFL-ASR; same phoneme set as the Russian SOFA and WFL-ASR models). With other languages or labelling styles it moves only confident boundaries and not far (safe mode).",
       "homepage": "https://github.com/Megageorgio/mRefinerModel",
       "license": "MIT",
@@ -932,7 +932,7 @@
         "yue",
         "zh"
       ],
-      "author": "Megageorgio",
+      "author": "m & HHS_kt",
       "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 3.4M parameters, ~450x real time on one CPU thread; the default."
     },
     {
@@ -962,7 +962,7 @@
         "yue",
         "zh"
       ],
-      "author": "Megageorgio",
+      "author": "m & HHS_kt",
       "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 0.4M parameters, ~1000x real time."
     },
     {
@@ -992,7 +992,7 @@
         "yue",
         "zh"
       ],
-      "author": "Megageorgio",
+      "author": "m & HHS_kt",
       "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 0.8M parameters, ~870x real time."
     },
     {
@@ -1022,7 +1022,7 @@
         "yue",
         "zh"
       ],
-      "author": "Megageorgio",
+      "author": "m & HHS_kt",
       "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 7.5M parameters, ~285x real time."
     },
     {
@@ -1052,7 +1052,7 @@
         "yue",
         "zh"
       ],
-      "author": "Megageorgio",
+      "author": "m & HHS_kt",
       "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 13.1M parameters, ~200x real time, the most accurate."
     }
   ]

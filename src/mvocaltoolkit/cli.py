@@ -145,7 +145,7 @@ def cmd_models(args) -> None:
         print("Removed" if tk.models.remove(args.id) else "Not installed")
     elif args.action == "import":
         installed = tk.models.import_local(
-            args.engine, args.path, args.id, args.name, args.lang.split(",") if args.lang else None
+            args.engine, args.path, args.id, args.name, args.lang.split(",") if args.lang else None, author=args.author
         )
         for model in installed:
             print(f"Imported {model.id}: {model.layout}")
@@ -481,6 +481,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--installed", action="store_true")
     p.add_argument("--path", help="import: folder or archive")
     p.add_argument("--name")
+    p.add_argument("--author", help="import: who made the model (shown next to its name)")
     p.set_defaults(func=cmd_models)
 
     p = sub.add_parser("languages", help="Languages and their models for a task (the GUI model choice)")

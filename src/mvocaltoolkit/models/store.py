@@ -45,6 +45,7 @@ class InstalledModel(BaseModel):
     text_frontend: str | None = None
     tasks: list[str] = Field(default_factory=list)
     description: str = ""
+    author: str = ""
     source: str = ""  # catalog id / pack id / "import"
     installed_at: float = Field(default_factory=time.time)
 
@@ -257,6 +258,7 @@ class ModelStore:
             text_frontend=entry.text_frontend,
             tasks=entry.task_list(),
             description=entry.description,
+            author=entry.author,
             source=source,
         )
         (folder / "model.json").write_text(model.model_dump_json(indent=2), encoding="utf-8")
@@ -271,6 +273,7 @@ class ModelStore:
         languages: list[str] | None = None,
         text_frontend: str | None = None,
         copy: bool = True,
+        author: str | None = None,
     ) -> list[InstalledModel]:
         """Registers a local model folder or archive (several models inside are registered separately)."""
         src = Path(path).expanduser()
@@ -313,6 +316,7 @@ class ModelStore:
                 # otherwise the languages given, or guessed from the name
                 languages=list(detected.get("languages") or []) or languages or _guess_languages(model_dir.name),
                 text_frontend=text_frontend or _guess_frontend(model_dir.name),
+                author=author or "",
             )
             target = self.home.models / _safe(mid)
             shutil.rmtree(target, ignore_errors=True)

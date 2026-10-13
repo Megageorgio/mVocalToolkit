@@ -305,6 +305,7 @@ class ModelImportRequest(BaseModel):
     languages: list[str] | None = None
     text_frontend: str | None = None
     copy_files: bool = True
+    author: str | None = None
 
 
 class CatalogAddRequest(BaseModel):

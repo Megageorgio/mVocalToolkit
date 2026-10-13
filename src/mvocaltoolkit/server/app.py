@@ -393,7 +393,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         try:
             installed = await asyncio.to_thread(
                 tk.models.import_local, req.engine, req.path, req.id, req.name, req.languages, req.text_frontend,
-                req.copy_files,
+                req.copy_files, req.author,
             )
         except (FileNotFoundError, ValueError, RuntimeError) as e:
             raise HTTPException(400, str(e)) from e
