@@ -169,6 +169,8 @@ class SegmentRequest(BaseModel):
     top_p: float = 0.0
     temperature: float = 1.0
     confidence_threshold: float | None = None
+    confidence: bool = Field(False, description="Give every phoneme the model's confidence in it (0..1): the mean "
+                             "probability of its label over its frames (WFL-ASR refactor models, MCFL)")
     # models of WFL-ASR's refactor branch
     decoder: Literal["viterbi", "constrained"] = "viterbi"
     viterbi_bias: float = 5.0

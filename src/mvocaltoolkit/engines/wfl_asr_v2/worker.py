@@ -200,6 +200,43 @@ def _multilang_text(net, cfg, audio, sr, device, phones, phone_lang, primary, la
     return align(lg, of)
 
 
+def _confidences(net, cfg, audio, sr, device, lang_id, segments, to_model, lang2id) -> list[float | None]:
+    """Per segment: the mean probability (B- + I- of its label) the network gives it over its frames, computed as
+    process_audio computes the logits (28 s chunks, the language's embedding)."""
+    import math  # noqa: PLC0415
+
+    import numpy as np  # noqa: PLC0415
+    import torch  # noqa: PLC0415
+
+    fd = cfg["data"]["frame_duration"]
+    a = audio / (np.max(np.abs(audio)) + 1e-8)
+    lang = torch.tensor([lang_id if lang_id is not None else 0], dtype=torch.long).to(device)
+    step = int(28.0 * sr)
+    parts = []
+    for start in range(0, len(a), step):
+        chunk = a[start:start + step]
+        frames = math.ceil(len(chunk) / sr / fd)
+        if len(chunk) < 1600:
+            chunk = np.pad(chunk, (0, 1600 - len(chunk)))
+        with torch.no_grad():
+            lg, _ = net(torch.tensor(chunk, dtype=torch.float32).unsqueeze(0).to(device), lang,
+                        lengths=torch.tensor([frames], device=device))
+        parts.append(torch.softmax(lg.squeeze(0).float(), -1).cpu())
+    if not parts:
+        return [None] * len(segments)
+    p = torch.cat(parts).numpy()
+    index = {lab: i for i, lab in net.id2label.items()}
+    out: list[float | None] = []
+    for s, e, name in segments:
+        nm = name.split("/", 1)[1] if "/" in name and name.split("/", 1)[0] in lang2id else name
+        canon = to_model.get(nm, nm)
+        cols = [index[c] for c in (f"B-{canon}", f"I-{canon}") if c in index]
+        f0 = min(len(p) - 1, max(0, int(s / fd)))
+        f1 = min(len(p), max(f0 + 1, int(round(e / fd))))
+        out.append(round(float(p[f0:f1, cols].sum(1).mean()), 4) if cols else None)
+    return out
+
+
 @rt.method()
 def segment(
     model: dict[str, Any],
@@ -212,6 +249,7 @@ def segment(
     silence_phoneme: str = "SP",
     extra_lang_ids: list[int] | None = None,
     language_prefix: str = "auto",
+    confidence: bool = False,
     **_ignored: Any,
 ) -> list[dict[str, Any]]:
     import soundfile as sf  # noqa: PLC0415
@@ -289,7 +327,9 @@ def segment(
                 segments = apply_hard_silence(segments, audio, sr, threshold=silence_threshold,
                                               min_duration=min_silence_duration, silence_phoneme=silence_phoneme)
             segments = continuous_segments(segments, len(audio) / sr)
-            results.append({"ok": True, "phones": [[float(s), float(e), str(p)] for s, e, p in segments], **extra_info})
+            conf = _confidences(net, cfg, audio, sr, device, lang_id, segments, to_model, lang2id) if confidence else None
+            results.append({"ok": True, "phones": [[float(s), float(e), str(p)] + ([conf[i]] if conf else [])
+                                                   for i, (s, e, p) in enumerate(segments)], **extra_info})
         except Exception as e:  # noqa: BLE001
             if rt.is_oom(e):
                 rt.free_memory()

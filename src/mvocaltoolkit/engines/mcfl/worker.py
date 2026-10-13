@@ -115,6 +115,30 @@ def _plain_model(root: Path, config: str = "model.json") -> Any:
     return Plain()
 
 
+def _with_confidence(m: Any, path: str, lang: str) -> list[list[Any]]:
+    """As MCFL.label, each segment with the mean probability (B- + I- of its label) over its frames."""
+    import numpy as np  # noqa: PLC0415
+
+    import mcfl_infer as mi  # noqa: PLC0415
+
+    a = mi.load_audio(path)
+    a = a / (np.abs(a).max() + 1e-8)
+    lid = m.langs[lang]
+    lp, off = m.frames(a, lid)
+    segs = m.decoders(lp, off, a, lid, m.cfg)
+    p = np.exp(lp)
+    index = {lab: i for i, lab in enumerate(m.labels)}
+    fd = m.fd
+    out = []
+    for s, e, ph in segs:
+        cols = [index[c] for c in (f"B-{ph}", f"I-{ph}") if c in index]
+        f0 = min(len(p) - 1, max(0, int(s / fd)))
+        f1 = min(len(p), max(f0 + 1, int(round(e / fd))))
+        conf = round(float(p[f0:f1, cols].sum(1).mean()), 4) if cols else None
+        out.append([float(s), float(e), str(m.merge.get(ph, {}).get(lang, ph)), conf])
+    return out
+
+
 @rt.method()
 def segment(
     model: dict[str, Any],
@@ -122,6 +146,7 @@ def segment(
     language: str | None = None,
     silence_threshold: float | None = None,
     min_silence_duration: float | None = None,
+    confidence: bool = False,
     **_ignored: Any,  # options of the WFL-ASR engines
 ) -> list[dict[str, Any]]:
     m = _load(model["path"], model.get("layout"))
@@ -140,8 +165,11 @@ def segment(
         name = item.get("name") or Path(item["audio"]).stem
         rt.progress(index / len(items), f"Segmenting {name}")
         try:
-            segments = m.label_file(item["audio"], lang=code)
-            results.append({"ok": True, "phones": [[float(s), float(e), str(p)] for s, e, p in segments]})
+            if confidence:
+                results.append({"ok": True, "phones": _with_confidence(m, item["audio"], code)})
+            else:
+                segments = m.label_file(item["audio"], lang=code)
+                results.append({"ok": True, "phones": [[float(s), float(e), str(p)] for s, e, p in segments]})
         except Exception as e:  # noqa: BLE001
             results.append({"ok": False, "error": f"{type(e).__name__}: {e}"})
     rt.progress(1.0, "Segmented")

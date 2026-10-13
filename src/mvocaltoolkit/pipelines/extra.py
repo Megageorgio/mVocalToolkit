@@ -77,6 +77,7 @@ async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, A
                     "language": req.language or (model.languages[0] if model.languages else None),
                     "silence_threshold": req.silence_threshold,
                     "min_silence_duration": req.min_silence_duration,
+                    "confidence": req.confidence,
                 },
                 on_progress=on_progress,
                 log=job.log,
@@ -102,6 +103,7 @@ async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, A
                     "top_p": req.top_p,
                     "temperature": req.temperature,
                     "confidence_threshold": req.confidence_threshold,
+                    "confidence": req.confidence,
                 },
                 on_progress=on_progress,
                 log=job.log,
@@ -110,7 +112,10 @@ async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, A
             if not res.get("ok", True):
                 item.data["error"] = res.get("error", "segmentation failed")
                 continue
-            item.data["label"] = Label(tiers={"phones": [Interval(start=s, end=e, text=t) for s, e, t, *_ in res["phones"]]})
+            # [start, end, label] or [start, end, label, confidence]
+            item.data["label"] = Label(tiers={"phones": [
+                Interval(start=s, end=e, text=t, confidence=(rest[0] if rest and rest[0] is not None else None))
+                for s, e, t, *rest in res["phones"]]})
     if req.refine is not None:
         from .refine import refine_items  # noqa: PLC0415
 
