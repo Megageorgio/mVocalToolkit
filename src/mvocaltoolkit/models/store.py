@@ -301,7 +301,9 @@ class ModelStore:
             raise ValueError(f"No {engine} models found in {src}")
         installed = []
         for model_dir in dirs:
-            mid = model_id if (model_id and len(dirs) == 1) else _safe(model_dir.name if model_dir != root else src.stem)
+            # a folder's whole name (a dot in it is not an extension), an archive's without its extension
+            own = model_dir.name if model_dir != root else src.name if src.is_dir() else src.stem
+            mid = model_id if (model_id and len(dirs) == 1) else _safe(own)
             detected = layouts.detect(engine, model_dir) or {}
             entry = CatalogEntry(
                 id=mid,

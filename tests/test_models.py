@@ -245,7 +245,7 @@ def test_every_engine_worker_runs_its_loop():
 def test_mcfl_package_layout_and_import(tmp_path):
     from mvocaltoolkit.models.layout import detect_mcfl, detect_vocoder  # noqa: PLC0415
 
-    folder = tmp_path / "MCFL-multi13-s"
+    folder = tmp_path / "MCFL_multi13_s_v0.0.1"  # a dot in a folder name is not an extension
     folder.mkdir()
     for name, text in (("labels.txt", "O\nB-a\nI-a\n"), ("langs.txt", "ja,0\nru,1\n"), ("lang_phonemes.json", '{"ja": ["a"]}'),
                        ("config.json", "{}"), ("phoneme_merge_map.json", "{}")):
@@ -257,6 +257,6 @@ def test_mcfl_package_layout_and_import(tmp_path):
     _home, store = _store(tmp_path)
     # added as a phoneme recogniser (the WFL-ASR kind in mLabeler) it is registered as an MCFL model
     installed = store.import_local("wfl_asr", str(folder))
-    assert [(m.engine, m.languages) for m in installed] == [("mcfl", ["ja", "ru"])]
+    assert [(m.id, m.engine, m.languages) for m in installed] == [("MCFL_multi13_s_v0.0.1", "mcfl", ["ja", "ru"])]
     listed = model_listing(store, task="segment", language="ru")
     assert any(m["id"] == installed[0].id and m["engine"] == "mcfl" for m in listed)
