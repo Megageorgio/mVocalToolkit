@@ -293,6 +293,10 @@ class ModelStore:
         else:
             raise FileNotFoundError(f"{src} is not a folder or archive")
         dirs = layouts.find_model_dirs(engine, root)
+        if not dirs and engine == "wfl_asr" and layouts.find_model_dirs("mcfl", root):
+            # an MCFL package does the same work (phonemes without lyrics): added as such
+            engine = "mcfl"
+            dirs = layouts.find_model_dirs(engine, root)
         if not dirs:
             raise ValueError(f"No {engine} models found in {src}")
         installed = []

@@ -79,6 +79,24 @@ def detect_wfl_asr(root: Path) -> dict[str, Any] | None:
     return layout
 
 
+def detect_mcfl(root: Path) -> dict[str, Any] | None:
+    """An exported MCFL package: model.onnx (and/or model_int8.onnx), labels.txt, langs.txt, lang_phonemes.json."""
+    if not all((root / n).is_file() for n in ("labels.txt", "langs.txt", "lang_phonemes.json")):
+        return None
+    onnx = [n for n in ("model.onnx", "model_int8.onnx") if (root / n).is_file()]
+    if not onnx:
+        return None
+    layout: dict[str, Any] = {"model": onnx[0], "format": "onnx"}
+    try:
+        codes = [line.split(",")[0].strip().lower() for line in (root / "langs.txt").read_text(encoding="utf-8").splitlines()
+                 if line.strip()]
+        if codes:
+            layout["languages"] = codes
+    except OSError:
+        pass
+    return layout
+
+
 def wfl_generation(ckpt: Path, config: Path) -> int:
     """1 = WFL-ASR main branch (plain state dict), 2 = refactor branch (Lightning checkpoint, new config).
 
@@ -163,7 +181,7 @@ def detect_generic(root: Path) -> dict[str, Any] | None:
 def detect_vocoder(root: Path) -> dict[str, Any] | None:
     """An ONNX vocoder (an OpenUtau .oudep package or a folder with the .onnx and vocoder.yaml)."""
     onnx = next(iter(_files(root, "*.onnx")), None)
-    if onnx is None:
+    if onnx is None or detect_mcfl(root) is not None:
         return None
     layout: dict[str, Any] = {"onnx": onnx.name}
     if (root / "vocoder.yaml").exists():
@@ -192,6 +210,7 @@ DETECTORS = {
     "vocoder": detect_vocoder,
     "sofa": detect_sofa,
     "wfl_asr": detect_wfl_asr,
+    "mcfl": detect_mcfl,
     "game": detect_game,
     "hubertfa": detect_hubertfa,
     "tifa": detect_tifa,

@@ -9,7 +9,7 @@ A local API server for automatic labeling of singing voice data. One toolkit, us
   `.safetensors` models, SOFA model packs), HubertFA (ONNX, multilingual models, breath and other
   non-lexical sound detection) or TIFA (speech and singing, several languages in one text, picks the
   pronunciation heard in the audio, self-check scores per file). The engine is chosen by the model.
-- **Phoneme segmentation without text** — WFL-ASR.
+- **Phoneme segmentation without text** — WFL-ASR, MCFL (a small ONNX model, fast on a CPU).
 - **Boundary refinement** — mRefinerModel moves the boundaries of ready labels (from any aligner or by hand)
   to where they are in the sound; optional after alignment or segmentation, off by default.
 - **Notes (MIDI)** — GAME, with automatic tempo estimation (DeepRhythm).
@@ -103,7 +103,7 @@ polling with `?wait=`) or `WS /jobs/{id}/events`, `POST /jobs/{id}/cancel` stops
 | `POST /files` | upload audio (when the server is on another machine) |
 | `POST /transcribe` | audio → text (+ tokens for alignment) |
 | `POST /align`, `POST /pipelines/label` | audio + text / words / phonemes (or nothing → transcribe) → label files |
-| `POST /segment` | audio → phonemes without text (WFL-ASR) |
+| `POST /segment` | audio → phonemes without text (WFL-ASR, MCFL) |
 | `POST /refine` | ready labels → the same phonemes with refined boundaries (also `"refine"` in `/align`, `/segment`) |
 | `POST /midi/extract`, `POST /tempo` | notes, BPM |
 | `POST /pitch` | f0 curves |
@@ -124,7 +124,7 @@ See [docs/API.md](docs/API.md) for details and examples.
 ## Models and catalogs
 
 Models come from catalogs (JSON). The built-in one contains Whisper models, Russian SOFA, the SOFA model
-packs, HubertFA, TIFA, WFL-ASR, GAME, separation and pitch models.
+packs, HubertFA, TIFA, WFL-ASR, MCFL, GAME, separation and pitch models.
 
 How a GUI uses them: it asks `GET /languages?task=align`, shows the languages, then the models of the chosen
 language (e.g. `person1-ru`, `hhskt-ru` for Russian), and starts `POST /align` with `"model": "<id>"`. If the

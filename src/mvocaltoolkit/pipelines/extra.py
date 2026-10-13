@@ -49,9 +49,10 @@ def _lang_id(model: InstalledModel, language: str) -> int | None:
 
 async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, Any]:
     items = resolve_inputs(req.input, tk.home)
-    model = await tk.models.require("wfl_asr", req.model, _sub_progress(job, 0.0, 0.1, "download"))
+    model = await tk.models.require(("wfl_asr", "mcfl"), req.model, _sub_progress(job, 0.0, 0.1, "download"))
     writer = OutputWriter(req.output, tk.home, job.id)
     report = _sub_progress(job, 0.1, 0.95, "segment")
+    mcfl = model.engine == "mcfl"
     total = len(items)
     for start in range(0, total, CHUNK):
         job.check_cancelled()
@@ -66,30 +67,45 @@ async def run_segment(tk: Toolkit, job: Job, req: SegmentRequest) -> dict[str, A
                 return
             report((offset + float(data.get("progress", 0.0)) * size) / total, data.get("message", "Segmenting"))
 
-        results = await tk.engines.call(
-            # models trained with WFL-ASR's refactor branch need its code
-            "wfl_asr_v2" if int(model.layout.get("generation", 1)) >= 2 else "wfl_asr",
-            "segment",
-            {
-                "model": {"path": model.path, "layout": model.layout},
-                "items": [{"audio": str(i.audio), "name": i.name, "phonemes": i.phonemes} for i in chunk],
-                "lang_id": req.lang_id if req.lang_id is not None else (
-                    _lang_id(model, req.language) if req.language else model.params.get("lang_id")),
-                "extra_lang_ids": [i for i in (_lang_id(model, lg) for lg in req.extra_languages) if i is not None],
-                "language_prefix": req.language_prefix,
-                "decoder": req.decoder,
-                "viterbi_bias": req.viterbi_bias,
-                "silence_threshold": req.silence_threshold,
-                "min_silence_duration": req.min_silence_duration,
-                "sample": req.sample,
-                "top_k": req.top_k,
-                "top_p": req.top_p,
-                "temperature": req.temperature,
-                "confidence_threshold": req.confidence_threshold,
-            },
-            on_progress=on_progress,
-            log=job.log,
-        )
+        if mcfl:  # MCFL: one language, its own decoder (the package's settings)
+            results = await tk.engines.call(
+                "mcfl",
+                "segment",
+                {
+                    "model": {"path": model.path, "layout": model.layout},
+                    "items": [{"audio": str(i.audio), "name": i.name} for i in chunk],
+                    "language": req.language or (model.languages[0] if model.languages else None),
+                    "silence_threshold": req.silence_threshold,
+                    "min_silence_duration": req.min_silence_duration,
+                },
+                on_progress=on_progress,
+                log=job.log,
+            )
+        else:
+            results = await tk.engines.call(
+                # models trained with WFL-ASR's refactor branch need its code
+                "wfl_asr_v2" if int(model.layout.get("generation", 1)) >= 2 else "wfl_asr",
+                "segment",
+                {
+                    "model": {"path": model.path, "layout": model.layout},
+                    "items": [{"audio": str(i.audio), "name": i.name, "phonemes": i.phonemes} for i in chunk],
+                    "lang_id": req.lang_id if req.lang_id is not None else (
+                        _lang_id(model, req.language) if req.language else model.params.get("lang_id")),
+                    "extra_lang_ids": [i for i in (_lang_id(model, lg) for lg in req.extra_languages) if i is not None],
+                    "language_prefix": req.language_prefix,
+                    "decoder": req.decoder,
+                    "viterbi_bias": req.viterbi_bias,
+                    "silence_threshold": req.silence_threshold,
+                    "min_silence_duration": req.min_silence_duration,
+                    "sample": req.sample,
+                    "top_k": req.top_k,
+                    "top_p": req.top_p,
+                    "temperature": req.temperature,
+                    "confidence_threshold": req.confidence_threshold,
+                },
+                on_progress=on_progress,
+                log=job.log,
+            )
         for item, res in zip(chunk, results):
             if not res.get("ok", True):
                 item.data["error"] = res.get("error", "segmentation failed")

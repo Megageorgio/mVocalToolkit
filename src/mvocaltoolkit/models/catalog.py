@@ -58,6 +58,7 @@ ENGINE_TASKS: dict[str, list[str]] = {
     "tifa": ["align"],
     "whisperx": ["transcribe"],
     "wfl_asr": ["segment"],
+    "mcfl": ["segment"],
     "game": ["midi"],
     "tempo": ["tempo"],
     "separation": ["separate"],

@@ -1,0 +1,15 @@
+name = "mcfl"
+title = "MCFL phoneme segmentation"
+description = "MCFL (Mel Convolutions For Labeling): a small convolutional network on the mel spectrogram, distilled from WFL-ASR. Phonemes of singing without lyrics, fast on a CPU (ONNX)."
+capabilities = ["segment"]
+python = "3.11"
+torch = false
+size_hint = "~60 MB (onnxruntime, numpy)"
+homepage = "https://github.com/Megageorgio/MCFL"
+license = "MIT"
+requirements = [
+    "onnxruntime>=1.17",
+    "numpy",
+    "soundfile",
+    "soxr",
+]

@@ -205,7 +205,7 @@ Built-in sets: `en_fixes` (common English fixes), `cleanup` (`pau`/`sil` → `SP
 
 ## Segmentation without text
 
-`POST /segment` — WFL-ASR. `phonemes` of an item, if given, are used as the expected phoneme list.
+`POST /segment` — WFL-ASR or MCFL (an exported MCFL package: model.onnx, labels.txt, langs.txt…; it uses `language`, the silence options and its own Viterbi bias, the other options are for WFL-ASR). `phonemes` of an item, if given, are used as the expected phoneme list.
 
 ```json
 {"input": {"folder": "D:/voice"}, "model": "wfl-asr-ft-en-ja", "lang_id": null, "confidence_threshold": 0.3}
@@ -337,7 +337,7 @@ separation can make clean recordings worse.
 }
 ```
 
-`engine`: `sofa`, `hubertfa`, `tifa`, `whisperx`, `wfl_asr`, `game`, `tempo`, `pitch`, `separation`. The task comes from
+`engine`: `sofa`, `hubertfa`, `tifa`, `whisperx`, `wfl_asr`, `mcfl`, `game`, `tempo`, `pitch`, `separation`. The task comes from
 the engine; `"tasks": [...]` overrides it. Pack `models` are optional: listed members are offered by language
 before the pack is downloaded (`folder` = folder name inside the archive); unlisted folders are registered as
 `<prefix><folder>` after the download.

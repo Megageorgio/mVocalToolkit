@@ -240,3 +240,23 @@ def test_every_engine_worker_runs_its_loop():
     for w in workers:
         text = w.read_text(encoding="utf-8")
         assert 'if __name__ == "__main__":' in text and "rt.run()" in text, w.parent.name
+
+
+def test_mcfl_package_layout_and_import(tmp_path):
+    from mvocaltoolkit.models.layout import detect_mcfl, detect_vocoder  # noqa: PLC0415
+
+    folder = tmp_path / "MCFL-multi13-s"
+    folder.mkdir()
+    for name, text in (("labels.txt", "O\nB-a\nI-a\n"), ("langs.txt", "ja,0\nru,1\n"), ("lang_phonemes.json", '{"ja": ["a"]}'),
+                       ("config.json", "{}"), ("phoneme_merge_map.json", "{}")):
+        (folder / name).write_text(text, encoding="utf-8")
+    (folder / "model.onnx").write_bytes(b"onnx")
+    (folder / "model_int8.onnx").write_bytes(b"onnx")
+    assert detect_mcfl(folder) == {"model": "model.onnx", "format": "onnx", "languages": ["ja", "ru"]}
+    assert detect_vocoder(folder) is None  # not taken for a vocoder because of its .onnx
+    _home, store = _store(tmp_path)
+    # added as a phoneme recogniser (the WFL-ASR kind in mLabeler) it is registered as an MCFL model
+    installed = store.import_local("wfl_asr", str(folder))
+    assert [(m.engine, m.languages) for m in installed] == [("mcfl", ["ja", "ru"])]
+    listed = model_listing(store, task="segment", language="ru")
+    assert any(m["id"] == installed[0].id and m["engine"] == "mcfl" for m in listed)
