@@ -904,6 +904,156 @@
         "tag": "Russian_v0.0.1",
         "asset": "mrefinermodel-ru-v0.1.0.zip"
       }
+    },
+    {
+      "id": "MCFL_multi13_s_v0.0.1",
+      "engine": "mcfl",
+      "name": "MCFL multi13 s v0.0.1",
+      "homepage": "https://github.com/Megageorgio/MCFL/releases/tag/Multi13_v0.0.1",
+      "source": {
+        "type": "github_release",
+        "repo": "Megageorgio/MCFL",
+        "tag": "Multi13_v0.0.1",
+        "asset": "MCFL_multi13_s_v0.0.1.zip"
+      },
+      "size_hint": "6.3 MB",
+      "languages": [
+        "de",
+        "el",
+        "en",
+        "es",
+        "fr",
+        "it",
+        "ja",
+        "ko",
+        "nan",
+        "pt",
+        "ru",
+        "yue",
+        "zh"
+      ],
+      "author": "Megageorgio",
+      "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 3.4M parameters, ~450x real time on one CPU thread; the default."
+    },
+    {
+      "id": "MCFL_multi13_xxxs_v0.0.1",
+      "engine": "mcfl",
+      "name": "MCFL multi13 xxxs v0.0.1",
+      "homepage": "https://github.com/Megageorgio/MCFL/releases/tag/Multi13_v0.0.1",
+      "source": {
+        "type": "github_release",
+        "repo": "Megageorgio/MCFL",
+        "tag": "Multi13_v0.0.1",
+        "asset": "MCFL_multi13_xxxs_v0.0.1.zip"
+      },
+      "size_hint": "0.7 MB",
+      "languages": [
+        "de",
+        "el",
+        "en",
+        "es",
+        "fr",
+        "it",
+        "ja",
+        "ko",
+        "nan",
+        "pt",
+        "ru",
+        "yue",
+        "zh"
+      ],
+      "author": "Megageorgio",
+      "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 0.4M parameters, ~1000x real time."
+    },
+    {
+      "id": "MCFL_multi13_xxs_v0.0.1",
+      "engine": "mcfl",
+      "name": "MCFL multi13 xxs v0.0.1",
+      "homepage": "https://github.com/Megageorgio/MCFL/releases/tag/Multi13_v0.0.1",
+      "source": {
+        "type": "github_release",
+        "repo": "Megageorgio/MCFL",
+        "tag": "Multi13_v0.0.1",
+        "asset": "MCFL_multi13_xxs_v0.0.1.zip"
+      },
+      "size_hint": "1.4 MB",
+      "languages": [
+        "de",
+        "el",
+        "en",
+        "es",
+        "fr",
+        "it",
+        "ja",
+        "ko",
+        "nan",
+        "pt",
+        "ru",
+        "yue",
+        "zh"
+      ],
+      "author": "Megageorgio",
+      "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 0.8M parameters, ~870x real time."
+    },
+    {
+      "id": "MCFL_multi13_m_v0.0.1",
+      "engine": "mcfl",
+      "name": "MCFL multi13 m v0.0.1",
+      "homepage": "https://github.com/Megageorgio/MCFL/releases/tag/Multi13_v0.0.1",
+      "source": {
+        "type": "github_release",
+        "repo": "Megageorgio/MCFL",
+        "tag": "Multi13_v0.0.1",
+        "asset": "MCFL_multi13_m_v0.0.1.zip"
+      },
+      "size_hint": "13.8 MB",
+      "languages": [
+        "de",
+        "el",
+        "en",
+        "es",
+        "fr",
+        "it",
+        "ja",
+        "ko",
+        "nan",
+        "pt",
+        "ru",
+        "yue",
+        "zh"
+      ],
+      "author": "Megageorgio",
+      "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 7.5M parameters, ~285x real time."
+    },
+    {
+      "id": "MCFL_multi13_l_v0.0.1",
+      "engine": "mcfl",
+      "name": "MCFL multi13 l v0.0.1",
+      "homepage": "https://github.com/Megageorgio/MCFL/releases/tag/Multi13_v0.0.1",
+      "source": {
+        "type": "github_release",
+        "repo": "Megageorgio/MCFL",
+        "tag": "Multi13_v0.0.1",
+        "asset": "MCFL_multi13_l_v0.0.1.zip"
+      },
+      "size_hint": "24.2 MB",
+      "languages": [
+        "de",
+        "el",
+        "en",
+        "es",
+        "fr",
+        "it",
+        "ja",
+        "ko",
+        "nan",
+        "pt",
+        "ru",
+        "yue",
+        "zh"
+      ],
+      "author": "Megageorgio",
+      "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 13.1M parameters, ~200x real time, the most accurate."
     }
   ]
 }

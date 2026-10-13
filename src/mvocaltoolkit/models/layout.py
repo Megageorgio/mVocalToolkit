@@ -80,7 +80,18 @@ def detect_wfl_asr(root: Path) -> dict[str, Any] | None:
 
 
 def detect_mcfl(root: Path) -> dict[str, Any] | None:
-    """An exported MCFL package: model.onnx (and/or model_int8.onnx), labels.txt, langs.txt, lang_phonemes.json."""
+    """An MCFL model: the release format (model.json of format "mcfl-v1" + model.safetensors) or an exported package
+    (model.onnx and/or model_int8.onnx, labels.txt, langs.txt, lang_phonemes.json)."""
+    if (root / "model.json").is_file() and (root / "model.safetensors").is_file():
+        try:
+            config = json.loads((root / "model.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(config, dict) or config.get("format") != "mcfl-v1":
+            return None
+        langs = config.get("langs") or {}
+        return {"model": "model.safetensors", "format": "mcfl-v1",
+                "languages": sorted(langs, key=lambda k: langs[k]) if isinstance(langs, dict) else list(langs)}
     if not all((root / n).is_file() for n in ("labels.txt", "langs.txt", "lang_phonemes.json")):
         return None
     onnx = [n for n in ("model.onnx", "model_int8.onnx") if (root / n).is_file()]

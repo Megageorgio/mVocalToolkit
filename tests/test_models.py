@@ -260,3 +260,17 @@ def test_mcfl_package_layout_and_import(tmp_path):
     assert [(m.id, m.engine, m.languages) for m in installed] == [("MCFL_multi13_s_v0.0.1", "mcfl", ["ja", "ru"])]
     listed = model_listing(store, task="segment", language="ru")
     assert any(m["id"] == installed[0].id and m["engine"] == "mcfl" for m in listed)
+
+
+def test_mcfl_release_format_and_catalog(tmp_path):
+    from mvocaltoolkit.models.layout import detect_mcfl, find_model_dirs  # noqa: PLC0415
+
+    folder = tmp_path / "MCFL-multi13-s"
+    folder.mkdir()
+    (folder / "model.json").write_text(json.dumps({"format": "mcfl-v1", "langs": {"ru": 1, "ja": 0}}), encoding="utf-8")
+    (folder / "model.safetensors").write_bytes(b"\0" * 16)
+    assert detect_mcfl(folder) == {"model": "model.safetensors", "format": "mcfl-v1", "languages": ["ja", "ru"]}
+    assert find_model_dirs("mcfl", tmp_path) == [folder]
+    _home, store = _store(tmp_path / "s")
+    ids = {e.id for e in store.catalog.filter("mcfl", "ru", "segment")}
+    assert {f"MCFL_multi13_{s}_v0.0.1" for s in ("xxxs", "xxs", "s", "m", "l")} <= ids
