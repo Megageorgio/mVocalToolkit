@@ -1,6 +1,6 @@
 name = "vocoder"
 title = "Resynthesis with another pitch (WORLD, NSF-HiFiGAN)"
-description = "Plays a recording with an edited f0: WORLD (instant, a little buzzy) or NSF-HiFiGAN, the vocoder DiffSinger models use (ONNX, CPU is enough)."
+description = "Plays a recording with an edited f0, or an oto.ini entry sung as a note: WORLD (instant, a little buzzy), NSF-HiFiGAN, the vocoder DiffSinger models use (ONNX, CPU is enough), or an UTAU resampler program."
 capabilities = ["resynth"]
 python = "3.11"
 torch = false

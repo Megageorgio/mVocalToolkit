@@ -10,6 +10,7 @@ from typing import Any
 from ..api_models import (
     ItemResult,
     MidiRequest,
+    OtoNoteRequest,
     PitchRequest,
     SegmentRequest,
     SeparateRequest,
@@ -365,6 +366,43 @@ async def run_resynth(tk: Toolkit, job: Job, req: ResynthRequest) -> dict[str, A
     )
     return {"method": req.method, "file": res.get("file", str(out)), "sample_rate": res.get("sample_rate"),
             "seconds": res.get("seconds")}
+
+
+async def run_oto_note(tk: Toolkit, job: Job, req: OtoNoteRequest) -> dict[str, Any]:
+    """An oto.ini entry sung as a note (WORLD, NSF-HiFiGAN with its model downloaded on first use, or an UTAU
+    resampler program). Result: a WAV in the job's output folder."""
+    items = resolve_inputs(req.input, tk.home)
+    if len(items) != 1:
+        raise ValueError("an oto entry is sung from one recording")
+    item = items[0]
+    model: dict[str, Any] | None = None
+    if req.method == "nsf":
+        installed = await tk.models.require("vocoder", req.model, _sub_progress(job, 0.0, 0.3, "download"))
+        onnx = installed.file("onnx")
+        if onnx is None:
+            raise ModelNotFound(f"No ONNX vocoder found in {installed.path}")
+        model = {"onnx": str(onnx)}
+    folder = tk.home.outputs / job.id
+    folder.mkdir(parents=True, exist_ok=True)
+    out = folder / f"{item.name}.note.{req.method}.wav"
+    report = _sub_progress(job, 0.3, 0.98, "note")
+
+    def on_progress(data: dict[str, Any]) -> None:
+        if data.get("stage") == "install":  # first use of the engine
+            job.progress(None, stage="install", message=data.get("message"))
+            return
+        report(float(data.get("progress", 0.0)), data.get("message", "Note"))
+
+    res = await tk.engines.call(
+        "vocoder", "note",
+        {"audio": str(item.audio), "out": str(out), "offset": req.offset, "consonant": req.consonant,
+         "cutoff": req.cutoff, "preutterance": req.preutterance, "overlap": req.overlap, "tone": req.tone,
+         "length": req.length, "notes": req.notes, "method": req.method, "model": model,
+         "resampler": req.resampler, "flags": req.flags},
+        on_progress=on_progress, log=job.log,
+    )
+    return {"method": req.method, "file": res.get("file", str(out)), "sample_rate": res.get("sample_rate"),
+            "seconds": res.get("seconds"), "tone": res.get("tone")}
 
 
 async def run_tempo(tk: Toolkit, job: Job, req: TempoRequest) -> dict[str, Any]:
