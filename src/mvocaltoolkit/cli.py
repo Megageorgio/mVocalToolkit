@@ -151,6 +151,52 @@ def cmd_models(args) -> None:
             print(f"Imported {model.id}: {model.layout}")
 
 
+def cmd_datasets(args) -> None:
+    from .datasets import LicenseNotAccepted, ManualDownload, license_text  # noqa: PLC0415
+
+    tk = _toolkit(args)
+    if args.action == "list":
+        for d in tk.datasets.listing(args.lang):
+            mark = "*" if d["installed"] else " "
+            hours = f"{d['hours']:g} h" if d.get("hours") else ""
+            lic = d["license"]
+            terms = ", ".join(t for t, ok in (("commercial", lic["commercial"]), ("models can be published",
+                                                                                  lic["publish_models"])) if ok)
+            print(f"{mark} {d['id']:<24} {','.join(d['languages']):<12} {hours:<8} {lic['name']:<16} "
+                  f"{d['name']}" + (f"  [{terms}]" if terms else "  [non-commercial]" if not lic["commercial"] else ""))
+        print("(* = downloaded; `mvt datasets info <id>` shows the license)", file=sys.stderr)
+        return
+    entry = tk.catalog.datasets.get(args.id or "")
+    if entry is None:
+        raise SystemExit(f"{args.id} is not in the catalogs")
+    if args.action == "info":
+        print(license_text(entry))
+        if tk.datasets.is_installed(entry.id):
+            print(f"Downloaded to {tk.datasets.folder(entry.id)}")
+    elif args.action == "download":
+        accepted = args.accept_license
+        if not accepted:
+            print(license_text(entry))
+            if not sys.stdin.isatty():
+                raise SystemExit("Accept the license with --accept-license to download.")
+            accepted = input("Accept this license and download? [y/N] ").strip().lower() in ("y", "yes")
+            if not accepted:
+                raise SystemExit("Not downloaded.")
+
+        def progress(value, message, _detail=None):
+            pct = f"{value * 100:5.1f}%" if value is not None else "      "
+            print(f"{pct} {message[:100]:<100}", end="", file=sys.stderr)
+
+        try:
+            path = asyncio.run(tk.datasets.download(entry, accepted, progress))
+        except (LicenseNotAccepted, ManualDownload) as e:
+            raise SystemExit(str(e)) from e
+        print(file=sys.stderr)
+        print(f"Downloaded to {path} (the license is in LICENSE.txt there)")
+    elif args.action == "remove":
+        print("Removed" if tk.datasets.remove(entry.id) else "Not downloaded")
+
+
 def cmd_languages(args) -> None:
     """Languages with models for a task: what a GUI shows as "language -> model"."""
     from .models.store import model_listing  # noqa: PLC0415
@@ -483,6 +529,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name")
     p.add_argument("--author", help="import: who made the model (shown next to its name)")
     p.set_defaults(func=cmd_models)
+
+    p = sub.add_parser("datasets", help="Public singing datasets for training, with their licenses")
+    p.add_argument("action", choices=["list", "info", "download", "remove"])
+    p.add_argument("id", nargs="?", help="dataset id (info/download/remove)")
+    p.add_argument("--lang", help="list: datasets of this language")
+    p.add_argument("--accept-license", action="store_true", help="download: the license was read and is accepted")
+    p.set_defaults(func=cmd_datasets)
 
     p = sub.add_parser("languages", help="Languages and their models for a task (the GUI model choice)")
     p.add_argument("--task", default="align")

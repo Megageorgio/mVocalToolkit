@@ -21,6 +21,7 @@ from ..api_models import (
     AlignRequest,
     CatalogAddRequest,
     ConvertRequest,
+    DatasetDownloadRequest,
     FixLabelsRequest,
     MidiRequest,
     ModelImportRequest,
@@ -33,6 +34,7 @@ from ..api_models import (
     TextRequest,
     TranscribeRequest,
 )
+from ..datasets import license_text
 from ..engines.manager import EngineError
 from ..jobs import FINISHED, Job, JobInfo
 from ..models.catalog import ENGINE_TASKS, TASKS
@@ -414,6 +416,50 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
     async def refresh_catalogs(tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
         await asyncio.to_thread(tk.catalog.load, True)
         return await catalogs(tk)
+
+    # ---------------- datasets ----------------
+
+    @app.get("/datasets", tags=["datasets"], dependencies=[Depends(auth)])
+    async def datasets(language: str | None = None, tk: Toolkit = Depends(get_tk)) -> list[dict[str, Any]]:
+        """Public singing datasets for training, each with its license (name, link, summary and what it allows:
+        training, publishing models, commercial use, redistribution). Only datasets whose license allows training
+        are listed. A GUI shows the license before the download."""
+        return tk.datasets.listing(language)
+
+    @app.get("/datasets/{dataset_id}/license", tags=["datasets"], dependencies=[Depends(auth)])
+    async def dataset_license(dataset_id: str, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        entry = tk.catalog.datasets.get(dataset_id)
+        if entry is None:
+            raise HTTPException(404, f"Dataset {dataset_id} is not in the catalogs")
+        return {**entry.license.model_dump(), "text": license_text(entry)}
+
+    @app.post("/datasets/{dataset_id}/download", tags=["datasets"], dependencies=[Depends(auth)])
+    async def download_dataset(dataset_id: str, req: DatasetDownloadRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        """Downloads a dataset into <home>/datasets/<id> (with LICENSE.txt). accept_license must be true: the user
+        has seen and accepted the license."""
+        entry = tk.catalog.datasets.get(dataset_id)
+        if entry is None:
+            raise HTTPException(404, f"Dataset {dataset_id} is not in the catalogs")
+        if not req.accept_license:
+            raise HTTPException(403, {"error": "license_not_accepted", "license": entry.license.model_dump(),
+                                      "text": license_text(entry)})
+        if entry.manual_download or not entry.sources:
+            raise HTTPException(409, {"error": "manual_download", "url": entry.manual_download or entry.homepage})
+        if not req.force and tk.datasets.is_installed(dataset_id):
+            raise HTTPException(409, "Already downloaded (use force to download again)")
+
+        async def work(job: Job):
+            path = await tk.datasets.download(
+                entry, True, lambda v, m, d=None: job.progress(v, stage="download", message=m, detail=d))
+            return {"path": str(path)}
+
+        return submit(tk, "dataset_download", work, {"dataset": dataset_id})
+
+    @app.delete("/datasets/{dataset_id}", tags=["datasets"], dependencies=[Depends(auth)])
+    async def delete_dataset(dataset_id: str, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        if not tk.datasets.remove(dataset_id):
+            raise HTTPException(404, "Not downloaded")
+        return {"ok": True}
 
     # ---------------- files ----------------
 

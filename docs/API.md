@@ -346,6 +346,54 @@ before the pack is downloaded (`folder` = folder name inside the archive); unlis
 Source types: `url`, `github_release` (`asset` is a file name pattern or a list of them; `tag` can be
 `latest`), `huggingface` (`repo`, `files`, `revision`), `engine` (the engine downloads the model itself).
 
+## Datasets
+
+Public singing datasets for training (more voices, other languages) come from the same catalogs (key
+`datasets`). Every dataset carries its license, and **only datasets whose license allows training are offered**;
+one without a license or with `"training": false` is left out.
+
+- `GET /datasets?language=ja` (`mvt datasets list --lang ja`) — each with `license` (`name`, `url`, `summary`,
+  `training`, `publish_models`, `commercial`, `redistribution`, `attribution`), languages, hours, singers, labels,
+  `installed` and `path`.
+- `GET /datasets/{id}/license` (`mvt datasets info <id>`) — the license as fields and as text to show.
+- `POST /datasets/{id}/download {"accept_license": true}` (`mvt datasets download <id> [--accept-license]`) — job.
+  Without `accept_license` the answer is 403 with the license: a GUI shows it and asks the user first. A dataset
+  that has to be downloaded by hand (a form, a login) answers 409 with `url`. The files go to
+  `<home>/datasets/<id>/` together with `LICENSE.txt` (what is allowed and the credit text) and `dataset.json`.
+- `DELETE /datasets/{id}` (`mvt datasets remove <id>`).
+
+```json
+{
+  "datasets": [
+    {
+      "id": "my-dataset",
+      "name": "My dataset",
+      "author": "Who recorded it",
+      "languages": ["ja"],
+      "hours": 1.5,
+      "singers": 1,
+      "labels": ["phonemes", "notes"],
+      "label_format": "lab",
+      "sample_rate": 44100,
+      "homepage": "https://...",
+      "license": {
+        "name": "CC BY 4.0", "url": "https://creativecommons.org/licenses/by/4.0/",
+        "summary": "Any use with credit.",
+        "training": true, "publish_models": true, "commercial": true, "redistribution": true,
+        "attribution": "My dataset by Someone"
+      },
+      "sources": [
+        {"type": "github_release", "repo": "me/data", "tag": "v1", "asset": "data.zip"},
+        {"type": "url", "url": "https://.../labels.zip", "into": "labels", "part": "labels"}
+      ]
+    }
+  ]
+}
+```
+
+`sources` are downloaded in order into the dataset folder (`into`: a sub-folder, e.g. labels someone else made for
+the same audio). `manual_download`: a page where the user downloads the files by hand (no `sources` then).
+
 ## Settings
 
 `GET /settings`, `PATCH /settings` (also `POST`; changing `device` restarts the idle engines) (or `mvt config show|set`):

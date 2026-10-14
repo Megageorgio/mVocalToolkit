@@ -82,6 +82,8 @@ mvt engines list | install <name> | remove <name> | info <name>
 mvt convert a.TextGrid a.lab
 mvt g2p "hello world" -m hubertfa-zh-ja-en-v0.0.7 -l en             # words -> phonemes, guesses for unknown words
 mvt words add sofa-ru-hhskt-v0.0.1 мурмур m u r m u r               # own words of a model, used by every request
+mvt datasets list --lang ja                                         # public datasets for training, with licenses
+mvt datasets download <id>                                          # shows the license, downloads after you accept it
 ```
 
 `label` transcribes files that have no text (`<name>.txt` or `<name>.lab` next to the audio is used as lyrics
@@ -100,6 +102,7 @@ polling with `?wait=`) or `WS /jobs/{id}/events`, `POST /jobs/{id}/cancel` stops
 | `GET /engines`, `POST /engines/{name}/install` | engines and their environments |
 | `GET /languages?task=align` | languages with their models — the "language → model" choice of a GUI |
 | `GET /models?task=&language=`, `POST /models/{id}/download`, `POST /models/import` | catalog, installed models |
+| `GET /datasets`, `POST /datasets/{id}/download` | public singing datasets for training, each with its license |
 | `POST /files` | upload audio (when the server is on another machine) |
 | `POST /transcribe` | audio → text (+ tokens for alignment) |
 | `POST /align`, `POST /pipelines/label` | audio + text / words / phonemes (or nothing → transcribe) → label files |

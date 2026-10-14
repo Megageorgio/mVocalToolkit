@@ -310,5 +310,10 @@ class ModelImportRequest(BaseModel):
     author: str | None = None
 
 
+class DatasetDownloadRequest(BaseModel):
+    accept_license: bool = Field(False, description="The user has read and accepted the dataset's license")
+    force: bool = Field(False, description="Download again even if it is already there")
+
+
 class CatalogAddRequest(BaseModel):
     ref: str = Field(..., description="URL or path of a catalog JSON")

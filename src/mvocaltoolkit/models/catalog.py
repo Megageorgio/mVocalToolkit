@@ -21,6 +21,9 @@ downloads the whole pack.
 
 Every entry belongs to one or more tasks (what a GUI offers it for): align, transcribe, segment, midi, tempo,
 separate, pitch. By default the task comes from the engine.
+
+A catalog can also list public singing datasets ("datasets"), downloaded for training (see datasets.py). Every
+dataset carries its license; one whose license doesn't allow training isn't offered at all.
 """
 
 from __future__ import annotations
@@ -145,6 +148,52 @@ class CatalogEntry(BaseModel):
         return None
 
 
+class DatasetLicense(BaseModel):
+    """What a dataset's license allows. A dataset whose license doesn't allow training is never offered."""
+
+    name: str
+    url: str = ""
+    summary: str = ""
+    training: bool = False
+    publish_models: bool = False
+    commercial: bool = False
+    redistribution: bool = False
+    # text to credit the dataset with (in a model's description, a voicebank's readme)
+    attribution: str = ""
+
+
+class DatasetSource(ModelSource):
+    # sub-folder of the dataset folder the files go to (e.g. labels made by someone else for the same audio)
+    into: str = ""
+    # what this part is: "audio", "labels", "audio+labels"
+    part: str = ""
+
+
+class DatasetEntry(BaseModel):
+    """A public singing dataset that can be downloaded for training (catalog key "datasets")."""
+
+    id: str
+    name: str
+    author: str = ""
+    languages: list[str] = Field(default_factory=list)
+    hours: float | None = None
+    singers: int | None = None
+    description: str = ""
+    homepage: str = ""
+    citation: str = ""
+    # what the dataset has besides audio: "phonemes", "words", "notes", "midi", "musicxml", "f0"...
+    labels: list[str] = Field(default_factory=list)
+    label_format: str = ""
+    sample_rate: int | None = None
+    size_hint: str = ""
+    license: DatasetLicense
+    sources: list[DatasetSource] = Field(default_factory=list)
+    # the files can't be downloaded by the toolkit (a form, a login): the user downloads them from this page
+    manual_download: str = ""
+    tags: list[str] = Field(default_factory=list)
+    catalog: str = ""
+
+
 class Catalog:
     def __init__(self, home: Home, settings: Settings, engines: set[str] | None = None):
         self.home = home
@@ -152,6 +201,7 @@ class Catalog:
         # engines this toolkit has: models of other engines (a newer catalog) are left out
         self.engines = engines
         self.entries: dict[str, CatalogEntry] = {}
+        self.datasets: dict[str, DatasetEntry] = {}
         self.sources: list[str] = []
 
     @property
@@ -189,16 +239,17 @@ class Catalog:
     def load(self, refresh_remote: bool = False, fetch_main: bool = False) -> None:
         """[fetch_main]: read the main catalog from its URL now (at start and on an update check)."""
         entries: dict[str, CatalogEntry] = {}
+        datasets: dict[str, DatasetEntry] = {}
         sources: list[str] = []
         main = self._main(fetch_main or refresh_remote)
         if main is not None:
-            self._merge(entries, main[0], main[1])
+            self._merge(entries, main[0], main[1], datasets)
             sources.append(main[1])
             builtin: list[Path] = []
         else:
             builtin = sorted(BUILTIN_DIR.glob("*.json"))
         for path in builtin + sorted(self.home.catalogs.glob("*.json")):
-            self._merge(entries, json.loads(path.read_text(encoding="utf-8")), str(path))
+            self._merge(entries, json.loads(path.read_text(encoding="utf-8")), str(path), datasets)
             sources.append(str(path))
         for ref in self.settings.catalogs:
             try:
@@ -206,13 +257,22 @@ class Catalog:
             except Exception as e:  # noqa: BLE001
                 sources.append(f"{ref} (error: {e})")
                 continue
-            self._merge(entries, data, ref)
+            self._merge(entries, data, ref, datasets)
             sources.append(ref)
         self.entries = entries
+        self.datasets = datasets
         self.sources = sources
 
-    def _merge(self, entries: dict[str, CatalogEntry], data: dict[str, Any], origin: str) -> None:
+    def _merge(self, entries: dict[str, CatalogEntry], data: dict[str, Any], origin: str,
+               datasets: dict[str, DatasetEntry] | None = None) -> None:
         name = data.get("name") or origin
+        for raw in data.get("datasets", []) if datasets is not None else []:
+            try:
+                dataset = DatasetEntry.model_validate({**raw, "catalog": name})
+            except ValueError:  # no license, or a field this toolkit can't read: not offered
+                continue
+            if dataset.license.training:
+                datasets[dataset.id] = dataset
         for raw in data.get("models", []):
             if self.engines is not None and raw.get("engine") not in self.engines:
                 continue

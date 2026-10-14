@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .jobs import JobManager
 from .models.catalog import Catalog
+from .datasets import DatasetStore
 from .models.store import ModelStore
 from .engines.manager import EngineManager
 from .settings import Home, Settings
@@ -24,6 +25,7 @@ class Toolkit:
         # the main catalog is read again at every start (the last copy or the built-in one when offline)
         self.catalog.load(fetch_main=True)
         self.models = ModelStore(self.home, self.settings, self.catalog)
+        self.datasets = DatasetStore(self.models)
         self._jobs: JobManager | None = None
 
     @property
