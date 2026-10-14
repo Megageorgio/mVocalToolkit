@@ -63,5 +63,15 @@ ny py ry hy dy ty`), so they merge for free: a good ru↔ja bridge. Shared non-l
 5. **Russian DiffSinger dictionary** from the MCFL ru set, shipped with the trainer, with suggested merges to ja (the
    palatalised pairs, `ts`, `ch`→tɕ group) and en.
 
-Open questions for Georgii: whether stricter groups would hurt MCFL accuracy on small languages (needs one training run
-to check), and the exact IPA of hhskt `x`/`ex`/`ax` (assumed: reduced unstressed vowels ɪ / ɪ~e / ə).
+Open question: whether stricter groups would hurt MCFL accuracy on small languages (needs one training run to check).
+
+## Russian (hhskt) set with IPA
+
+Confirmed by Georgii, 2026-10-14. Vowels: `a i u e o y` = а и у э о ы (stressed); reduced: `ax` = unstressed а/о
+(вОда, ɐ~ə), `x` = unstressed и/э after a soft consonant (прИвет, ɪ), `ex` = unstressed ы/э after a hard one
+(Эфир, ɨ~e). Hard consonants `b v g d z k l m n p r s t f h sh ts zh` (х = `h`, ш = `sh` ʂ, ц = `ts`, ж = `zh` ʐ);
+soft `by vy gy dy zy ky ly my ny py ry sy ty fy hy`, plus `shy` = щ (ɕː), `ch` = ч (tɕ), `j` = й. Non-lexical:
+`SP AP vf cl`.
+
+This confirms the proposals above: ru `ch` belongs with ja `ch` / zh `j` (tɕ), ru `shy` with ja `sh` / zh `x` (ɕ),
+ru `sh` and `zh` with zh `sh` and `r` (ʂ, ʐ).
