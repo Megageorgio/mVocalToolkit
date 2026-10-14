@@ -129,6 +129,28 @@ Grouped by step. **[have]** means mVocalToolkit or mLabeler already does it and 
 - Colab/Kaggle: the toolkit writes a notebook that installs the same engine at the same version, frequent checkpoints
   on Drive, a warning about the Drive trash, continuing after a disconnect.
 
+### Very fast preview training
+Three tiers, so the user hears something before committing hours. Times are estimates for a 12 GB card, not
+measurements.
+
+1. **Check (1–2 min).** Binarize a few files, 100–200 steps, export, render one phrase. It doesn't sound like the
+   singer; it proves the data, dictionary, config and export work before a long run.
+2. **Preview (~5–15 min).** Fine-tune only from a multi-speaker base of the same language/phoneme set:
+   - acoustic model only; durations and pitch come from the base variance model;
+   - a new speaker embedding plus a LoRA (or only the last layers), everything else frozen (DiffSinger already has
+     `finetune_enabled` and `frozen_params`);
+   - 3–5 minutes of the cleanest clips, short ones, features cached during labelling (RMVPE f0 is the slow part of
+     binarizing);
+   - optionally train only the auxiliary decoder (shallow diffusion's fast part) first: blurry but already the
+     singer's timbre.
+   Result: "this is roughly how the bank will sound", enough to judge data and labelling before the full run.
+3. **Full.** The normal acoustic + variance training, starting from the preview weights so nothing is wasted.
+
+The catch: tiers 2–3 need a good base per language whose phoneme set covers the singer's dictionary (bases are tied to
+their dictionary). That is the one-time job from `diffsinger-research/REPORT.md` (multilingual base, shared phoneme
+alphabet). Without training at all, a zero-shot model (SoulX-Singer class) could sing from a 10 s reference, but it's a
+different model, so it previews the voice, not the future bank.
+
 ## 4. How it fits into mVocalToolkit and mLabeler
 
 The main principle: **all the work is in the toolkit, a GUI only shows it**. Then everything is available from the CLI,
