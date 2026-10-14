@@ -45,6 +45,39 @@ def _code_hint(code: int | None) -> str:
     return f": {hint}" if hint else ""
 
 
+def process_environment(spec: EngineSpec, envs: EnvManager, settings: Settings,
+                        device: str | None = None) -> tuple[Path, Path, dict[str, str]]:
+    """The interpreter, working directory and environment variables a process of the engine runs with: the
+    worker, and the trainer processes the training manager starts in the same environment."""
+    python = envs.python(spec)
+    paths = [str(RUNTIME_DIR), str(spec.dir)]
+    cwd = spec.dir
+    source = envs.source_dir(spec)
+    if source is not None and spec.source is not None:
+        src = (source / spec.source.path).resolve()
+        paths.insert(0, str(src))
+        cwd = src
+        # the upstream source root, for scripts that need it as a path (not only on sys.path)
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(paths + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
+    env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    # text files are read as UTF-8 even by libraries that do not say so (Windows would use its ANSI code page)
+    env["PYTHONUTF8"] = "1"
+    env["MVT_DEVICE"] = device or settings.device
+    env["MVT_HOME"] = str(envs.home.root)
+    env["MVT_CACHE"] = str(envs.home.cache)
+    env["MVT_ENGINE_DIR"] = str(spec.dir)
+    if source is not None and spec.source is not None:
+        env["MVT_SOURCE_DIR"] = str(cwd)
+    if settings.hf_token:
+        env.setdefault("HF_TOKEN", settings.hf_token)
+    # keep model caches (HF, torch hub) inside the toolkit home
+    env.setdefault("HF_HOME", str(envs.home.cache / "huggingface"))
+    env.setdefault("TORCH_HOME", str(envs.home.cache / "torch"))
+    return python, Path(cwd), env
+
+
 class EngineError(RuntimeError):
     def __init__(self, engine: str, error: dict[str, Any]):
         self.engine = engine
@@ -81,28 +114,7 @@ class WorkerProcess:
     async def start(self) -> None:
         if self.running:
             return
-        python = self.envs.python(self.spec)
-        paths = [str(RUNTIME_DIR), str(self.spec.dir)]
-        cwd = self.spec.dir
-        source = self.envs.source_dir(self.spec)
-        if source is not None and self.spec.source is not None:
-            src = (source / self.spec.source.path).resolve()
-            paths.insert(0, str(src))
-            cwd = src
-        env = dict(os.environ)
-        env["PYTHONPATH"] = os.pathsep.join(paths + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
-        env["PYTHONUNBUFFERED"] = "1"
-        env["PYTHONIOENCODING"] = "utf-8"
-        # text files are read as UTF-8 even by libraries that do not say so (Windows would use its ANSI code page)
-        env["PYTHONUTF8"] = "1"
-        env["MVT_DEVICE"] = self.settings.device
-        env["MVT_HOME"] = str(self.envs.home.root)
-        env["MVT_CACHE"] = str(self.envs.home.cache)
-        if self.settings.hf_token:
-            env.setdefault("HF_TOKEN", self.settings.hf_token)
-        # keep model caches (HF, torch hub) inside the toolkit home
-        env.setdefault("HF_HOME", str(self.envs.home.cache / "huggingface"))
-        env.setdefault("TORCH_HOME", str(self.envs.home.cache / "torch"))
+        python, cwd, env = process_environment(self.spec, self.envs, self.settings)
         import datetime  # noqa: PLC0415
 
         self.stderr_tail.clear()

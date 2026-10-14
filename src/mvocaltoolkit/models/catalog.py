@@ -73,6 +73,7 @@ ENGINE_TASKS: dict[str, list[str]] = {
     "pitch": ["pitch"],
     "vocoder": ["resynth"],
     "refiner": ["refine"],
+    "diffsinger": ["train"],
 }
 # ids models had in earlier catalogs: installed folders are renamed on start
 LEGACY_IDS: dict[str, str] = {
@@ -86,7 +87,7 @@ LEGACY_IDS: dict[str, str] = {
     "labelmakr-colstone_ko": "sofa-pack-colstone_ko"
 }
 
-TASKS = ["transcribe", "align", "segment", "midi", "tempo", "pitch", "separate", "resynth", "refine"]
+TASKS = ["transcribe", "align", "segment", "midi", "tempo", "pitch", "separate", "resynth", "refine", "train"]
 
 
 def engine_tasks(engine: str) -> list[str]:

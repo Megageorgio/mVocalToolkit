@@ -1055,6 +1055,66 @@
       ],
       "author": "m & HHS_kt",
       "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 13.1M parameters, ~200x real time, the most accurate."
+    },
+    {
+      "id": "diffsinger-pc-nsf-hifigan-2025.02",
+      "engine": "diffsinger",
+      "name": "PC-NSF-HiFiGAN 44.1 kHz 2025.02 (training)",
+      "author": "OpenVPI",
+      "description": "The vocoder checkpoint DiffSinger training needs: mel extraction when binarizing, the validation audio, and the vocoder of exported voicebanks.",
+      "license": "CC BY-NC-SA 4.0",
+      "homepage": "https://github.com/openvpi/vocoders/releases/tag/pc-nsf-hifigan-44.1k-hop512-128bin-2025.02",
+      "size_hint": "50 MB",
+      "tags": [
+        "asset",
+        "vocoder"
+      ],
+      "source": {
+        "type": "github_release",
+        "repo": "openvpi/vocoders",
+        "tag": "pc-nsf-hifigan-44.1k-hop512-128bin-2025.02",
+        "asset": "pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.zip"
+      }
+    },
+    {
+      "id": "diffsinger-rmvpe-230917",
+      "engine": "diffsinger",
+      "name": "RMVPE 230917 (pitch extractor for training)",
+      "author": "yxlllc",
+      "description": "The pitch extractor DiffSinger training uses when binarizing (pe: rmvpe).",
+      "license": "MIT",
+      "homepage": "https://github.com/yxlllc/RMVPE/releases/tag/230917",
+      "size_hint": "340 MB",
+      "tags": [
+        "asset",
+        "pitch"
+      ],
+      "source": {
+        "type": "github_release",
+        "repo": "yxlllc/RMVPE",
+        "tag": "230917",
+        "asset": "rmvpe.zip"
+      }
+    },
+    {
+      "id": "diffsinger-hnsep-240512",
+      "engine": "diffsinger",
+      "name": "Vocal remover hnsep 240512 (harmonic-noise separation for training)",
+      "author": "yxlllc",
+      "description": "Separates harmonics and noise when binarizing (hnsep: vr), for the breathiness, voicing and tension parameters.",
+      "license": "MIT",
+      "homepage": "https://github.com/yxlllc/vocal-remover/releases/tag/hnsep_240512",
+      "size_hint": "55 MB",
+      "tags": [
+        "asset",
+        "hnsep"
+      ],
+      "source": {
+        "type": "github_release",
+        "repo": "yxlllc/vocal-remover",
+        "tag": "hnsep_240512",
+        "asset": "hnsep_240512.zip"
+      }
     }
   ],
   "datasets": [

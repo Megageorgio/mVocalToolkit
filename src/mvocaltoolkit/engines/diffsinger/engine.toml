@@ -1,0 +1,37 @@
+name = "diffsinger"
+title = "DiffSinger training (openvpi)"
+description = "Trains DiffSinger acoustic and variance models (openvpi, pinned main with LYNXNet2, rectified flow and the probe epoch), exports them to ONNX for OpenUtau and renders .ds files with a checkpoint. Used by SingForge."
+capabilities = ["train", "export", "render"]
+python = "3.11"
+torch = true
+size_hint = "~3 GB with CUDA (torch is shared with other engines through the uv cache); plus the training assets (vocoder 50 MB, RMVPE 340 MB, hnsep 55 MB)"
+homepage = "https://github.com/openvpi/DiffSinger"
+license = "Apache-2.0 (code); the pretrained vocoder, RMVPE and hnsep weights have their own licenses (openvpi weights: CC BY-NC-SA 4.0)"
+requirements = [
+    "torch>=2.7,<2.9",
+    "torchaudio>=2.7,<2.9",
+    "lightning~=2.3.0",
+    "numpy<2.0.0",
+    "librosa<0.10.0",
+    "setuptools<81",  # librosa 0.9 imports pkg_resources
+    "click",
+    "h5py",
+    "matplotlib",
+    "MonkeyType>=23.3.0",
+    "onnx>=1.21.0",
+    "onnxsim>=0.6.5",
+    "praat-parselmouth==0.4.3",
+    "pyworld==0.3.4",
+    "PyYAML",
+    "resampy",
+    "scipy>=1.10.0",
+    "tensorboard",
+    "tensorboardX",
+    "torchmetrics",
+    "tqdm",
+    "soundfile",
+]
+
+[source]
+repo = "openvpi/DiffSinger"
+commit = "ba031f6f2f969373b49a926cf8b007e9ae48834f"

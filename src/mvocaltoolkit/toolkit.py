@@ -13,6 +13,7 @@ from .datasets import DatasetStore
 from .models.store import ModelStore
 from .engines.manager import EngineManager
 from .settings import Home, Settings
+from .training.manager import TrainingManager
 
 
 class Toolkit:
@@ -26,6 +27,7 @@ class Toolkit:
         self.catalog.load(fetch_main=True)
         self.models = ModelStore(self.home, self.settings, self.catalog)
         self.datasets = DatasetStore(self.models)
+        self.training = TrainingManager(self)
         self._jobs: JobManager | None = None
 
     @property
@@ -37,6 +39,9 @@ class Toolkit:
 
     async def start(self) -> None:
         self.engines.start_idle_watcher()
+        # runs that were training when the server last stopped are followed again
+        self.training.load()
 
     async def stop(self) -> None:
+        await self.training.stop_all()
         await self.engines.stop_all()

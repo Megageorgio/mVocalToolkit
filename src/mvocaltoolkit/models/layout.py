@@ -218,7 +218,21 @@ def detect_refiner(root: Path) -> dict[str, Any] | None:
     return {"checkpoint": ckpt.name, "config": "config.yaml", "phonemes": "phonemes.txt"}
 
 
+def detect_diffsinger(root: Path) -> dict[str, Any] | None:
+    """A training asset of the DiffSinger engine: the vocoder (model.ckpt + config.json), RMVPE or hnsep (model.pt)."""
+    ckpt = _first(root, "model.ckpt", "model.pt") or next(iter(_files(root, "*.ckpt", "*.pt", "*.pth")), None)
+    if ckpt is None:
+        return None
+    layout: dict[str, Any] = {"checkpoint": ckpt.name}
+    for name in ("config.json", "config.yaml"):
+        if (root / name).is_file():
+            layout["config"] = name
+            break
+    return layout
+
+
 DETECTORS = {
+    "diffsinger": detect_diffsinger,
     "refiner": detect_refiner,
     "vocoder": detect_vocoder,
     "sofa": detect_sofa,

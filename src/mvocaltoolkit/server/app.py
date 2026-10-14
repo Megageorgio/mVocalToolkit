@@ -21,6 +21,7 @@ from ..api_models import (
     AlignRequest,
     CatalogAddRequest,
     ConvertRequest,
+    DatasetBuildRequest,
     DatasetDownloadRequest,
     FixLabelsRequest,
     MidiRequest,
@@ -30,8 +31,11 @@ from ..api_models import (
     SegmentRequest,
     SeparateRequest,
     ResynthRequest,
+    OtoNoteRequest,
     TempoRequest,
     TextRequest,
+    TrainingExportRequest,
+    TrainingRenderRequest,
     TranscribeRequest,
 )
 from ..datasets import license_text
@@ -40,11 +44,12 @@ from ..jobs import FINISHED, Job, JobInfo
 from ..models.catalog import ENGINE_TASKS, TASKS
 from ..models.store import ModelNotFound, model_listing
 from ..pipelines.refine import run_refine
-from ..pipelines.extra import run_midi, run_pitch, run_resynth, run_segment, run_separate, run_tempo, run_text
+from ..pipelines.extra import run_midi, run_oto_note, run_pitch, run_resynth, run_segment, run_separate, run_tempo, run_text
 from ..pipelines.label import run_align, run_transcribe
 from ..text.g2p import load_user_words, save_user_words
 from ..text.languages import language_info
 from ..text.rules import RULE_SETS
+from ..training.runs import FINISHED as RUN_FINISHED, RunSpec
 from ..clients import STALE_SECONDS, Clients
 from .. import storage
 from ..toolkit import Toolkit
@@ -461,6 +466,207 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
             raise HTTPException(404, "Not downloaded")
         return {"ok": True}
 
+    # ---------------- training ----------------
+
+    @app.get("/training/environment", tags=["training"], dependencies=[Depends(auth)])
+    async def training_environment(engine: str = "diffsinger", tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        """torch, CUDA, GPUs with free memory and free disk as the training engine sees them. {"installed": false}
+        when the engine isn't installed yet (the first run installs it)."""
+        spec = _engine(tk, engine)
+        if not tk.engines.envs.is_ready(spec):
+            return {"installed": False, "engine": engine, "size_hint": spec.size_hint}
+        return {"installed": True, "engine": engine, **await _guard(tk.engines.call(engine, "environment"))}
+
+    @app.post("/training/overlay", tags=["training"], dependencies=[Depends(auth)])
+    async def training_overlay(spec: RunSpec) -> dict[str, Any]:
+        """The config a DiffSinger run spec resolves to (presets applied), without starting anything: for a
+        review step. The engine merges it over openvpi's defaults when the run starts."""
+        from ..training.diffsinger import build_overlay, resolve_assets  # noqa: PLC0415
+
+        if not spec.kind.startswith("diffsinger"):
+            raise HTTPException(400, "Only DiffSinger runs have an overlay")
+        try:
+            return {"overlay": build_overlay(spec.kind, {**spec.config, "device": spec.device}), "assets": resolve_assets(spec.config)}
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.post("/training/runs", tags=["training"], dependencies=[Depends(auth)])
+    async def training_start(spec: RunSpec, tk: Toolkit = Depends(get_tk)):
+        """Queues a training run. One run trains at a time; the trainer is a process of its own that keeps running
+        when the server stops. Progress: GET /training/runs/{id} (numbers), /events (everything), WS /events."""
+        _engine(tk, spec.engine_name())
+        if spec.kind.startswith("diffsinger"):
+            from ..training.diffsinger import build_overlay, resolve_assets  # noqa: PLC0415
+
+            try:
+                overlay = build_overlay(spec.kind, {**spec.config, "device": spec.device})
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from e
+            spec = spec.model_copy(update={"config": {**spec.config, "overlay": overlay, "assets": resolve_assets(spec.config)}})
+        try:
+            run = tk.training.start(spec)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        return run.info
+
+    @app.get("/training/runs", tags=["training"], dependencies=[Depends(auth)])
+    async def training_runs(active: bool = False, tk: Toolkit = Depends(get_tk)):
+        infos = tk.training.list()
+        if active:
+            infos = [i for i in infos if i.status not in RUN_FINISHED]
+        return infos
+
+    def _run(tk: Toolkit, run_id: str):
+        run = tk.training.get(run_id)
+        if run is None:
+            raise HTTPException(404, f"Unknown run {run_id}")
+        return run
+
+    @app.get("/training/runs/{run_id}", tags=["training"], dependencies=[Depends(auth)])
+    async def training_run(run_id: str, tk: Toolkit = Depends(get_tk)):
+        return _run(tk, run_id).info
+
+    @app.get("/training/runs/{run_id}/events", tags=["training"], dependencies=[Depends(auth)])
+    async def training_events(run_id: str, since: int = 0, wait: float = 0, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        """Events number `since` onwards (0-based). wait: seconds to wait for a new one when there is none yet."""
+        run = _run(tk, run_id)
+        events = run.read_events_since(since)
+        if not events and wait > 0 and run.info.status not in RUN_FINISHED:
+            queue = run.subscribe()
+            try:
+                await asyncio.wait_for(queue.get(), timeout=min(wait, 60))
+            except asyncio.TimeoutError:
+                pass
+            finally:
+                run.unsubscribe(queue)
+            events = run.read_events_since(since)
+        return {"since": since, "next": since + len(events), "events": events, "status": run.info.status}
+
+    @app.get("/training/runs/{run_id}/log", tags=["training"], dependencies=[Depends(auth)])
+    async def training_log(run_id: str, lines: int = 200, name: str = "train.log", tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        run = _run(tk, run_id)
+        if name not in ("train.log", "prepare.log", "export.log", "render.log"):
+            raise HTTPException(400, "name: train.log, prepare.log, export.log or render.log")
+        return {"lines": run.log_tail(lines, name), "path": str(run.dir / name)}
+
+    @app.post("/training/runs/{run_id}/stop", tags=["training"], dependencies=[Depends(auth)])
+    async def training_stop(run_id: str, tk: Toolkit = Depends(get_tk)):
+        """Asks the trainer to save a checkpoint and end (killed after a few minutes if it doesn't)."""
+        _run(tk, run_id)
+        return await tk.training.stop(run_id)
+
+    @app.post("/training/runs/{run_id}/resume", tags=["training"], dependencies=[Depends(auth)])
+    async def training_resume(run_id: str, tk: Toolkit = Depends(get_tk)):
+        """Queues a stopped or failed run again; it continues from its last checkpoint."""
+        _run(tk, run_id)
+        try:
+            return await tk.training.resume(run_id)
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from e
+
+    @app.delete("/training/runs/{run_id}", tags=["training"], dependencies=[Depends(auth)])
+    async def training_delete(run_id: str, files: bool = False, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        """Forgets the run (stopping it first); files=true also removes its folder."""
+        _run(tk, run_id)
+        await tk.training.delete(run_id, files=files)
+        return {"ok": True}
+
+    @app.get("/training/runs/{run_id}/checkpoints", tags=["training"], dependencies=[Depends(auth)])
+    async def training_checkpoints(run_id: str, tk: Toolkit = Depends(get_tk)):
+        _run(tk, run_id)
+        return await tk.training.checkpoints(run_id)
+
+    @app.get("/training/runs/{run_id}/samples", tags=["training"], dependencies=[Depends(auth)])
+    async def training_samples(run_id: str, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
+        """The validation audio of each checkpoint: step -> files (paths for GET /files/download)."""
+        run = _run(tk, run_id)
+        return {step: [str(run.dir / f) for f in files] for step, files in sorted(run.info.samples.items(), key=lambda kv: int(kv[0]))}
+
+    @app.post("/training/runs/{run_id}/export", tags=["training"], dependencies=[Depends(auth)])
+    async def training_export(run_id: str, req: TrainingExportRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        """ONNX export of a checkpoint with the engine's exporter (a job)."""
+        run = _run(tk, run_id)
+        out_dir = req.out_dir or str(run.dir / "export" / (str(req.step) if req.step else "latest"))
+
+        async def work(job: Job):
+            return await tk.engines.call(run.info.spec.engine_name(), "export", {
+                "run_dir": str(run.dir), "kind": run.info.spec.kind, "out_dir": out_dir, "step": req.step,
+                "export_spk": req.export_spk, "freeze_spk": req.freeze_spk, "freeze_gender": req.freeze_gender,
+                "freeze_velocity": req.freeze_velocity, "freeze_glide": req.freeze_glide, "freeze_expr": req.freeze_expr,
+            }, on_progress=lambda d: job.progress(d.get("progress"), stage=d.get("stage") or "export", message=d.get("message")),
+                log=job.log)
+
+        return submit(tk, "training_export", work, {"run": run_id, **req.model_dump()})
+
+    @app.post("/training/runs/{run_id}/render", tags=["training"], dependencies=[Depends(auth)])
+    async def training_render(run_id: str, req: TrainingRenderRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        """Sings a .ds file with a checkpoint (a job); the result lists the files made."""
+        run = _run(tk, run_id)
+        out_dir = req.out_dir or str(run.dir / "renders")
+
+        async def work(job: Job):
+            return await tk.engines.call(run.info.spec.engine_name(), "render", {
+                "run_dir": str(run.dir), "kind": run.info.spec.kind, "ds": req.ds, "out_dir": out_dir, "step": req.step,
+                "spk": req.spk, "lang": req.lang, "title": req.title, "steps": req.steps, "depth": req.depth,
+                "predict": req.predict, "seed": req.seed,
+            }, on_progress=lambda d: job.progress(d.get("progress"), stage=d.get("stage") or "render", message=d.get("message")),
+                log=job.log)
+
+        return submit(tk, "training_render", work, {"run": run_id, **req.model_dump()})
+
+    @app.post("/training/dataset/build", tags=["training"], dependencies=[Depends(auth)])
+    async def training_dataset_build(req: DatasetBuildRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        """Builds a DiffSinger raw dataset (wavs/ + transcriptions.csv per speaker, a dictionary per language) from
+        folders of labelled recordings (a job; the result is dataset.json's content plus a run spec to start with)."""
+        from ..training.dataset import SourceSpec, build_dataset, spec_from_result  # noqa: PLC0415
+
+        async def work(job: Job):
+            def progress(value: float, message: str) -> None:
+                job.progress(value, stage="dataset", message=message)
+
+            result = await asyncio.to_thread(
+                build_dataset, [SourceSpec(**s.model_dump()) for s in req.sources], Path(req.out_dir),
+                req.dictionaries or None, req.validation_files, progress)
+            return {"out_dir": result.out_dir, "speakers": result.speakers, "dictionaries": result.dictionaries,
+                    "phonemes": result.phonemes, "problems": result.problems, "files": result.files,
+                    "seconds": result.seconds, "spec": spec_from_result(result)}
+
+        return submit(tk, "dataset_build", work, req.model_dump())
+
+    @app.websocket("/training/runs/{run_id}/events")
+    async def training_events_ws(websocket: WebSocket, run_id: str, since: int = 0) -> None:
+        tk = tk_holder["tk"]
+        token = websocket.query_params.get("token") or websocket.headers.get("x-mvt-token")
+        if not _authorized(websocket.client.host if websocket.client else None, token, tk):
+            await websocket.close(code=4401)
+            return
+        run = tk.training.get(run_id)
+        await websocket.accept()
+        if run is None:
+            await websocket.send_json({"event": "error", "message": "run not found"})
+            await websocket.close()
+            return
+        queue = run.subscribe()
+        try:
+            await websocket.send_json({"event": "state", "run": run.info.model_dump(mode="json")})
+            for event in run.read_events_since(since):
+                await websocket.send_json(event)
+            if run.info.status in RUN_FINISHED:
+                return
+            while True:
+                event = await queue.get()
+                await websocket.send_json(event)
+                if event.get("event") == "end":
+                    break
+        except WebSocketDisconnect:
+            pass
+        finally:
+            run.unsubscribe(queue)
+            try:
+                await websocket.close()
+            except Exception:  # noqa: BLE001
+                pass
+
     # ---------------- files ----------------
 
     @app.post("/files", tags=["files"], dependencies=[Depends(auth)])
@@ -531,6 +737,12 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
     async def resynth(req: ResynthRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
         """A recording sung again with another f0 (WORLD, or the NSF-HiFiGAN vocoder of DiffSinger)."""
         return submit(tk, "resynth", lambda job: run_resynth(tk, job, req), req.model_dump())
+
+    @app.post("/oto/note", tags=["operations"], dependencies=[Depends(auth)])
+    async def oto_note(req: OtoNoteRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        """An oto.ini entry sung as a note of the given pitch and length (WORLD, NSF-HiFiGAN or an UTAU
+        resampler), to hear how the voicebank will sound with it."""
+        return submit(tk, "oto-note", lambda job: run_oto_note(tk, job, req), req.model_dump())
 
     @app.post("/tempo", tags=["operations"], dependencies=[Depends(auth)])
     async def tempo(req: TempoRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
@@ -676,6 +888,10 @@ async def _guard(coro):
 def _allowed_download(tk: Toolkit, target: Path) -> bool:
     if target.is_relative_to(tk.home.root):
         return True
+    # files of training runs (checkpoints, samples, renders) live in the run folders, often outside the home
+    for run in tk.training.runs.values():
+        if target.is_relative_to(run.dir):
+            return True
     for job in tk.jobs.jobs.values():
         if job.info.result and str(target) in str(job.info.result):
             return True

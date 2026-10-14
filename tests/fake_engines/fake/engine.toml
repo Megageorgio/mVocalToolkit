@@ -1,0 +1,4 @@
+name = "fake"
+title = "fake training engine"
+python = "system"
+capabilities = ["train"]

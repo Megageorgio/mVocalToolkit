@@ -247,6 +247,24 @@ class ResynthRequest(BaseModel):
     end: float | None = None
 
 
+class OtoNoteRequest(BaseModel):
+    """An oto.ini entry of a recording sung as a note, to hear how the voicebank will sound with it."""
+
+    input: InputSpec
+    offset: float = Field(description="oto.ini values of the entry, ms")
+    consonant: float
+    cutoff: float = Field(description="Negative = length from offset, else from the end of the file")
+    preutterance: float
+    overlap: float
+    tone: float = Field(60.0, description="MIDI note (60 = C4)")
+    length: float = Field(600.0, description="Note length, ms")
+    notes: int = Field(1, ge=1, le=2, description="2 = the entry twice in a row, to hear how it joins")
+    method: Literal["world", "nsf", "resampler"] = "world"
+    model: str = Field("pc-nsf-hifigan-2025.02", description="Vocoder model (catalog id) for method nsf")
+    resampler: str | None = Field(None, description="Path to an UTAU resampler program on the toolkit's computer")
+    flags: str = Field("", description="UTAU flags for the resampler")
+
+
 class TempoRequest(BaseModel):
     input: InputSpec
     model: str = "deeprhythm"
@@ -317,3 +335,42 @@ class DatasetDownloadRequest(BaseModel):
 
 class CatalogAddRequest(BaseModel):
     ref: str = Field(..., description="URL or path of a catalog JSON")
+
+
+class TrainingExportRequest(BaseModel):
+    out_dir: str = Field("", description="Folder for the ONNX files (default: <run dir>/export/<step>)")
+    step: int | None = Field(None, description="Checkpoint step (default: the latest)")
+    export_spk: list[str] = Field(default_factory=list, description="Speakers or mixes to export (multi-speaker models)")
+    freeze_spk: str | None = None
+    freeze_gender: float | None = None
+    freeze_velocity: bool = False
+    freeze_glide: bool = False
+    freeze_expr: bool = False
+
+
+class TrainingRenderRequest(BaseModel):
+    ds: str = Field(..., description="A .ds file to sing")
+    out_dir: str = Field("", description="Folder for the result (default: <run dir>/renders)")
+    step: int | None = None
+    spk: str | None = None
+    lang: str | None = None
+    title: str | None = None
+    steps: int | None = Field(None, description="Acoustic: sampling steps")
+    depth: float | None = Field(None, description="Acoustic: shallow diffusion depth")
+    predict: list[str] = Field(default_factory=list, description="Variance: dur, pitch, energy, breathiness, voicing, tension")
+    seed: int | None = None
+
+
+class DatasetSource(BaseModel):
+    folder: str
+    speaker: str = Field("", description="Default: the folder's name")
+    language: str = Field("", description="Default: the first dictionary's language, or xx")
+    recursive: bool = True
+
+
+class DatasetBuildRequest(BaseModel):
+    sources: list[DatasetSource]
+    out_dir: str
+    dictionaries: dict[str, str] = Field(default_factory=dict, description="language -> dictionary file; missing ones are made from the labels")
+    validation_files: int = Field(3, ge=1, description="Validation files per speaker (chosen by name, the same every time)")
+

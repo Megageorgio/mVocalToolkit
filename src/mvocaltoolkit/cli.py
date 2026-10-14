@@ -201,6 +201,156 @@ def cmd_datasets(args) -> None:
         print("Removed" if tk.datasets.remove(entry.id) else "Not downloaded")
 
 
+def cmd_train(args) -> None:
+    """Training runs: start from a spec file, follow, stop, resume, export, render."""
+    from .training.runs import RunSpec  # noqa: PLC0415
+
+    tk = _toolkit(args)
+
+    def show(info) -> None:
+        line = f"{info.id}  {info.status.value:<9} {info.spec.kind:<22} step {info.step}"
+        if info.max_steps:
+            line += f"/{info.max_steps}"
+        if info.speed:
+            line += f"  {info.speed * 60:.1f} steps/min"
+        if info.eta:
+            line += f"  {int(info.eta // 3600)}:{int(info.eta % 3600 // 60):02d} left"
+        if info.val_loss is not None:
+            line += f"  val {info.val_loss:.4f}"
+        if info.message:
+            line += f"  {info.message[:80]}"
+        print(line)
+        if info.error:
+            print("  " + info.error.replace("\n", "\n  "))
+
+    if args.action == "list":
+        for info in tk.training.list():
+            show(info)
+        return
+    if args.action == "start":
+        spec_data = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+        spec = RunSpec.model_validate(spec_data)
+        if args.dir:
+            spec.dir = args.dir
+        if args.device:
+            spec.device = args.device
+        if spec.kind.startswith("diffsinger"):
+            from .training.diffsinger import build_overlay, resolve_assets  # noqa: PLC0415
+
+            overlay = build_overlay(spec.kind, {**spec.config, "device": spec.device})
+            spec.config = {**spec.config, "overlay": overlay, "assets": resolve_assets(spec.config)}
+
+        async def main():
+            await tk.start()
+            run = tk.training.start(spec)
+            print(f"Run {run.id} queued in {run.dir}")
+            if not args.wait:
+                print("The toolkit must keep running for the run to be prepared and started: use `mvt serve`, or --wait.")
+                await tk.stop()
+                return
+            queue = run.subscribe()
+            while True:
+                event = await queue.get()
+                kind = event.get("event")
+                if kind == "prepare":
+                    pct = f"{event['progress'] * 100:5.1f}%" if event.get("progress") is not None else "      "
+                    print(f"\r{pct} {event.get('stage', '')}: {str(event.get('message', ''))[:90]:<90}", end="", file=sys.stderr)
+                elif kind == "launched":
+                    print(f"\nTrainer started (pid {event.get('pid')}); log: {run.dir / 'train.log'}", file=sys.stderr)
+                elif kind == "step":
+                    info = run.info
+                    losses = " ".join(f"{k}={v:.4f}" for k, v in list(info.losses.items())[:3])
+                    eta = f" {int(info.eta // 60)} min left" if info.eta else ""
+                    print(f"\rstep {info.step}/{info.max_steps or '?'}  {losses}{eta}        ", end="", file=sys.stderr)
+                elif kind == "validation":
+                    print(f"\nvalidation at {event.get('step')}: val_loss {event.get('val_loss')}", file=sys.stderr)
+                elif kind == "checkpoint":
+                    print(f"\ncheckpoint {event.get('step')}", file=sys.stderr)
+                elif kind == "samples":
+                    print(f"\nsamples at {event.get('step')}: {len(event.get('files') or [])} files", file=sys.stderr)
+                elif kind == "warning":
+                    print(f"\nwarning: {event.get('text')}", file=sys.stderr)
+                elif kind == "end":
+                    print(file=sys.stderr)
+                    show(run.info)
+                    break
+            await tk.stop()
+
+        asyncio.run(main())
+        return
+    run = tk.training.get(args.id or "")
+    if run is None:
+        raise SystemExit(f"Unknown run {args.id}")
+    if args.action == "status":
+        show(run.info)
+        if run.info.checkpoints:
+            print("checkpoints: " + ", ".join(str(c.step) for c in run.info.checkpoints))
+        for step, files in sorted(run.info.samples.items(), key=lambda kv: int(kv[0])):
+            print(f"samples {step}: {len(files)} files")
+    elif args.action == "log":
+        for line in run.log_tail(args.lines or 100):
+            print(line)
+    elif args.action == "events":
+        for event in run.read_events_since(args.since or 0):
+            print(json.dumps(event, ensure_ascii=False))
+    elif args.action == "stop":
+        run.stop_file.write_text("cli", encoding="utf-8")
+        print("STOP written: a trainer that is running saves a checkpoint and ends (a running toolkit records the stop)")
+    elif args.action == "resume":
+        print(f"A resume needs the running toolkit: POST /training/runs/{run.id}/resume")
+    elif args.action == "export":
+        out = args.out or str(run.dir / "export" / (str(args.step) if args.step else "latest"))
+        result = _run(tk, "training_export", lambda job: tk.engines.call(
+            run.info.spec.engine_name(), "export",
+            {"run_dir": str(run.dir), "kind": run.info.spec.kind, "out_dir": out, "step": args.step,
+             "export_spk": args.spk or [], "freeze_spk": None},
+            on_progress=lambda d: job.progress(d.get("progress"), stage=d.get("stage") or "export", message=d.get("message")),
+            log=job.log))
+        _print(result)
+    elif args.action == "render":
+        if not args.ds:
+            raise SystemExit("render needs --ds <file.ds>")
+        out = args.out or str(run.dir / "renders")
+        result = _run(tk, "training_render", lambda job: tk.engines.call(
+            run.info.spec.engine_name(), "render",
+            {"run_dir": str(run.dir), "kind": run.info.spec.kind, "ds": args.ds, "out_dir": out, "step": args.step,
+             "spk": args.spk[0] if args.spk else None, "lang": args.lang, "predict": []},
+            on_progress=lambda d: job.progress(d.get("progress"), stage=d.get("stage") or "render", message=d.get("message")),
+            log=job.log))
+        _print(result)
+
+
+def cmd_dataset(args) -> None:
+    """Builds a DiffSinger raw dataset from folders of labelled recordings."""
+    from .training.dataset import SourceSpec, build_dataset, spec_from_result  # noqa: PLC0415
+
+    sources = []
+    for folder in args.folders:
+        speaker = ""
+        if "=" in folder and not Path(folder).exists():
+            speaker, folder = folder.split("=", 1)
+        sources.append(SourceSpec(folder=folder, speaker=speaker, language=args.lang or ""))
+    dictionaries = {}
+    for item in args.dictionary or []:
+        lang, _, path = item.partition("=")
+        dictionaries[lang] = path
+
+    def progress(value, message):
+        print(f"\r{value * 100:5.1f}% {message[:90]:<90}", end="", file=sys.stderr)
+
+    result = build_dataset(sources, Path(args.out), dictionaries or None, args.validation, progress)
+    print(file=sys.stderr)
+    print(f"{result.files} files, {result.seconds / 60:.1f} min, speakers: " + ", ".join(s["speaker"] for s in result.speakers))
+    for lang, phones in result.phonemes.items():
+        print(f"{lang}: {len(phones)} phonemes: {' '.join(phones)}")
+    for problem in result.problems:
+        print("problem: " + json.dumps(problem, ensure_ascii=False))
+    spec = {"kind": args.kind, "config": spec_from_result(result, args.kind, {"goal": args.goal, "gpu_gb": args.gpu_gb, "size": args.size})}
+    spec_path = Path(args.out) / f"spec-{args.kind}.json"
+    spec_path.write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"Run spec written to {spec_path}: `mvt train start {spec_path} --wait`")
+
+
 def cmd_languages(args) -> None:
     """Languages with models for a task: what a GUI shows as "language -> model"."""
     from .models.store import model_listing  # noqa: PLC0415
@@ -541,6 +691,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--accept-license", action="store_true", help="download: the license was read and is accepted")
     p.set_defaults(func=cmd_datasets)
 
+    p = sub.add_parser("train", help="Training runs (DiffSinger): start from a spec, status, log, export, render")
+    p.add_argument("action", choices=["start", "list", "status", "log", "events", "stop", "resume", "export", "render"])
+    p.add_argument("spec", nargs="?", help="start: the run spec JSON ({kind, config}); other actions: the run id", default=None)
+    p.add_argument("--dir", help="start: the run folder (default: <home>/training/<id>)")
+    p.add_argument("--device", help="start: auto, cuda, cuda:1, cpu")
+    p.add_argument("--wait", action="store_true", help="start: run the queue here and follow the run until it ends")
+    p.add_argument("--lines", type=int, help="log: lines to show")
+    p.add_argument("--since", type=int, help="events: from this event number")
+    p.add_argument("--step", type=int, help="export/render: checkpoint step")
+    p.add_argument("--out", "-o", help="export/render: output folder")
+    p.add_argument("--spk", action="append", help="export: speakers to export; render: the speaker")
+    p.add_argument("--lang", help="render: the language")
+    p.add_argument("--ds", help="render: the .ds file")
+    p.set_defaults(func=cmd_train, id=None)
+
+    p = sub.add_parser("dataset", help="Build a DiffSinger raw dataset from folders of labelled recordings")
+    p.add_argument("action", choices=["build"])
+    p.add_argument("folders", nargs="+", help="folders with recordings and labels; speaker=folder names the speaker")
+    p.add_argument("--out", "-o", required=True)
+    p.add_argument("--lang", help="language of the recordings (default: xx)")
+    p.add_argument("--dictionary", "-d", action="append", help="lang=path; missing ones are made from the labels")
+    p.add_argument("--validation", type=int, default=3, help="validation files per speaker")
+    p.add_argument("--kind", default="diffsinger_acoustic", help="run spec to write: diffsinger_acoustic or diffsinger_variance")
+    p.add_argument("--goal", default="full", help="full, check, preview, finetune")
+    p.add_argument("--size", default="medium", help="small, medium, large")
+    p.add_argument("--gpu-gb", type=float, default=16)
+    p.set_defaults(func=cmd_dataset)
+
     p = sub.add_parser("languages", help="Languages and their models for a task (the GUI model choice)")
     p.add_argument("--task", default="align")
     p.set_defaults(func=cmd_languages)
@@ -678,6 +856,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.command == "models" and args.action == "import" and (not args.engine or not args.path):
         parser.error("models import needs --engine and --path (the positional id is optional)")
+    if getattr(args, "command", "") == "train" and args.action != "start":
+        args.id = args.spec
     args.func(args)
 
 
