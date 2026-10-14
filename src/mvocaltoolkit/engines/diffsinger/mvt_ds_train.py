@@ -82,7 +82,7 @@ class SampleExtractor:
                         folder.mkdir(parents=True, exist_ok=True)
                         name = value.tag.replace("/", "_") + ".wav"
                         (folder / name).write_bytes(data)
-                        written.setdefault(step, []).append(str(Path("samples") / str(step) / name))
+                        written.setdefault(step, []).append(f"samples/{step}/{name}")
             except Exception:  # noqa: BLE001  (a file being written: read again next time)
                 continue
         return written
