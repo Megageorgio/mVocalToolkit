@@ -346,6 +346,51 @@ before the pack is downloaded (`folder` = folder name inside the archive); unlis
 Source types: `url`, `github_release` (`asset` is a file name pattern or a list of them; `tag` can be
 `latest`), `huggingface` (`repo`, `files`, `revision`), `engine` (the engine downloads the model itself).
 
+## Training
+
+Model training (DiffSinger today) runs as **training runs**: not ordinary jobs but trainer processes of their own,
+started by the toolkit, which keep running when the server stops and are followed again when it starts. One run
+trains at a time; the others wait in a queue. Everything about a run is in its folder (`run.json`, `events.jsonl`,
+`train.log`, `config.yaml`, checkpoints, `samples/<step>/`), by default `<home>/training/<id>`, or the folder the
+spec names (a project folder). Used by SingForge; the same through `mvt train` and `mvt dataset`.
+
+- `GET /training/environment?engine=diffsinger` — torch, CUDA, GPUs with free memory, free disk, as the engine
+  sees them; `{"installed": false}` before the engine's first use (the first run installs it, ~3 GB with CUDA).
+- `POST /training/dataset/build` (`mvt dataset build <folders> --out --lang`) — job: folders of labelled recordings
+  (wav/flac + lab, TextGrid, Audacity, json or a `transcriptions.csv`; labels in a sibling folder are found by name)
+  → `<out>/<speaker>/wavs/ + transcriptions.csv`, a `dictionary-<lang>.txt` of the phonemes that occur when none is
+  given, `dataset.json` (files, minutes, phonemes, problems) and a ready run spec (`result.spec`).
+- `POST /training/overlay` — the config a DiffSinger spec resolves to (presets applied), to show before starting.
+- `POST /training/runs` (`mvt train start spec.json [--wait]`) — queues a run. The spec:
+  ```json
+  {"kind": "diffsinger_acoustic", "name": "acoustic-1", "dir": "D:/voices/masha/runs/acoustic-1", "device": "auto",
+   "config": {"datasets": [{"raw_data_dir": "…/prepared/masha", "speaker": "masha", "language": "ru",
+                            "test_prefixes": ["a01", "b07", "c12"]}],
+              "dictionaries": {"ru": "…/dictionary-ru.txt"}, "extra_phonemes": [], "merged_phoneme_groups": [],
+              "preset": {"goal": "full", "gpu_gb": 16, "size": "medium"},
+              "variance": {"dur": true, "pitch": true, "breathiness": true},
+              "finetune": {"ckpt": "…/model_ckpt_steps_100000.ckpt"}, "overrides": {}}}
+  ```
+  `kind`: `diffsinger_acoustic` or `diffsinger_variance`. `preset.goal`: `full`, `check` (200 steps, proves data,
+  config and export), `preview` (a short fine-tune), `finetune`; `gpu_gb` picks the batch; `size` (small < 1 h,
+  medium, large) the length. The engine merges the overlay over openvpi's defaults; `overrides` go last. The
+  training assets (vocoder, RMVPE, hnsep) are catalog models of the `diffsinger` engine, downloaded when missing.
+- `GET /training/runs[?active=true]`, `GET /training/runs/{id}` — the numbers: status (`queued`, `preparing`,
+  `training`, `stopping`, `stopped`, `done`, `failed`), step, max_steps, speed, eta, losses, lr, gpu_mb, val_loss,
+  best_val_step, checkpoints, samples (step → files), warnings, error.
+- `GET /training/runs/{id}/events?since=0&wait=10`, `WS /training/runs/{id}/events` — everything that happened:
+  `queued`, `prepare` {stage, progress, message}, `launched`, `start`, `step` {step, losses, lr, gpu_mb}, `validation`
+  {val_loss}, `checkpoint` {step, path}, `checkpoint_removed`, `samples` {step, files}, `warning` {kind: hang | oom…},
+  `stopping`, `end` {status, error, error_kind}. `samples` are the validation files DiffSinger renders with the
+  vocoder at every validation (`gt_i`, `aux_i`, `diff_i`), as WAV files in the run folder (`GET /files/download`).
+- `POST /training/runs/{id}/stop` — the trainer saves a checkpoint and ends (killed after a few minutes if not);
+  `POST .../resume` — continues from the last checkpoint (also after a crash or a reboot); `DELETE .../{id}?files=`.
+- `GET .../log?lines=200&name=train.log`, `GET .../checkpoints`, `GET .../samples`.
+- `POST /training/runs/{id}/export` (`mvt train export <id> --step N`) — job: ONNX with DiffSinger's exporter
+  (`acoustic.onnx`, `.phonemes.json`, `.languages.json`, `dsconfig.yaml`, the dictionaries), into
+  `<run>/export/<step>/`.
+- `POST /training/runs/{id}/render` (`mvt train render <id> --ds song.ds`) — job: a `.ds` sung with a checkpoint.
+
 ## Datasets
 
 Public singing datasets for training (more voices, other languages) come from the same catalogs (key
