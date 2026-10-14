@@ -24,6 +24,7 @@ defaults never have to be copied here.
 from __future__ import annotations
 
 import copy
+import os
 from typing import Any
 
 ASSET_DEFAULTS = {
@@ -179,6 +180,12 @@ def build_overlay(kind: str, config: dict[str, Any]) -> dict[str, Any]:
     overlay["hnsep"] = "vr"
     overlay["f0_max"] = 1600
     overlay["binarization_args"] = {"num_workers": int(config.get("binarize_workers") or 0)}
+    # data loader workers: on Windows every worker is a process that loads torch and the CUDA libraries again, and
+    # several of them exhaust the commit limit ("the paging file is too small"); the main process loads the data then
+    workers = config.get("loader_workers")
+    overlay["ds_workers"] = int(workers) if workers is not None else (0 if os.name == "nt" else 4)
+    if overlay["ds_workers"] == 0:
+        overlay["dataloader_prefetch_factor"] = None
 
     # datasets, speakers, languages
     spk_ids: dict[str, int] = {}

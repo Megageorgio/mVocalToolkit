@@ -28,9 +28,10 @@ SOURCE = Path(os.environ.get("MVT_SOURCE_DIR") or os.getcwd()).resolve()
 CKPT_GLOB = "model_ckpt_steps_*.ckpt"
 
 
-def _write_event(path: Path, event: str, **data: Any) -> None:
+def _write_event(file: Path, event: str, **data: Any) -> None:
+    """Appends one event; the first parameter is not called path because events carry a "path" of their own."""
     payload = {"event": event, "time": time.time(), **data}
-    with path.open("a", encoding="utf-8") as f:
+    with file.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
 
@@ -66,9 +67,14 @@ class SampleExtractor:
                     if not event.HasField("summary"):
                         continue
                     for value in event.summary.value:
-                        if not value.HasField("audio"):
-                            continue
-                        data = value.audio.encoded_audio_string
+                        # torch's SummaryWriter writes audio as a string tensor (plugin "audio"); older writers as
+                        # an audio summary
+                        data = b""
+                        if value.HasField("tensor") and value.metadata.plugin_data.plugin_name == "audio":
+                            if value.tensor.string_val:
+                                data = value.tensor.string_val[0]
+                        elif value.HasField("audio"):
+                            data = value.audio.encoded_audio_string
                         if not data:
                             continue
                         step = int(event.step)
@@ -96,6 +102,7 @@ def make_callback(run_dir: Path, log_interval: int):
             self.stopping = False
             self.ended = False
             self.last_step_event = -1
+            self.pending_scan = False
 
         # ---- helpers ----
         def _losses(self, trainer: Any) -> dict[str, float]:
@@ -154,6 +161,12 @@ def make_callback(run_dir: Path, log_interval: int):
 
         def on_train_batch_end(self, trainer: Any, pl_module: Any, outputs: Any, batch: Any, batch_idx: int) -> None:
             step = int(trainer.global_step)
+            if self.pending_scan:
+                # Lightning runs checkpoint callbacks after every other callback, so the checkpoint of the last
+                # validation is only on disk now, at the next batch
+                self.pending_scan = False
+                self._scan_checkpoints()
+                self._pull_samples(trainer)
             if step != self.last_step_event and (step % log_interval == 0 or step <= 5):
                 self.last_step_event = step
                 lr = None
@@ -192,8 +205,7 @@ def make_callback(run_dir: Path, log_interval: int):
                 elif str(key).startswith(("val", "metrics")):
                     metrics[str(key)] = f
             _write_event(events, "validation", step=step, val_loss=val_loss, metrics=metrics)
-            self._scan_checkpoints()
-            self._pull_samples(trainer)
+            self.pending_scan = True
 
         def on_train_end(self, trainer: Any, pl_module: Any) -> None:
             self._scan_checkpoints()
@@ -238,6 +250,19 @@ def main() -> int:
         callback = make_callback(run_dir, interval)
 
         import lightning.pytorch as pl  # noqa: PLC0415
+        import torch.utils.data as tud  # noqa: PLC0415
+
+        # ds_workers: 0 (the default on Windows, where every worker process loads torch and the CUDA libraries
+        # again): torch refuses persistent_workers and prefetch_factor without workers, which upstream always passes
+        loader_init = tud.DataLoader.__init__
+
+        def loader_init_safe(self: Any, *a: Any, **kw: Any) -> None:
+            if not kw.get("num_workers"):
+                kw.pop("persistent_workers", None)
+                kw["prefetch_factor"] = None
+            loader_init(self, *a, **kw)
+
+        tud.DataLoader.__init__ = loader_init_safe  # type: ignore[method-assign]
 
         original_init = pl.Trainer.__init__
 

@@ -27,6 +27,8 @@ from ..labels import Label
 AUDIO = (".wav", ".flac")
 LABELS = (".lab", ".TextGrid", ".textgrid", ".txt", ".json")
 GLOBAL_PHONEMES = {"AP", "SP"}
+# other labellers' names for silence and breath: DiffSinger reserves SP and AP
+RENAMES = {"sil": "SP", "pau": "SP", "br": "AP", "bre": "AP"}
 
 
 @dataclass
@@ -157,6 +159,8 @@ def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[s
             result.problems.append({"file": str(audio), "problem": "no labels"})
             continue
         phones = label.phones
+        for iv in phones:
+            iv.text = RENAMES.get(iv.text, iv.text)
         bad = [iv for iv in phones if iv.end - iv.start <= 0 or not iv.text.strip()]
         if bad:
             result.problems.append({"file": str(audio), "problem": f"{len(bad)} empty or zero-length phonemes"})
