@@ -361,6 +361,20 @@ class TrainingRenderRequest(BaseModel):
     seed: int | None = None
 
 
+class VoicebankRequest(BaseModel):
+    name: str = Field(..., description="The singer's name (character.txt); also the folder name")
+    out_dir: str = Field(..., description="Where the bank folder is made")
+    acoustic: str = Field(..., description="Export folder of the acoustic model (dsconfig.yaml, acoustic.onnx…)")
+    variance: list[str] = Field(default_factory=list, description="Export folders with dur / pitch / variance models")
+    vocoder: str = Field("", description="Folder with a custom vocoder (ONNX + vocoder.yaml); empty: the standard one")
+    phoneme_types: dict[str, str] = Field(default_factory=dict, description="phoneme -> vowel | stop | affricate | fricative | liquid | nasal | semivowel")
+    vowels: dict[str, list[str]] = Field(default_factory=dict, description="language -> vowels (for the dsdict types)")
+    notes: str = ""
+    licenses: list[str] = Field(default_factory=list)
+    credits: list[str] = Field(default_factory=list)
+    overwrite: bool = False
+
+
 class DatasetSource(BaseModel):
     folder: str
     speaker: str = Field("", description="Default: the folder's name")

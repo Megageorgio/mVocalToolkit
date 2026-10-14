@@ -35,6 +35,7 @@ from ..api_models import (
     TempoRequest,
     TextRequest,
     TrainingExportRequest,
+    VoicebankRequest,
     TrainingRenderRequest,
     TranscribeRequest,
 )
@@ -632,6 +633,21 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
                     "seconds": result.seconds, "spec": spec_from_result(result)}
 
         return submit(tk, "dataset_build", work, req.model_dump())
+
+    @app.post("/training/voicebank", tags=["training"], dependencies=[Depends(auth)])
+    async def training_voicebank(req: VoicebankRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        """Assembles an OpenUtau DiffSinger voicebank from export folders (a job): character files, dsconfig per
+        model, dsmain/dsdur/dspitch/dsvariance, embeds, dsdict per language, readme; the result lists the files and
+        what the linter found."""
+        from ..training.openutau import VoicebankSpec, assemble  # noqa: PLC0415
+
+        async def work(job: Job):
+            job.progress(None, stage="voicebank", message="Assembling")
+            result = await asyncio.to_thread(assemble, VoicebankSpec(**req.model_dump()))
+            return {"dir": result.dir, "files": result.files, "problems": result.problems, "speakers": result.speakers,
+                    "languages": result.languages, "models": result.models}
+
+        return submit(tk, "voicebank", work, req.model_dump())
 
     @app.websocket("/training/runs/{run_id}/events")
     async def training_events_ws(websocket: WebSocket, run_id: str, since: int = 0) -> None:

@@ -390,6 +390,14 @@ spec names (a project folder). Used by SingForge; the same through `mvt train` a
   (`acoustic.onnx`, `.phonemes.json`, `.languages.json`, `dsconfig.yaml`, the dictionaries), into
   `<run>/export/<step>/`.
 - `POST /training/runs/{id}/render` (`mvt train render <id> --ds song.ds`) — job: a `.ds` sung with a checkpoint.
+- `POST /training/voicebank` (`mvt voicebank <out> --name N --acoustic <export> --variance <export>`) — job: an
+  OpenUtau DiffSinger voicebank from export folders: `character.txt`, `character.yaml` (subbanks per speaker),
+  `dsconfig.yaml`, `dsmain/` (acoustic, phonemes, languages, linguistic), `embeds/`, `dsdur/`, `dspitch/`,
+  `dsvariance/` with their own `dsconfig.yaml` and embeds, `dsdict.yaml` (+ `dsdict-<lang>.yaml` for multilingual
+  banks, with language-tagged symbols and replacements), `dsvocoder/` for a custom vocoder (else the standard
+  `pc_nsf_hifigan_44.1k_hop512_128bin_2025.02` is named), `readme.txt`. The result lists the files and the
+  linter's `problems` (missing files, dangling references, speakers or phoneme sets that differ between the
+  models, `use_lang_id` mismatches).
 
 ## Datasets
 

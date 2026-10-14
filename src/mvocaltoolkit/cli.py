@@ -320,6 +320,21 @@ def cmd_train(args) -> None:
         _print(result)
 
 
+def cmd_voicebank(args) -> None:
+    """Assembles an OpenUtau DiffSinger voicebank from export folders."""
+    from .training.openutau import VoicebankSpec, assemble  # noqa: PLC0415
+
+    result = assemble(VoicebankSpec(name=args.name, out_dir=args.out, acoustic=args.acoustic,
+                                    variance=args.variance or [], vocoder=args.vocoder or "",
+                                    licenses=args.license or [], overwrite=args.overwrite))
+    print(f"{result.dir}: {', '.join(result.models)}; languages {', '.join(result.languages) or '-'}; "
+          f"speakers {', '.join(result.speakers) or '-'}; {len(result.files)} files")
+    for p in result.problems:
+        print(f"  problem: {p['file']}: {p['problem']}")
+    if not result.problems:
+        print("  the linter found nothing")
+
+
 def cmd_dataset(args) -> None:
     """Builds a DiffSinger raw dataset from folders of labelled recordings."""
     from .training.dataset import SourceSpec, build_dataset, spec_from_result  # noqa: PLC0415
@@ -690,6 +705,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", help="list: datasets of this language")
     p.add_argument("--accept-license", action="store_true", help="download: the license was read and is accepted")
     p.set_defaults(func=cmd_datasets)
+
+    p = sub.add_parser("voicebank", help="Assemble an OpenUtau DiffSinger voicebank from export folders")
+    p.add_argument("out", help="folder where the bank is made (a subfolder named after the singer)")
+    p.add_argument("--name", required=True, help="the singer's name")
+    p.add_argument("--acoustic", required=True, help="export folder of the acoustic model")
+    p.add_argument("--variance", action="append", help="export folder with dur/pitch/variance models (repeatable)")
+    p.add_argument("--vocoder", help="folder with a custom vocoder (ONNX + vocoder.yaml)")
+    p.add_argument("--license", action="append", help="a license line for readme.txt (repeatable)")
+    p.add_argument("--overwrite", action="store_true", help="replace an existing bank folder")
+    p.set_defaults(func=cmd_voicebank)
 
     p = sub.add_parser("train", help="Training runs (DiffSinger): start from a spec, status, log, export, render")
     p.add_argument("action", choices=["start", "list", "status", "log", "events", "stop", "resume", "export", "render"])
