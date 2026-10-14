@@ -16,6 +16,10 @@ from mvocaltoolkit.settings import Home
 from mvocaltoolkit.toolkit import Toolkit
 
 
+def _own(listing):
+    return [d for d in listing if d["catalog"] == "test"]
+
+
 def _raises(error, func):
     try:
         func()
@@ -67,10 +71,12 @@ def _store(tmp_path, base="http://127.0.0.1:9"):
 
 def test_only_datasets_that_allow_training_are_offered(tmp_path):
     _home, store = _store(tmp_path)
-    ids = [d["id"] for d in store.listing()]
+    ids = [d["id"] for d in _own(store.listing())]
     assert sorted(ids) == ["by-hand", "ok-set"]
-    assert [d["id"] for d in store.listing("ko")] == ["by-hand"]
-    assert store.listing("ja")[0]["license"]["name"] == "CC BY-NC-SA 4.0"
+    assert [d["id"] for d in _own(store.listing("ko"))] == ["by-hand"]
+    assert _own(store.listing("ja"))[0]["license"]["name"] == "CC BY-NC-SA 4.0"
+    # the datasets of the built-in catalog all carry a license that allows training
+    assert all(d["license"]["training"] and d["license"]["name"] for d in store.listing())
 
 
 def test_download_needs_the_license_accepted_and_keeps_it(tmp_path):
@@ -84,7 +90,7 @@ def test_download_needs_the_license_accepted_and_keeps_it(tmp_path):
         assert (path / "wavs" / "a.wav").is_file() and (path / "labels" / "extra.lab").is_file()
         text = (path / "LICENSE.txt").read_text(encoding="utf-8")
         assert "CC BY-NC-SA 4.0" in text and "Commercial use: no" in text and "Test dataset by someone" in text
-        assert {d["id"]: d["installed"] for d in store.listing()} == {"ok-set": True, "by-hand": False}
+        assert {d["id"]: d["installed"] for d in _own(store.listing())} == {"ok-set": True, "by-hand": False}
         _raises(ManualDownload, lambda: asyncio.run(store.download(store.catalog.datasets["by-hand"], accept_license=True)))
         assert store.remove("ok-set") and not store.is_installed("ok-set")
     finally:
@@ -97,7 +103,7 @@ def test_dataset_api(tmp_path):
         home = Home(tmp_path / "home")
         _catalog(home, base)
         with TestClient(create_app(Toolkit(home, engine_dirs=[FAKE_ENGINES]))) as client:
-            listed = {d["id"]: d for d in client.get("/datasets").json()}
+            listed = {d["id"]: d for d in _own(client.get("/datasets").json())}
             assert set(listed) == {"ok-set", "by-hand"}
             assert "Training models: yes" in client.get("/datasets/ok-set/license").json()["text"]
             refused = client.post("/datasets/ok-set/download", json={})
@@ -115,3 +121,19 @@ def test_dataset_api(tmp_path):
             assert client.delete("/datasets/ok-set").json() == {"ok": True}
     finally:
         server.shutdown()
+
+
+def test_dataset_cli(tmp_path):
+    import contextlib
+    import io
+
+    from mvocaltoolkit.cli import main
+
+    home = Home(tmp_path / "home")
+    _catalog(home, "http://127.0.0.1:9")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+        main(["--home", str(home.root), "datasets", "list"])
+        main(["--home", str(home.root), "datasets", "info", "ok-set"])
+    text = out.getvalue()
+    assert "ok-set" in text and "no-training" not in text and "Training models: yes" in text

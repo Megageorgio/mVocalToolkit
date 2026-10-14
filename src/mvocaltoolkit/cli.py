@@ -158,12 +158,13 @@ def cmd_datasets(args) -> None:
     if args.action == "list":
         for d in tk.datasets.listing(args.lang):
             mark = "*" if d["installed"] else " "
-            hours = f"{d['hours']:g} h" if d.get("hours") else ""
+            hours = f"{d['hours']:g} h" if d.get("hours") else "?"
             lic = d["license"]
-            terms = ", ".join(t for t, ok in (("commercial", lic["commercial"]), ("models can be published",
-                                                                                  lic["publish_models"])) if ok)
-            print(f"{mark} {d['id']:<24} {','.join(d['languages']):<12} {hours:<8} {lic['name']:<16} "
-                  f"{d['name']}" + (f"  [{terms}]" if terms else "  [non-commercial]" if not lic["commercial"] else ""))
+            terms = ("commercial" if lic["commercial"] else "non-commercial") + ", models " + (
+                "can be published" if lic["publish_models"] else "not to be published")
+            manual = ", download by hand" if d.get("manual_download") else ""
+            print(f"{mark} {d['id']:<16} {','.join(d['languages']):<26} {hours:>7}  {d['name']}")
+            print(f"  {'':<16} {lic['name']}: {terms}{manual}")
         print("(* = downloaded; `mvt datasets info <id>` shows the license)", file=sys.stderr)
         return
     entry = tk.catalog.datasets.get(args.id or "")
@@ -179,13 +180,16 @@ def cmd_datasets(args) -> None:
             print(license_text(entry))
             if not sys.stdin.isatty():
                 raise SystemExit("Accept the license with --accept-license to download.")
-            accepted = input("Accept this license and download? [y/N] ").strip().lower() in ("y", "yes")
+            try:
+                accepted = input("Accept this license and download? [y/N] ").strip().lower() in ("y", "yes")
+            except EOFError:
+                accepted = False
             if not accepted:
                 raise SystemExit("Not downloaded.")
 
         def progress(value, message, _detail=None):
             pct = f"{value * 100:5.1f}%" if value is not None else "      "
-            print(f"{pct} {message[:100]:<100}", end="", file=sys.stderr)
+            print(f"\r{pct} {message[:100]:<100}", end="", file=sys.stderr)
 
         try:
             path = asyncio.run(tk.datasets.download(entry, accepted, progress))

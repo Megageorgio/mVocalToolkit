@@ -1056,5 +1056,387 @@
       "author": "m & HHS_kt",
       "description": "Phonemes of singing without lyrics, 13 languages, fast on a CPU (MCFL, distilled from a multilingual WFL-ASR). 13.1M parameters, ~200x real time, the most accurate."
     }
+  ],
+  "datasets": [
+    {
+      "id": "acv001",
+      "name": "ACV-001",
+      "author": "YiChen Huang (Archivoice)",
+      "languages": [
+        "yue",
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "nan"
+      ],
+      "singers": 1,
+      "description": "One male singer in six languages. About 3/5 of the labels are manual, the rest WFL-ASR output corrected by hand. The English slur cuts are fixed by the patch (in patch/).",
+      "homepage": "https://github.com/Archivoice/ACV-001",
+      "labels": [
+        "phonemes",
+        "notes"
+      ],
+      "label_format": "lab, ds, transcriptions.csv",
+      "sample_rate": 44100,
+      "size_hint": "1.1 GB",
+      "license": {
+        "name": "CC BY-SA 4.0",
+        "url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "summary": "Any use with credit. A model that mainly features this voice must be shared under CC BY-SA; models where it is supplementary data (trained together with other voices) can have their own license.",
+        "training": true,
+        "publish_models": true,
+        "commercial": true,
+        "redistribution": true,
+        "attribution": "ACV-001 © 2025 by YiChen Huang"
+      },
+      "sources": [
+        {
+          "type": "github_release",
+          "repo": "Archivoice/ACV-001",
+          "tag": "v1.0_segment",
+          "asset": "ACV-001_segmented_bundle.rar",
+          "part": "audio+labels"
+        },
+        {
+          "type": "github_release",
+          "repo": "Archivoice/ACV-001",
+          "tag": "v1.1_patch",
+          "asset": "transcriptions_patch.rar",
+          "into": "patch",
+          "part": "labels"
+        }
+      ]
+    },
+    {
+      "id": "gtsinger",
+      "name": "GTSinger",
+      "author": "Zhang et al. (Zhejiang University)",
+      "languages": [
+        "zh",
+        "en",
+        "fr",
+        "ja",
+        "ko",
+        "es",
+        "de",
+        "ru",
+        "it"
+      ],
+      "hours": 80.6,
+      "singers": 20,
+      "description": "80.6 h of singing (plus 16 h of paired speech) with manual phoneme alignment and singing technique labels. 47.6 GB, about 100 000 files: download the languages you need from Hugging Face.",
+      "homepage": "https://huggingface.co/datasets/AaronZ345/GTSinger",
+      "citation": "GTSinger: A Global Multi-Technique Singing Corpus with Realistic Music Scores for All Singing Tasks. NeurIPS 2024 Datasets and Benchmarks. arXiv:2409.13832",
+      "labels": [
+        "phonemes",
+        "words",
+        "notes",
+        "musicxml",
+        "techniques"
+      ],
+      "label_format": "TextGrid, json, musicxml",
+      "sample_rate": 48000,
+      "size_hint": "47.6 GB",
+      "license": {
+        "name": "CC BY-NC-SA 4.0",
+        "url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+        "summary": "Non-commercial use with credit; derived works under the same license. Using it means agreeing to the authors' terms (responsibility for use, citing the paper); generating someone's singing without their consent is prohibited.",
+        "training": true,
+        "publish_models": true,
+        "commercial": false,
+        "redistribution": true,
+        "attribution": "GTSinger (Zhang et al., NeurIPS 2024)"
+      },
+      "manual_download": "https://huggingface.co/datasets/AaronZ345/GTSinger"
+    },
+    {
+      "id": "m4singer",
+      "name": "M4Singer",
+      "author": "Zhang et al.",
+      "languages": [
+        "zh"
+      ],
+      "hours": 29.7,
+      "singers": 20,
+      "description": "Mandarin pop songs by 20 singers with phoneme alignment and MIDI. The songs are copyrighted; the audio is for research and non-commercial training only.",
+      "homepage": "https://github.com/M4Singer/M4Singer",
+      "citation": "M4Singer: A Multi-Style, Multi-Singer and Musical Score Provided Mandarin Singing Corpus. NeurIPS 2022 Datasets and Benchmarks.",
+      "labels": [
+        "phonemes",
+        "notes",
+        "midi"
+      ],
+      "label_format": "TextGrid, midi, meta.json",
+      "size_hint": "8.8 GB",
+      "license": {
+        "name": "CC BY-NC-SA 4.0 + terms",
+        "url": "https://github.com/M4Singer/M4Singer/blob/master/dataset_license.md",
+        "summary": "Non-commercial use with credit and citation; derived works under the same license. Using it means agreeing to the authors' terms, including responsibility for the copyrighted songs.",
+        "training": true,
+        "publish_models": true,
+        "commercial": false,
+        "redistribution": true,
+        "attribution": "M4Singer (Zhang et al., NeurIPS 2022)"
+      },
+      "sources": [
+        {
+          "type": "url",
+          "url": "https://drive.usercontent.google.com/download?id=1xC37E59EWRRFFLdG3aJkVqwtLDgtFNqW&export=download&confirm=t",
+          "part": "audio+labels"
+        }
+      ]
+    },
+    {
+      "id": "csd",
+      "name": "Children's Song Dataset (CSD)",
+      "author": "Choi et al. (KAIST)",
+      "languages": [
+        "ko",
+        "en"
+      ],
+      "singers": 1,
+      "description": "One female professional singer, 50 Korean and 50 English children's songs, each in two keys. MIDI and lyrics, but no phoneme timing: needs alignment first.",
+      "homepage": "https://zenodo.org/records/4916302",
+      "citation": "Choi et al., Children's Song Dataset for Singing Voice Research, ISMIR 2020. doi:10.5281/zenodo.4916302",
+      "labels": [
+        "notes",
+        "midi",
+        "words"
+      ],
+      "label_format": "midi, csv, txt",
+      "sample_rate": 44100,
+      "size_hint": "1.9 GB",
+      "license": {
+        "name": "CC BY-NC-SA 4.0",
+        "url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+        "summary": "Non-commercial use with credit (cite the paper); derived works under the same license; no use that defames the singer.",
+        "training": true,
+        "publish_models": true,
+        "commercial": false,
+        "redistribution": true,
+        "attribution": "Children's Song Dataset (Choi et al., ISMIR 2020)"
+      },
+      "sources": [
+        {
+          "type": "url",
+          "url": "https://zenodo.org/records/4916302/files/CSD.zip?download=1",
+          "part": "audio+labels"
+        }
+      ]
+    },
+    {
+      "id": "alex-floarea-2",
+      "name": "Alex Floarea 2.0 English corpus",
+      "author": "NeoDIVA",
+      "languages": [
+        "en"
+      ],
+      "singers": 1,
+      "description": "English singing of the Alex Floarea voicebank. The voice itself must not become public: a model trained with it may not publish its embedding (fine for multi-speaker training of other voices and for labelling models).",
+      "homepage": "https://neodiva.xyz",
+      "labels": [
+        "phonemes"
+      ],
+      "label_format": "csv",
+      "size_hint": "280 MB",
+      "license": {
+        "name": "CC BY-NC 4.0 + terms",
+        "url": "https://creativecommons.org/licenses/by-nc/4.0/",
+        "summary": "Free for non-commercial projects with credit to NeoDIVA. Resulting embeddings (the Alex Floarea voice in a model) must not be public. Licensing fees apply for exceptions.",
+        "training": true,
+        "publish_models": false,
+        "commercial": false,
+        "redistribution": true,
+        "attribution": "NeoDIVA"
+      },
+      "sources": [
+        {
+          "type": "url",
+          "url": "https://drive.usercontent.google.com/download?id=1YYgRirfHFTbiiz5lytNql7e69iv90ULE&export=download&confirm=t",
+          "part": "audio+labels"
+        }
+      ]
+    },
+    {
+      "id": "aidol-en",
+      "name": "Project AI♥dol Public English Dataset",
+      "author": "Lotte V",
+      "languages": [
+        "en"
+      ],
+      "hours": 1.76,
+      "singers": 1,
+      "description": "English singing (non-native, non-professional female singer), meant for training together with other voices. Extended ARPABET labels (ax, dx, en, EP, GS, vf).",
+      "homepage": "https://github.com/lottev1991/Project-AIdol-Public-English-Dataset",
+      "labels": [
+        "phonemes"
+      ],
+      "label_format": "lab",
+      "sample_rate": 44100,
+      "size_hint": "350 MB",
+      "license": {
+        "name": "CC BY-SA 4.0 + terms",
+        "url": "https://github.com/lottev1991/Project-AIdol-Public-English-Dataset",
+        "summary": "Commercial use allowed with credit; derived works under the same license. A model featuring this voice may not be released without the author's permission (training together with other voices is the intended use). No voice changers (RVC and the like), no use by religious organisations.",
+        "training": true,
+        "publish_models": false,
+        "commercial": true,
+        "redistribution": true,
+        "attribution": "Lotte V (@lottev1991), Project AI♥dol"
+      },
+      "sources": [
+        {
+          "type": "url",
+          "url": "https://github.com/lottev1991/Project-AIdol-Public-English-Dataset/archive/refs/heads/master.zip",
+          "part": "audio+labels"
+        }
+      ]
+    },
+    {
+      "id": "pjs",
+      "name": "PJS corpus",
+      "author": "Koguchi, Takamichi (University of Tokyo)",
+      "languages": [
+        "ja"
+      ],
+      "hours": 0.61,
+      "singers": 1,
+      "description": "Japanese: 100 short songs and 100 spoken sentences by one male singer, with MIDI and MusicXML. Hand-made phoneme labels by UtaUtaUtau are a separate download (github.com/UtaUtaUtau/pjs-manual-labels, CC BY-SA 4.0). Google Drive: download the zip from the corpus page.",
+      "homepage": "https://sites.google.com/site/shinnosuketakamichi/research-topics/pjs_corpus",
+      "citation": "Koguchi, Takamichi. PJS: phoneme-balanced Japanese singing-voice corpus. arXiv:2006.02959",
+      "labels": [
+        "phonemes",
+        "notes",
+        "midi",
+        "musicxml"
+      ],
+      "label_format": "lab, midi, musicxml",
+      "sample_rate": 48000,
+      "size_hint": "260 MB",
+      "license": {
+        "name": "CC BY-SA 4.0",
+        "url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "summary": "Commercial and non-commercial use with credit; derived works under the same license.",
+        "training": true,
+        "publish_models": true,
+        "commercial": true,
+        "redistribution": true,
+        "attribution": "PJS corpus (Koguchi, Takamichi); manual labels by UtaUtaUtau"
+      },
+      "manual_download": "https://sites.google.com/site/shinnosuketakamichi/research-topics/pjs_corpus"
+    },
+    {
+      "id": "nit070",
+      "name": "NIT SONG070 F001 (relabelled)",
+      "author": "Nagoya Institute of Technology; relabel by agentasteriski",
+      "languages": [
+        "ja"
+      ],
+      "hours": 0.53,
+      "singers": 1,
+      "description": "Japanese: 31 songs by one female singer from the HTS demo, relabelled for DiffSinger (q and EP added).",
+      "homepage": "https://github.com/agentasteriski/DiffSinger/releases/tag/nit070relabel",
+      "labels": [
+        "phonemes"
+      ],
+      "label_format": "lab",
+      "sample_rate": 44100,
+      "size_hint": "114 MB",
+      "license": {
+        "name": "CC BY 3.0",
+        "url": "https://creativecommons.org/licenses/by/3.0/",
+        "summary": "Any use, including commercial, with credit.",
+        "training": true,
+        "publish_models": true,
+        "commercial": true,
+        "redistribution": true,
+        "attribution": "NIT SONG070 F001 © 2004-2015 Nagoya Institute of Technology"
+      },
+      "sources": [
+        {
+          "type": "github_release",
+          "repo": "agentasteriski/DiffSinger",
+          "tag": "nit070relabel",
+          "asset": "nit070_db.zip",
+          "part": "audio+labels"
+        }
+      ]
+    },
+    {
+      "id": "ofutonp",
+      "name": "Ofuton P UTAGOE DB",
+      "author": "おふとんP",
+      "languages": [
+        "ja"
+      ],
+      "hours": 1.03,
+      "singers": 1,
+      "description": "Japanese: 46 public-domain songs by one male singer, with MIDI, MusicXML and UST. For personal non-commercial training; publishing a model made from it needs the author's permission.",
+      "homepage": "https://sites.google.com/view/oftn-utagoedb/",
+      "labels": [
+        "phonemes",
+        "notes",
+        "midi",
+        "musicxml"
+      ],
+      "label_format": "lab, midi, musicxml, ust",
+      "sample_rate": 96000,
+      "size_hint": "921 MB",
+      "license": {
+        "name": "Ofuton P terms of use",
+        "url": "https://sites.google.com/view/oftn-utagoedb/",
+        "summary": "Credit required. Ask the author before commercial use, use by a company, or distributing a voice model or voice library made from the DB. The audio may not be redistributed (labels, MIDI and MusicXML may). Downloading means agreeing to the terms.",
+        "training": true,
+        "publish_models": false,
+        "commercial": false,
+        "redistribution": false,
+        "attribution": "DB制作:おふとんP"
+      },
+      "sources": [
+        {
+          "type": "url",
+          "url": "https://www.dropbox.com/s/iq54zcsn0a6r5ak/OFUTON_P_UTAGOE_DB.zip?dl=1",
+          "part": "audio+labels"
+        }
+      ]
+    },
+    {
+      "id": "ogsd",
+      "name": "Open Greek Singing Dataset (OGSD)",
+      "author": "A-MAIN",
+      "languages": [
+        "el"
+      ],
+      "hours": 1.02,
+      "singers": 1,
+      "description": "Greek: one male amateur singer, labels in two phoneme sets (X-SAMPA-like and Sphinx-like).",
+      "homepage": "https://github.com/A-MAIN/Open-Greek-SinginDataset",
+      "labels": [
+        "phonemes"
+      ],
+      "label_format": "lab",
+      "sample_rate": 44100,
+      "size_hint": "218 MB",
+      "license": {
+        "name": "CC BY-NC-SA 4.0 + terms",
+        "url": "https://github.com/A-MAIN/Open-Greek-SinginDataset",
+        "summary": "Non-commercial use with credit; multi-speaker training of singing synthesis models and research allowed. Not for RVC/SVC models, not together with celebrity or unauthorised data. Share-alike applies to models mainly featuring this voice.",
+        "training": true,
+        "publish_models": true,
+        "commercial": false,
+        "redistribution": true,
+        "attribution": "Open Greek Singing Dataset (A-MAIN)"
+      },
+      "sources": [
+        {
+          "type": "github_release",
+          "repo": "A-MAIN/Open-Greek-SinginDataset",
+          "tag": "0.1.1",
+          "asset": "OGSD-0.1.1.zip",
+          "part": "audio+labels"
+        }
+      ]
+    }
   ]
 }
