@@ -213,12 +213,15 @@ def checkpoints(run_dir: str) -> list[dict[str, Any]]:
 @rt.method()
 def export(run_dir: str, kind: str, out_dir: str, step: int | None = None, export_spk: list[str] | None = None,
            freeze_spk: str | None = None, freeze_gender: float | None = None, freeze_velocity: bool = False,
-           freeze_glide: bool = False, freeze_expr: bool = False) -> dict[str, Any]:
-    """ONNX export of a checkpoint (the latest by default) into out_dir with DiffSinger's own exporter."""
+           freeze_glide: bool = False, freeze_expr: bool = False, name: str | None = None) -> dict[str, Any]:
+    """ONNX export of a checkpoint (the latest by default) into out_dir with DiffSinger's own exporter; the files
+    are named after `name` (default: acoustic or variance)."""
     run_path = Path(run_dir).resolve()
     out = Path(out_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    args = ["scripts/export.py", "acoustic" if _is_acoustic(kind) else "variance", "--exp", str(run_path), "--out", str(out)]
+    model_name = re.sub(r"[^0-9A-Za-z_-]+", "_", (name or ("acoustic" if _is_acoustic(kind) else "variance")).strip()) or "model"
+    # export.py through a wrapper that keeps onnxsim's metadata from breaking the graph merge (see mvt_ds_export.py)
+    args = [str(ENGINE_DIR / "mvt_ds_export.py"), "acoustic" if _is_acoustic(kind) else "variance", "--exp", str(run_path), "--out", str(out)]
     if step is not None:
         args += ["--ckpt", str(step)]
     for spk in export_spk or []:
@@ -236,9 +239,10 @@ def export(run_dir: str, kind: str, out_dir: str, step: int | None = None, expor
         if freeze_expr:
             args.append("--freeze_expr")
     rt.progress(None, "Exporting to ONNX", stage="export")
-    _run(args, run_path / "export.log", lambda line: rt.progress(None, line[:160], stage="export") if line.startswith("|") else None)
+    _run(args, run_path / "export.log", lambda line: rt.progress(None, line[:160], stage="export") if line.startswith("|") else None,
+         env={"MVT_EXPORT_NAME": model_name})
     files = sorted(str(p) for p in out.rglob("*") if p.is_file())
-    return {"out_dir": str(out), "files": files}
+    return {"out_dir": str(out), "files": files, "name": model_name}
 
 
 @rt.method()
