@@ -117,6 +117,12 @@ def test_phrase_and_speech_api_use_managed_outputs_and_matching_engines(tmp_path
         assert response.status_code==200 and Path(response.json()["path"]).is_relative_to(tk.home.outputs)
         assert Path(response.json()["path"]).is_file() and not calls
         assert client.post("/training/test-phrase/create",json={**req,"phonemes":"unknown"}).status_code==400
+        before = len(tk.jobs.jobs)
+        for options in [dict(max_tokens=0), dict(text="   "), dict(steps=True)]:
+            invalid = dict(kind="qwen_tts_voice", model_dir=str(root), text="Test")
+            invalid.update(options)
+            assert client.post("/training/speech/render", json=invalid).status_code == 400
+        assert not calls and len(tk.jobs.jobs) == before
         for kind,engine in [("qwen_tts_voice","qwen_tts"),("voxcpm_voice","voxcpm")]:
             response=client.post("/training/speech/render",json=dict(kind=kind,model_dir=str(root),text="Test",out_dir="unmanaged"))
             assert response.status_code==200

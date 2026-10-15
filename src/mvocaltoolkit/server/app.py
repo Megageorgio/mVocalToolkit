@@ -1062,17 +1062,18 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
 
     @app.post("/training/speech/render", tags=["training"], dependencies=[Depends(auth)])
     async def speech_render(req: dict, tk: Toolkit = Depends(get_tk)):
-        kind = req.get("kind")
-        if kind not in {"qwen_tts_voice", "voxcpm_voice"}:
-            raise HTTPException(400, "Choose Qwen3-TTS or VoxCPM2")
+        from ..training.speech_preview import checked_speech_preview
+        try:
+            params = checked_speech_preview(req)
+        except (ValueError, OSError) as error:
+            raise HTTPException(400, str(error)) from error
+        kind = params["kind"]
         async def work(job):
-            allowed = {"model_dir", "text", "speaker", "language", "reference", "base_model", "device", "seed", "steps", "guidance", "temperature", "max_tokens"}
-            params = {key: value for key, value in req.items() if key in allowed}
             async with tk.training.inference_slot():
                 result = await training_call(tk, job, "qwen_tts" if kind == "qwen_tts_voice" else "voxcpm", "render_speech",
-                    dict(**params, kind=kind, out_dir=str(tk.home.outputs / job.id / "speech")))
+                    dict(**params, out_dir=str(tk.home.outputs / job.id / "speech")))
             return result
-        return submit(tk, "speech_preview", work, req)
+        return submit(tk, "speech_preview", work, params)
 
     @app.get("/training/phonemizers", tags=["training"], dependencies=[Depends(auth)])
     async def training_phonemizers() -> list[dict]:

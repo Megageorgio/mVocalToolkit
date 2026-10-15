@@ -28,11 +28,32 @@ class PhraseRequest(BaseModel):
     limit: int = Field(16, ge=1, le=64)
 
 
+def _object_file(path: Path, *, yaml_file=False) -> dict:
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+        data = yaml.safe_load(text) if yaml_file else json.loads(text)
+    except (json.JSONDecodeError, yaml.YAMLError) as error:
+        raise ValueError(f"Invalid configuration in {path}: {error}") from error
+    if data is None and yaml_file: return {}
+    if not isinstance(data, dict): raise ValueError(f"Expected an object in {path}")
+    return data
+
+
+def _profiles(data, path):
+    profiles = data.get("phonemizer_profiles")
+    if profiles is None: return {}
+    if not isinstance(profiles, dict) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in profiles.items()):
+        raise ValueError(f"Invalid phonemizer_profiles in {path}")
+    return profiles
+
+
 def inventory(folder: Path, language: str, cfg_path: str = "") -> dict:
     folder = folder.expanduser().resolve()
     config_file = Path(cfg_path).expanduser().resolve() if cfg_path else next((folder / name for name in ("dsconfig.yaml", "config.yaml") if (folder / name).is_file()), None)
-    cfg = yaml.safe_load(config_file.read_text(encoding="utf-8-sig")) or {} if config_file else {}
-    candidates = [folder / str(cfg.get("phonemes", "phonemes.json")), folder / "phonemes.json", folder / "binary/phonemes.json"]
+    cfg = _object_file(config_file, yaml_file=True) if config_file else {}
+    phoneme_file = cfg.get("phonemes") or "phonemes.json"
+    if not isinstance(phoneme_file, str): raise ValueError("The phonemes configuration entry must be a filename")
+    candidates = [(config_file.parent if config_file else folder) / phoneme_file, folder / "phonemes.json", folder / "binary/phonemes.json"]
     if cfg.get("binary_data_dir"):
         binary = Path(cfg["binary_data_dir"])
         candidates.append((binary if binary.is_absolute() else config_file.parent / binary) / "phonemes.json")
@@ -40,31 +61,48 @@ def inventory(folder: Path, language: str, cfg_path: str = "") -> dict:
     if found is None:
         raise ValueError("No phonemes.json found; prepare the run or select an exported bank")
     data = json.loads(found.read_text(encoding="utf-8-sig"))
-    phones = list(data) if isinstance(data, list) else sorted(data, key=data.get)
-    if not phones or any(not isinstance(p, str) or not p or any(c.isspace() for c in p) for p in phones):
+    if isinstance(data, dict):
+        ids = list(data.values())
+        if any(isinstance(i, bool) or not isinstance(i, int) or i < 0 for i in ids) or len(set(ids)) != len(ids):
+            raise ValueError("Phoneme IDs must be distinct nonnegative integers")
+        phones = sorted(data, key=data.get)
+    elif isinstance(data, list): phones = data
+    else: raise ValueError("Phoneme vocabulary must be a list or a symbol-to-ID object")
+    if not phones or any(not isinstance(p, str) or not p or any(c.isspace() for c in p) for p in phones) or len(set(phones)) != len(phones):
         raise ValueError("Invalid phoneme vocabulary")
     phones = [p for p in phones if not p.startswith("<") and ("/" not in p or p.startswith(language + "/"))]
     vowels, consonants = set(), set()
     for name in (f"dsdict-{language}.yaml", "dsdict.yaml"):
         path = folder / name
         if not path.is_file(): continue
-        dictionary = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
-        for row in dictionary.get("symbols", []):
-            if row.get("symbol") in phones and row.get("symbol") not in {"SP", "AP"}:
-                (vowels if row.get("type") == "vowel" else consonants).add(row["symbol"])
+        dictionary = _object_file(path, yaml_file=True)
+        symbols = dictionary.get("symbols", [])
+        if not isinstance(symbols, list) or any(not isinstance(row, dict) or not isinstance(row.get("symbol"), str) for row in symbols):
+            raise ValueError(f"Invalid dictionary symbols in {path}")
+        for row in symbols:
+            symbol, kind = row["symbol"], row.get("type")
+            if kind is not None and not isinstance(kind, str): raise ValueError(f"Invalid symbol type in {path}")
+            if symbol in phones and symbol not in {"SP", "AP"} and symbol not in vowels | consonants:
+                if kind == "vowel": vowels.add(symbol)
+                elif kind in {"stop", "fricative", "affricate", "nasal", "liquid", "semivowel", "consonant", "approximant"}: consonants.add(symbol)
     profiles = {}
     run_file = folder / "run.json"
     if run_file.is_file():
-        run = json.loads(run_file.read_text(encoding="utf-8-sig"))
-        settings = run.get("spec", {}).get("config", {})
-        profiles.update(settings.get("phonemizer_profiles") or {})
+        run = _object_file(run_file)
+        spec = run.get("spec") or {}
+        if not isinstance(spec, dict): raise ValueError(f"Invalid run spec in {run_file}")
+        settings = spec.get("config") or {}
+        if not isinstance(settings, dict): raise ValueError(f"Invalid run configuration in {run_file}")
+        profiles.update(_profiles(settings, run_file))
         report = settings.get("data_report")
-        if isinstance(report, str) and Path(report).is_file():
-            profiles.update(json.loads(Path(report).read_text(encoding="utf-8-sig")).get("phonemizer_profiles") or {})
+        if isinstance(report, str) and report:
+            report_file = Path(report).expanduser()
+            if not report_file.is_absolute(): report_file = run_file.parent / report_file
+            if report_file.is_file(): profiles.update(_profiles(_object_file(report_file), report_file))
     for name in ("report.json", "dataset-report.json", "dataset.json"):
         path = folder / name
-        if path.is_file(): profiles.update(json.loads(path.read_text(encoding="utf-8-sig")).get("phonemizer_profiles") or {})
-    selected = PROFILES.get(profiles.get(language) or default_profile(language), {})
+        if path.is_file(): profiles.update(_profiles(_object_file(path), path))
+    selected = PROFILES.get(profiles[language] if language in profiles else default_profile(language), {})
     if language not in profiles:
         # Checkpoints may predate alphabet snapshots. Select the best inventory fit;
         # this only classifies trained symbols and never renames a phone.
@@ -92,7 +130,7 @@ def note_midi(note):
             number = float(note)
         except ValueError as error:
             raise ValueError("Notes must be C4/F#4/Bb3 or MIDI numbers 1–127") from error
-    if not math.isfinite(number) or not 1 <= number <= 127:
+    if not 1 <= number <= 127 or not math.isfinite(number):
         raise ValueError("Notes must be C4/F#4/Bb3 or MIDI numbers 1–127")
     return number
 

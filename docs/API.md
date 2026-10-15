@@ -142,6 +142,10 @@ Creation accepts `mode: cv|vc|v|cvc|manual`, `phonemes` (`p a | t a`, or lines p
 and missing custom classifications fail explicitly. Output contains a managed DS path, aligned phones/groups/notes/f0,
 syllables and inventory. A short phrase can render without variance because fixed f0 is supplied. No words or
 OpenUtau phonemizer runtime are involved. Phrases are limited to two minutes/512 manually entered phones.
+Explicit empty vowel/consonant lists remain empty; omitted lists enable automatic classification. Language-specific
+dictionary types take priority over generic dictionaries, and an explicitly disabled alphabet profile is not
+silently replaced. Malformed vocabularies, duplicate IDs/symbols and non-object metadata fail with validation errors.
+Relative vocabulary paths resolve beside the selected configuration; relative run reports resolve beside run.json.
 
 Workflow options: `auto_test_phrase` (default true), `render_test_phrase` (default false) and `test_phrase` settings.
 `render_ds` still selects an existing phrase. `vocoder_training` enables an optional SingingVocoders stage and
@@ -156,6 +160,10 @@ min_batch_frames:1000, min_batch_size:1}`. Opt-in auto_batch measures selected f
 limits; CPU/MPS retains existing limits. This is an estimate, not a dry-run fit guarantee. OOM retries wait for
 process exit, halve frame/recording and validation limits down to the minima, and queue resume using prepared
 binaries/checkpoints. `resource_retries` persists; 0 disables, at most 10 retries. Unsaved updates may be repeated.
+Auto sizing also caps validation batches. Nonpositive/unset native validation limits are treated as unlimited and
+replaced by finite caps; explicit smaller validation limits are preserved. Recovery persists training and validation
+caps in config.yaml and the saved overlay/overrides. Resource flags require booleans, integer limits require actual
+integers, and memory_fraction must be a finite number; strings such as `"false"` do not enable features implicitly.
 `early_stopping: {patience:0, min_delta:0, min_steps:0}` counts completed finite val_loss checks after warmup.
 Zero disables; otherwise the persisted counter and final/best checkpoints survive normal continuation.
 
@@ -168,6 +176,10 @@ them or making approximate phonetic guesses. Existing project mappings take prio
 VoxCPM accepts an explicit reference WAV or uses `speaker-references.json`; LoRA requires a compatible local
 `base_model`. No speech base is downloaded by this preview. Outputs are managed WAV/report paths; shared heavy
 processing slots and cancellation apply. This is a separate TTS feature, not singing text input.
+The API validates bounds, device, blank text and local package/reference/LoRA-base paths before submitting a job.
+Relative local input paths are normalized before crossing into the isolated engine; an empty LoRA base never
+means the current directory. Unknown output-path kwargs are ignored and outputs stay managed. Existing output
+folders are rejected by the worker before importing Torch or loading weights.
 
 Speech training partitions each speaker/language separately and uses training-only references. Qwen exports distinct
 speaker embedding IDs excluding reserved codec IDs. VoxCPM packages named references; a single shared model is
