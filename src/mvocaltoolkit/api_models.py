@@ -380,6 +380,8 @@ class DatasetSource(BaseModel):
     speaker: str = Field("", description="Default: the folder's name")
     language: str = Field("", description="Default: the first dictionary's language, or xx")
     recursive: bool = True
+    role: Literal["main", "donor"] = "main"
+    license: str = ""
 
 
 class DatasetBuildRequest(BaseModel):
@@ -387,4 +389,9 @@ class DatasetBuildRequest(BaseModel):
     out_dir: str
     dictionaries: dict[str, str] = Field(default_factory=dict, description="language -> dictionary file; missing ones are made from the labels")
     validation_files: int = Field(3, ge=1, description="Validation files per speaker (chosen by name, the same every time)")
+    extra_phonemes: list[str] = Field(default_factory=list)
+
+
+class TrainingQueueRequest(BaseModel):
+    ids: list[str] = Field(description="All currently queued run IDs, in the requested execution order")
 

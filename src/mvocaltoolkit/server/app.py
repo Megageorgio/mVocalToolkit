@@ -9,6 +9,7 @@ import shutil
 import sys
 import time
 import uuid
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,7 @@ from ..api_models import (
     TempoRequest,
     TextRequest,
     TrainingExportRequest,
+    TrainingQueueRequest,
     VoicebankRequest,
     TrainingRenderRequest,
     TranscribeRequest,
@@ -498,9 +500,11 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         _engine(tk, spec.engine_name())
         if spec.kind.startswith("diffsinger"):
             from ..training.diffsinger import build_overlay, resolve_assets  # noqa: PLC0415
+            from ..training.dataset import validate_report  # noqa: PLC0415
 
             try:
                 overlay = build_overlay(spec.kind, {**spec.config, "device": spec.device})
+                validate_report(str(spec.config.get("data_report") or ""), bool(overlay.get("predict_pitch")))
             except ValueError as e:
                 raise HTTPException(400, str(e)) from e
             spec = spec.model_copy(update={"config": {**spec.config, "overlay": overlay, "assets": resolve_assets(spec.config)}})
@@ -516,6 +520,14 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         if active:
             infos = [i for i in infos if i.status not in RUN_FINISHED]
         return infos
+
+    @app.post("/training/queue", tags=["training"], dependencies=[Depends(auth)])
+    async def training_queue(req: TrainingQueueRequest, tk: Toolkit = Depends(get_tk)):
+        try:
+            tk.training.reorder_queue(req.ids)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"ok": True}
 
     def _run(tk: Toolkit, run_id: str):
         run = tk.training.get(run_id)
@@ -590,12 +602,29 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         out_dir = req.out_dir or str(run.dir / "export" / (str(req.step) if req.step else "latest"))
 
         async def work(job: Job):
-            return await tk.engines.call(run.info.spec.engine_name(), "export", {
+            data_report = None
+            report_path = Path(str(run.info.spec.config.get("data_report") or ""))
+            if report_path.is_file():
+                data_report = json.loads(report_path.read_text(encoding="utf-8"))
+            export_speakers = req.export_spk
+            if not export_speakers and data_report:
+                data_speakers = data_report.get("speakers") or []
+                if any(s.get("role") == "donor" for s in data_speakers):
+                    export_speakers = sorted({s["speaker"] for s in data_speakers if s.get("role") != "donor"})
+                    if not export_speakers:
+                        raise ValueError("The run contains only donors; select a main speaker before export")
+            result = await tk.engines.call(run.info.spec.engine_name(), "export", {
                 "run_dir": str(run.dir), "kind": run.info.spec.kind, "out_dir": out_dir, "step": req.step,
-                "export_spk": req.export_spk, "freeze_spk": req.freeze_spk, "freeze_gender": req.freeze_gender,
+                "export_spk": export_speakers, "freeze_spk": req.freeze_spk, "freeze_gender": req.freeze_gender,
                 "freeze_velocity": req.freeze_velocity, "freeze_glide": req.freeze_glide, "freeze_expr": req.freeze_expr,
             }, on_progress=lambda d: job.progress(d.get("progress"), stage=d.get("stage") or "export", message=d.get("message")),
                 log=job.log)
+            if data_report:
+                snapshot = Path(out_dir) / "dataset-report.json"
+                snapshot.write_text(json.dumps(data_report, ensure_ascii=False, indent=1), encoding="utf-8")
+                if isinstance(result, dict):
+                    result.setdefault("files", []).append(str(snapshot))
+            return result
 
         return submit(tk, "training_export", work, {"run": run_id, **req.model_dump()})
 
@@ -627,10 +656,11 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
 
             result = await asyncio.to_thread(
                 build_dataset, [SourceSpec(**s.model_dump()) for s in req.sources], Path(req.out_dir),
-                req.dictionaries or None, req.validation_files, progress)
+                req.dictionaries or None, req.validation_files, progress, extra_phonemes=req.extra_phonemes)
             return {"out_dir": result.out_dir, "speakers": result.speakers, "dictionaries": result.dictionaries,
                     "phonemes": result.phonemes, "problems": result.problems, "files": result.files,
-                    "seconds": result.seconds, "spec": spec_from_result(result)}
+                    "seconds": result.seconds, "coverage": result.coverage, "recordings": result.recordings,
+                    "spec": spec_from_result(result)}
 
         return submit(tk, "dataset_build", work, req.model_dump())
 

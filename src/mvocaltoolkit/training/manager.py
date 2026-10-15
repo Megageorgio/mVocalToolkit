@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import time
 import uuid
+import math
 from pathlib import Path
 from typing import Any
 
@@ -108,7 +109,9 @@ class TrainingManager:
 
     def _save_index(self) -> None:
         data = [{"id": r.id, "dir": r.info.dir} for r in self.runs.values()]
-        self.index_file.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        temporary = self.index_file.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(temporary, self.index_file)
 
     def load(self) -> None:
         """Reads the index and re-attaches to runs that were active when the server last stopped."""
@@ -131,10 +134,17 @@ class TrainingManager:
                 self.runs[run.id] = run
         for run in self.runs.values():
             info = run.info
+            # run.json can lag behind the append-only event file. Consume only the events not included in
+            # its saved counter, retaining an incomplete final line for the follower. This also positions
+            # stopped runs correctly before a later resume (old end events must not end the new trainer).
+            events = run.read_new_events()
+            for event in events[info.events:]:
+                self._apply(run, event)
+                info.events += 1
+            if info.status in FINISHED:
+                info.pid = None
             if info.status in (RunStatus.training, RunStatus.stopping):
                 if info.pid and _pid_alive(info.pid):
-                    # everything written before is already in run.json: follow from the end of the file
-                    run._events_offset = run.events_file.stat().st_size if run.events_file.exists() else 0
                     self._follow(run)
                 else:
                     self._interrupted(run, "The trainer process is gone (the toolkit or the computer was restarted)")
@@ -143,6 +153,7 @@ class TrainingManager:
                 info.status = RunStatus.queued
                 info.stage, info.progress, info.message = "", None, ""
                 run.save(force=True)
+            run.save(force=True)
         self._ensure_queue()
 
     def _interrupted(self, run: Run, why: str) -> None:
@@ -168,11 +179,12 @@ class TrainingManager:
         self.load()
         run_id = uuid.uuid4().hex[:10]
         run_dir = Path(spec.dir).expanduser().resolve() if spec.dir else self.root / run_id
-        if run_dir.exists() and any(run_dir.iterdir()) and not (run_dir / "run.json").exists():
+        if run_dir.exists() and any(run_dir.iterdir()):
             raise ValueError(f"The run folder is not empty: {run_dir}")
         run_dir.mkdir(parents=True, exist_ok=True)
         spec = spec.model_copy(update={"dir": str(run_dir)})
-        info = RunInfo(id=run_id, spec=spec, dir=str(run_dir))
+        info = RunInfo(id=run_id, spec=spec, dir=str(run_dir),
+                       queue_order=max((r.info.queue_order for r in self.runs.values()), default=0) + 1)
         run = Run(info)
         self.runs[run_id] = run
         run.save(force=True)
@@ -225,6 +237,7 @@ class TrainingManager:
         if not run.dir.exists():
             raise ValueError("The run folder is gone")
         info.status = RunStatus.queued
+        info.queue_order = max((r.info.queue_order for r in self.runs.values()), default=0) + 1
         info.error, info.error_kind = None, None
         info.finished_at = None
         info.message = ""
@@ -248,6 +261,17 @@ class TrainingManager:
         self._save_index()
         if files:
             shutil.rmtree(run.dir, ignore_errors=True)
+
+    def reorder_queue(self, ids: list[str]) -> None:
+        self.load()
+        queued = {r.id for r in self.runs.values() if r.info.status == RunStatus.queued}
+        if len(ids) != len(set(ids)) or set(ids) != queued:
+            raise ValueError("Include every currently queued run exactly once; refresh the queue and try again")
+        for order, run_id in enumerate(ids):
+            run = self.runs[run_id]
+            run.info.queue_order = order
+            run.save(force=True)
+        self._wake.set()
 
     def events_since(self, run_id: str, since: int) -> list[dict[str, Any]]:
         return self._require(run_id).read_events_since(since)
@@ -289,7 +313,7 @@ class TrainingManager:
             if not self._busy():
                 queued = [r for r in self.runs.values() if r.info.status == RunStatus.queued]
                 if queued:
-                    run = min(queued, key=lambda r: r.info.created_at)
+                    run = min(queued, key=lambda r: (r.info.queue_order, r.info.created_at))
                     await self._prepare_and_launch(run)
                     continue
             try:
@@ -310,6 +334,9 @@ class TrainingManager:
             spec = self.tk.engines.spec(engine)
             info.engine_version = spec.source.commit[:10] if spec.source else ""
             assets = await self._assets(run)
+            if info.status != RunStatus.preparing:
+                self._interrupted(run, "Stopped while preparing")
+                return
             resumed = bool(info.checkpoints) and (run.dir / "config.yaml").exists()
             if resumed:
                 # a resume: the config and the binary data are there
@@ -337,6 +364,9 @@ class TrainingManager:
             launch = result.get("launch") or {}
             self._launch(run, spec, launch.get("args") or [], resumed)
         except Exception as e:  # noqa: BLE001
+            if info.status == RunStatus.stopping:
+                self._interrupted(run, "Stopped while preparing")
+                return
             info.status = RunStatus.failed
             info.finished_at = time.time()
             info.error = str(e)
@@ -452,7 +482,6 @@ class TrainingManager:
                 if info.status == RunStatus.training and not hang_warned and time.time() - run.last_event_time > HANG_SECONDS:
                     hang_warned = True
                     warning = {"kind": "hang", "text": f"No news from the trainer for {HANG_SECONDS // 60} minutes"}
-                    info.warnings.append(warning)
                     run.publish(run.emit("warning", **warning))
                 await asyncio.sleep(0.5)
         except asyncio.CancelledError:
@@ -502,7 +531,7 @@ class TrainingManager:
                 info.epoch = int(event["epoch"])
             losses = event.get("losses") or {}
             if isinstance(losses, dict):
-                info.losses = {k: float(v) for k, v in losses.items() if isinstance(v, (int, float))}
+                info.losses = {k: float(v) for k, v in losses.items() if isinstance(v, (int, float)) and math.isfinite(v)}
             if event.get("lr") is not None:
                 info.lr = float(event["lr"])
             if event.get("gpu_mb") is not None:
@@ -518,11 +547,28 @@ class TrainingManager:
         elif kind == "validation":
             step = int(event.get("step") or info.step)
             loss = event.get("val_loss")
-            if loss is not None:
+            if isinstance(loss, (int, float)) and math.isfinite(loss):
                 info.val_loss = float(loss)
                 info.val_step = step
                 if info.best_val_loss is None or info.val_loss < info.best_val_loss:
                     info.best_val_loss, info.best_val_step = info.val_loss, step
+                train = info.losses.get("total_loss")
+                if train is None:
+                    train = info.losses.get("loss")
+                if train is not None:
+                    info.validation_history = [h for h in info.validation_history if h["step"] < step]
+                    info.validation_history.append({"step": float(step), "loss": float(loss), "train": train})
+                    info.validation_history = info.validation_history[-12:]
+                    recent = info.validation_history[-4:]
+                    if (len(recent) == 4 and info.best_val_loss is not None
+                            and all(h["loss"] > info.best_val_loss * 1.05 for h in recent)
+                            and recent[-1]["train"] < recent[0]["train"] * 0.95
+                            and all(recent[i]["loss"] <= recent[i + 1]["loss"] for i in range(3))
+                            and not any(w.get("kind") == "overfit" for w in info.warnings)):
+                        warning = {"kind": "overfit", "text": "Validation loss has risen across four checks while training loss fell. Compare samples with an earlier checkpoint; this is a hint, not an automatic stop."}
+                        # Persist the marker immediately so multiple validation events in a batch do not repeat it.
+                        info.warnings.append(warning)
+                        run.emit("warning", **warning)
         elif kind == "checkpoint":
             ckpt = Checkpoint(step=int(event.get("step") or 0), path=str(event.get("path") or ""),
                               size=int(event.get("size") or 0), time=now)
@@ -536,7 +582,9 @@ class TrainingManager:
             files = [str(f) for f in (event.get("files") or [])]
             info.samples[step] = sorted(set(info.samples.get(step, [])) | set(files))
         elif kind == "warning":
-            info.warnings.append({k: v for k, v in event.items() if k not in ("event", "time")})
+            warning = {k: v for k, v in event.items() if k not in ("event", "time")}
+            if warning not in info.warnings:
+                info.warnings.append(warning)
         elif kind == "end":
             status = str(event.get("status") or "done")
             try:

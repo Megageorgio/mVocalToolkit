@@ -173,3 +173,17 @@ def test_existing_bank_is_preserved_and_empty_folder_is_usable(tmp_path):
     with pytest.raises(FileExistsError):
         assemble(spec)
     assert (bank / "character.txt").read_text(encoding="utf-8") == "name=Singer\n"
+
+
+def test_export_data_snapshot_carries_donor_license_into_bank(tmp_path):
+    _export(tmp_path / "aco", "acoustic", "acoustic", ["AP", "SP", "a"], {"ja": 0}, dictionaries={"ja": [("a", "a")]})
+    report = {"files": 10, "seconds": 600, "speakers": [{"speaker": "donor", "role": "donor", "language": "ja", "seconds": 600}],
+              "recordings": [{"speaker": "donor", "license": "CC BY 4.0"}]}
+    (tmp_path / "aco" / "dataset-report.json").write_text(json.dumps(report), encoding="utf-8")
+    result = assemble(VoicebankSpec(name="Snapshot", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "aco")))
+    bank = tmp_path / "out" / "Snapshot"
+    saved = json.loads((bank / "report.json").read_text(encoding="utf-8"))
+    assert saved["licenses"] == ["donor: CC BY 4.0"]
+    assert saved["training_data"][0]["seconds"] == 600
+    assert "donor (donor, ja): 10.0 minutes" in (bank / "readme.txt").read_text(encoding="utf-8")
+    assert result.problems == []

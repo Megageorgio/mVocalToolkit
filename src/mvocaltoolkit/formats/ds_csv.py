@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 from typing import Any
 
 from ..labels import Interval, Label
@@ -71,12 +72,20 @@ def label_from_row(row: dict[str, Any]) -> Label:
         label.tiers["words"] = _intervals(row["word_seq"], row["word_dur"])
     if row.get("note_seq") and row.get("note_dur"):
         label.tiers["notes"] = _intervals(row["note_seq"], row["note_dur"])
+        if row.get("note_slur"):
+            slurs = str(row["note_slur"]).split()
+            if len(slurs) != len(label.tiers["notes"]):
+                raise ValueError("note_slur and note_seq have different lengths")
+            for note, slur in zip(label.tiers["notes"], slurs):
+                note.data = {"slur": int(slur)}
     return label
 
 
 def _intervals(seq: str, dur: str) -> list[Interval]:
     texts = seq.split()
     durations = [float(x) for x in dur.split()]
+    if len(texts) != len(durations) or any(not math.isfinite(d) or d <= 0 for d in durations):
+        raise ValueError("Each label must have one finite, positive duration")
     result = []
     t = 0.0
     for text, d in zip(texts, durations):

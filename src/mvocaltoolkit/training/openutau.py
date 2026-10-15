@@ -216,6 +216,15 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
         raise ValueError("Use a non-empty voicebank name without path separators or reserved filename characters")
     acoustic = _detect_export(Path(spec.acoustic))
     variances = [_detect_export(Path(v)) for v in spec.variance]
+    data_reports = []
+    licenses = list(spec.licenses)
+    for model in [acoustic, *variances]:
+        source_report = model.dir / "dataset-report.json"
+        if source_report.is_file():
+            report = json.loads(source_report.read_text(encoding="utf-8"))
+            data_reports.append({"export": str(model.dir), "speakers": report.get("speakers", []), "files": report.get("files", 0), "seconds": report.get("seconds", 0)})
+            licenses += [f"{r.get('speaker', '')}: {r['license']}" for r in report.get("recordings", []) if r.get("license")]
+    licenses = list(dict.fromkeys(licenses))
     bank = Path(spec.out_dir) / name
     resolved_bank = bank.resolve()
     for source in [acoustic.dir, *(v.dir for v in variances), *([Path(spec.vocoder)] if spec.vocoder else [])]:
@@ -380,8 +389,14 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
     if speakers:
         lines.append("Speakers: " + ", ".join(speakers))
     lines.append("Vocoder: " + str(main_cfg.get("vocoder")))
-    if spec.licenses:
-        lines += ["", "Licenses:"] + [f"- {x}" for x in spec.licenses]
+    if data_reports:
+        lines += ["", "Training data:"]
+        for data in data_reports:
+            lines.append(f"- {data['export']}: {data['files']} recordings, {data['seconds'] / 60:.1f} minutes")
+            for speaker in data["speakers"]:
+                lines.append(f"  {speaker['speaker']} ({speaker.get('role', 'main')}, {speaker.get('language', '')}): {speaker.get('seconds', 0) / 60:.1f} minutes")
+    if licenses:
+        lines += ["", "Licenses:"] + [f"- {x}" for x in licenses]
     if spec.credits:
         lines += ["", "Credits:"] + [f"- {x}" for x in spec.credits]
     if spec.notes:
@@ -393,7 +408,7 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
         "name": spec.name, "acoustic": str(acoustic.dir),
         "variance": [str(v.dir) for v in variances], "vocoder": main_cfg.get("vocoder"),
         "models": models, "speakers": speakers, "languages": sorted(languages_map),
-        "licenses": spec.licenses, "credits": spec.credits, "notes": spec.notes,
+        "licenses": licenses, "credits": spec.credits, "notes": spec.notes, "training_data": data_reports,
         "problems": problems,
     }
     (bank / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

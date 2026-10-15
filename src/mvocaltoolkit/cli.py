@@ -236,8 +236,10 @@ def cmd_train(args) -> None:
             spec.device = args.device
         if spec.kind.startswith("diffsinger"):
             from .training.diffsinger import build_overlay, resolve_assets  # noqa: PLC0415
+            from .training.dataset import validate_report  # noqa: PLC0415
 
             overlay = build_overlay(spec.kind, {**spec.config, "device": spec.device})
+            validate_report(str(spec.config.get("data_report") or ""), bool(overlay.get("predict_pitch")))
             spec.config = {**spec.config, "overlay": overlay, "assets": resolve_assets(spec.config)}
 
         async def main():

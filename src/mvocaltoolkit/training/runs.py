@@ -71,6 +71,7 @@ class RunInfo(BaseModel):
     status: RunStatus = RunStatus.queued
     dir: str = ""
     created_at: float = Field(default_factory=time.time)
+    queue_order: int = 0
     started_at: float | None = None
     finished_at: float | None = None
     # the trainer process
@@ -92,6 +93,8 @@ class RunInfo(BaseModel):
     val_step: int | None = None
     best_val_loss: float | None = None
     best_val_step: int | None = None
+    # A bounded history for conservative trend hints; checkpoint decisions still belong to the user.
+    validation_history: list[dict[str, float]] = Field(default_factory=list)
     checkpoints: list[Checkpoint] = Field(default_factory=list)
     # step -> audio files of that checkpoint's validation (relative to the run folder)
     samples: dict[str, list[str]] = Field(default_factory=dict)

@@ -115,7 +115,7 @@ def test_reattach_after_restart(tmp_path):
     asyncio.run(main())
 
 
-def test_training_api(tmp_path):
+def test_training_api(tmp_path, monkeypatch):
     home = Home(tmp_path / "home")
     tk = Toolkit(home, engine_dirs=[FAKE_ENGINES])
     with TestClient(create_app(tk)) as client:
@@ -149,6 +149,29 @@ def test_training_api(tmp_path):
             if j["status"] in ("done", "failed"):
                 break
         assert j["status"] == "done" and j["result"]["files"]
+        # The export carries the run's immutable data report and defaults to main speakers only.
+        report = tmp_path / "dataset.json"
+        report.write_text(json.dumps({"speakers": [{"speaker": "main", "role": "main"}, {"speaker": "donor", "role": "donor"}],
+                                      "recordings": [{"speaker": "donor", "license": "CC BY"}]}), encoding="utf-8")
+        tk.training.get(run_id).info.spec.config["data_report"] = str(report)
+        call = tk.engines.call
+        captured = []
+        async def capture(engine, method, params, **kwargs):
+            if method == "export":
+                captured.append(params)
+            return await call(engine, method, params, **kwargs)
+        monkeypatch.setattr(tk.engines, "call", capture)
+        job = client.post(f"/training/runs/{run_id}/export", json={"step": 40}).json()
+        for _ in range(100):
+            j = client.get(f"/jobs/{job['id']}", params={"wait": 1}).json()
+            if j["status"] in ("done", "failed"):
+                break
+        assert j["status"] == "done"
+        assert captured[-1]["export_spk"] == ["main"]
+        snapshot = tk.training.get(run_id).dir / "export" / "40" / "dataset-report.json"
+        assert json.loads(snapshot.read_text(encoding="utf-8"))["recordings"][0]["license"] == "CC BY"
+        assert client.post("/training/queue", json={"ids": []}).status_code == 200
+        assert client.post("/training/queue", json={"ids": [run_id]}).status_code == 409
         listed = client.get("/training/runs").json()
         assert [i["id"] for i in listed] == [run_id]
         assert client.post("/training/runs/nope/stop").status_code == 404
@@ -162,12 +185,13 @@ def test_diffsinger_overlay_and_dataset(tmp_path):
 
     src = tmp_path / "src"
     for i in range(5):
-        make_wav(src / f"song{i}.wav", seconds=1.0)
+        make_wav(src / f"song{i}.wav", seconds=1.0, rate=16000 + i * 100)
         (src / f"song{i}.lab").write_text("0 2000000 SP\n2000000 6000000 a\n6000000 8000000 k\n8000000 10000000 SP\n", encoding="utf-8")
     (src / "nolabel.wav").write_bytes(make_wav(tmp_path / "x.wav").read_bytes())
     result = build_dataset([SourceSpec(folder=str(src), speaker="masha", language="ru")], tmp_path / "ds")
     assert result.files == 5 and result.phonemes == {"ru": ["a", "k"]}
-    assert result.problems == [{"file": str(src / "nolabel.wav"), "problem": "no labels"}]
+    assert any(p.get("file") == str(src / "nolabel.wav") and p["problem"] == "no labels" for p in result.problems)
+    assert not any(p.get("severity") == "error" and not p.get("excluded") for p in result.problems)
     assert (tmp_path / "ds" / "masha" / "transcriptions.csv").read_text(encoding="utf-8").startswith("name,ph_seq,ph_dur\n")
     assert (tmp_path / "ds" / "dictionary-ru.txt").read_text(encoding="utf-8") == "a\ta\nk\tk\n"
     assert len(result.speakers[0]["test_prefixes"]) == 3

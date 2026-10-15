@@ -378,6 +378,9 @@ spec names (a project folder). Used by SingForge; the same through `mvt train` a
 - `GET /training/runs[?active=true]`, `GET /training/runs/{id}` — the numbers: status (`queued`, `preparing`,
   `training`, `stopping`, `stopped`, `done`, `failed`), step, max_steps, speed, eta, losses, lr, gpu_mb, val_loss,
   best_val_step, checkpoints, samples (step → files), warnings, error.
+- `POST /training/queue` with `{"ids": ["queued-run-2", "queued-run-1"]}` — persist the execution order of all
+  currently queued runs. Every queued ID must appear once; stale or duplicate lists return HTTP 409.
+  Run info includes `queue_order`. A resumed run is placed at the end of the queue.
 - `GET /training/runs/{id}/events?since=0&wait=10`, `WS /training/runs/{id}/events` — everything that happened:
   `queued`, `prepare` {stage, progress, message}, `launched`, `start`, `step` {step, losses, lr, gpu_mb}, `validation`
   {val_loss}, `checkpoint` {step, path}, `checkpoint_removed`, `samples` {step, files}, `warning` {kind: hang | oom…},
@@ -389,6 +392,9 @@ spec names (a project folder). Used by SingForge; the same through `mvt train` a
 - `POST /training/runs/{id}/export` (`mvt train export <id> --step N`) — job: ONNX with DiffSinger's exporter
   (`acoustic.onnx`, `.phonemes.json`, `.languages.json`, `dsconfig.yaml`, the dictionaries), into
   `<run>/export/<step>/`.
+  When a run has `config.data_report`, its snapshot is copied into the ONNX export as `dataset-report.json`.
+  If donor speakers are recorded, an empty `export_spk` defaults to the main speakers; an explicit list overrides
+  that selection. Voicebank assembly carries licenses from these reports into its readme and `report.json`.
 - `POST /training/runs/{id}/render` (`mvt train render <id> --ds song.ds`) — job: a `.ds` sung with a checkpoint.
 - `POST /training/voicebank` (`mvt voicebank <out> --name N --acoustic <export> --variance <export>`) — job: an
   OpenUtau DiffSinger voicebank from export folders: `character.txt`, `character.yaml` (subbanks per speaker),
@@ -401,6 +407,20 @@ spec names (a project folder). Used by SingForge; the same through `mvt train` a
   The result lists the files and the
   linter's `problems` (missing files, dangling references, speakers or phoneme sets that differ between the
   models, `use_lang_id` mismatches).
+
+### Dataset checks and reproducibility
+
+`POST /training/dataset/build` also accepts `role` (`main`/`donor`) and `license` per source. Its report includes
+`recordings` (source/prepared paths, SHA-256, speaker/language/role/license and available audio metadata),
+`coverage` (language -> phoneme occurrence counts), and findings with `code`, `severity` (`error`, `warning`,
+`note`) and optional `excluded`. Invalid recordings and exact duplicate files are excluded. Blocking findings
+remaining in the data prevent new report-backed runs from starting; pitch runs also require labelled notes.
+`spec.data_report` points at the saved `dataset.json`; the desktop makes a separate snapshot per build.
+
+Basic signal inspection streams PCM WAV blocks without loading ML libraries or using the GPU. FLAC and non-PCM
+WAV signal checks are explicitly marked unavailable. This is a screening report, not a denoiser or repair tool.
+Custom dictionaries are copied into the prepared-data folder. Same-speaker sources in several languages have
+separate raw-data folders but share a speaker ID. The validation selection always leaves a training recording.
 
 ## Datasets
 
