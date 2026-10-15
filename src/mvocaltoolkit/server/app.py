@@ -77,7 +77,9 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         while True:
             await asyncio.sleep(5)
             busy = any(j.info.status.value in ("queued", "running", "paused") for j in tk.jobs.jobs.values())
-            if clients.active() or busy:
+            workflow_busy = any(w["status"] in {"running", "stopping"} for w in tk.workflows.states.values())
+            training_busy = any(r.info.status.value in {"queued", "preparing", "training", "stopping"} for r in tk.training.runs.values())
+            if clients.active() or busy or workflow_busy or training_busy:
                 clients.last_used = time.monotonic()
                 continue
             # a program gets two minutes to attach after starting the toolkit
@@ -147,6 +149,9 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
             "gpu": _gpu_info(),
             "clients": len(clients.active()),
             "exit_when_unused": exit_when_unused,
+            "background_active": any(s["status"] in {"running", "stopping"} for s in tk.workflows.states.values())
+                or any(r.info.status in {"queued", "preparing", "training", "stopping"} for r in tk.training.runs.values())
+                or any(j.info.status.value in {"queued", "running", "paused"} for j in tk.jobs.jobs.values()),
         }
 
     # ---------------- programs using the toolkit ----------------
@@ -742,7 +747,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
     async def training_tensorboard(run_id: str, tk: Toolkit = Depends(get_tk)):
         from ..engines.manager import process_environment
         run = _run(tk, run_id)
-        if run.info.spec.engine_name() not in {"diffsinger", "singingvocoders", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
+        if run.info.spec.engine_name() not in {"diffsinger", "diffsinger_benchmark", "singingvocoders", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
             raise HTTPException(400, "This trainer has no TensorBoard logs; use its built-in metrics")
         spec = tk.engines.spec(run.info.spec.engine_name())
         python, cwd, env = process_environment(spec, tk.engines.envs, tk.settings)
@@ -851,7 +856,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
             raise HTTPException(400, "Speaker filtering requires a DiffSinger checkpoint")
         async def work(job: Job):
             async with tk.training.inference_slot():
-                return await training_call(tk, job, "diffsinger", "copy_checkpoint", {
+                return await training_call(tk, job, run.info.spec.engine_name(), "copy_checkpoint", {
                     "run_dir": str(run.dir), "step": req.step, "retain": req.retain, "fill": req.fill})
         return submit(tk, "checkpoint_copy", work, {"run": run_id, **req.model_dump()})
 
@@ -886,7 +891,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
                 snapshot.write_text(contents, encoding="utf-8")
                 render_input = snapshot
                 if variance_run is not None:
-                    predicted = await training_call(tk, job, "diffsinger", "render", {
+                    predicted = await training_call(tk, job, variance_run.info.spec.engine_name(), "render", {
                         "run_dir": str(variance_run.dir), "kind": "diffsinger_variance", "ds": str(snapshot),
                         "out_dir": str(folder / "variance"), "step": req.variance_step,
                         "spk": req.spk, "lang": req.lang, "title": "predicted", "predict": req.predict,
@@ -931,10 +936,147 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
 
         return submit(tk, "dataset_build", work, req.model_dump())
 
+    @app.get("/training/workflows", tags=["training"], dependencies=[Depends(auth)])
+    async def bank_workflows(tk: Toolkit = Depends(get_tk)):
+        return sorted(tk.workflows.states.values(), key=lambda s: s["created"], reverse=True)
+
+    @app.post("/training/workflows/check", tags=["training"], dependencies=[Depends(auth)])
+    async def bank_workflow_check(req: dict, tk: Toolkit = Depends(get_tk)):
+        from ..training.workflows import BankWorkflowRequest, check_workflow
+        try:
+            return check_workflow(BankWorkflowRequest.model_validate(req))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/training/workflows", tags=["training"], dependencies=[Depends(auth)])
+    async def bank_workflow_start(req: dict, tk: Toolkit = Depends(get_tk)):
+        from ..training.workflows import BankWorkflowRequest
+        try:
+            return tk.workflows.start(BankWorkflowRequest.model_validate(req), training_call)
+        except (ValueError, OSError) as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/training/workflows/{identifier}/{action}", tags=["training"], dependencies=[Depends(auth)])
+    async def bank_workflow_action(identifier: str, action: str, tk: Toolkit = Depends(get_tk)):
+        if identifier not in tk.workflows.states:
+            raise HTTPException(404, "Workflow not found")
+        try:
+            if action == "stop":
+                return await tk.workflows.stop(identifier)
+            if action == "resume":
+                return tk.workflows.resume(identifier, training_call)
+            raise ValueError("Choose stop or resume")
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.get("/training/preparation/cache", tags=["training"], dependencies=[Depends(auth)])
+    async def preparation_cache(tk: Toolkit = Depends(get_tk)):
+        from ..training.preparation_cache import inventory
+        result = []
+        for category in ("recording-preparation", "source-pipeline"):
+            result.extend({**entry, "key": category + "/" + entry["key"], "category": category}
+                          for entry in await asyncio.to_thread(inventory, tk.home.cache / category))
+        return result
+
+    @app.post("/training/preparation/cache/remove", tags=["training"], dependencies=[Depends(auth)])
+    async def preparation_cache_remove(req: dict, tk: Toolkit = Depends(get_tk)):
+        from ..training.preparation_cache import remove
+        from ..jobs import FINISHED
+        if any(w["status"] in {"running", "stopping"} for w in tk.workflows.states.values()) or tk.training._busy() or any(j.info.status not in FINISHED for j in tk.jobs.jobs.values()):
+            raise HTTPException(409, "Wait for active workflows, jobs and training before cleaning preparation cache")
+        try:
+            grouped = {}
+            for key in req.get("keys", []):
+                category, separator, identifier = key.partition("/")
+                if not separator:
+                    category, identifier = "recording-preparation", key
+                if category not in {"recording-preparation", "source-pipeline"}:
+                    raise ValueError("Unknown preparation cache category")
+                grouped.setdefault(category, []).append(identifier)
+            removed = 0
+            for category, keys in grouped.items():
+                removed += await asyncio.to_thread(remove, tk.home.cache / category, keys)
+            return {"removed": removed}
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/training/import/check", tags=["training"], dependencies=[Depends(auth)])
+    async def project_import_check(req: dict):
+        from ..training.migration import inspect_project
+        try:
+            return await asyncio.to_thread(inspect_project, req["folder"])
+        except (ValueError, OSError, KeyError) as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/training/import", tags=["training"], dependencies=[Depends(auth)])
+    async def project_import(req: dict, tk: Toolkit = Depends(get_tk)):
+        from ..training.migration import import_project
+        async def work(job):
+            from ..training.runs import Run, RunInfo
+            result = await asyncio.to_thread(import_project, tk, req["folder"], req["project_dir"], req.get("configs"), req.get("copy_data", True), False, req.get("source", "main"))
+            for info in result.pop("pending"):
+                run = Run(RunInfo.model_validate(info))
+                tk.training.runs[run.id] = run
+            tk.training._save_index()
+            return result
+        return submit(tk, "project_import", work, req)
+
+    @app.post("/training/render/external", tags=["training"], dependencies=[Depends(auth)])
+    async def external_render(req: dict, tk: Toolkit = Depends(get_tk)):
+        if req.get("source", "main") not in {"main", "benchmark"}:
+            raise HTTPException(400, "Source must be main or benchmark")
+        async def work(job):
+            from ..training.migration import stage_external
+            folder = tk.home.outputs / job.id
+            run_dir = await asyncio.to_thread(stage_external, req["checkpoint"], req["config"], folder / "checkpoint")
+            async with tk.training.inference_slot():
+                return await training_call(tk, job, "diffsinger_benchmark" if req.get("source") == "benchmark" else "diffsinger", "render",
+                    dict(run_dir=str(run_dir), kind=req.get("kind", "diffsinger_acoustic"), ds=req["ds"],
+                        out_dir=str(folder / "audio"), steps=req.get("steps", 20), spk=req.get("speaker"), lang=req.get("language"), device=req.get("device", "auto")))
+        return submit(tk, "external_checkpoint_render", work, req)
+
+    @app.post("/training/voicebank/render", tags=["training"], dependencies=[Depends(auth)])
+    async def onnx_bank_render(req: dict, tk: Toolkit = Depends(get_tk)):
+        async def work(job):
+            params = {**req, "out_dir": str(tk.home.outputs / job.id)}
+            async with tk.training.inference_slot():
+                return await training_call(tk, job, "bank_render", "render", params)
+        return submit(tk, "bank_onnx_render", work, req)
+
     @app.get("/training/phonemizers", tags=["training"], dependencies=[Depends(auth)])
     async def training_phonemizers() -> list[dict]:
         from ..training.phonemizers import PROFILES
         return list(PROFILES.values())
+
+    @app.post("/training/phonemizers/preview", tags=["training"], dependencies=[Depends(auth)])
+    async def phonemizer_preview(req: dict):
+        from ..training.phoneme_preview import preview
+        try:
+            return await asyncio.to_thread(preview, req)
+        except (OSError, ValueError, KeyError) as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/training/phonemizers/merge-suggestions", tags=["training"], dependencies=[Depends(auth)])
+    async def phonemizer_merges(req: dict):
+        from ..training.phoneme_preview import suggest_merges
+        try:
+            return suggest_merges(req.get("entries", []))
+        except (ValueError, TypeError) as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/training/phonemizers/clip", tags=["training"], dependencies=[Depends(auth)])
+    async def phoneme_clip(req: dict, tk: Toolkit = Depends(get_tk)):
+        import math
+        try:
+            start, end = float(req["start"]), float(req["end"])
+            if not math.isfinite(start + end) or start < 0 or not start < end or end - start > 30:
+                raise ValueError("Choose a finite audio interval up to 30 seconds")
+        except (KeyError, ValueError, TypeError) as error:
+            raise HTTPException(400, str(error)) from error
+        async def work(job):
+            target = tk.home.outputs / job.id / "phoneme.wav"
+            return await training_call(tk, job, "audio", "slice_audio", dict(audio=req["audio"], slices=[dict(start=start, end=end, path=str(target))]))
+        return submit(tk, "phoneme_clip", work, req)
 
     @app.post("/training/dataset/prepare/check", tags=["training"], dependencies=[Depends(auth)])
     async def training_preparation_check(req: RecordingPreparationRequest, tk: Toolkit = Depends(get_tk)) -> dict:

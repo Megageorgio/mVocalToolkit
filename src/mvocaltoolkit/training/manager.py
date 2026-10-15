@@ -285,7 +285,7 @@ class TrainingManager:
 
     async def checkpoints(self, run_id: str) -> list[Checkpoint]:
         run = self._require(run_id)
-        if run.info.spec.engine_name() in {"diffsinger", "singingvocoders", "g2p", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
+        if run.info.spec.engine_name() in {"diffsinger", "diffsinger_benchmark", "singingvocoders", "g2p", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
             from ..engines.diffsinger.checkpoint_store import listing
 
             divisor = 2 if run.info.spec.engine_name() == "singingvocoders" else 1
@@ -303,7 +303,7 @@ class TrainingManager:
 
     def retain_checkpoint(self, run_id: str, step: int, keep: bool) -> RunInfo:
         run = self._require(run_id)
-        if run.info.spec.engine_name() not in {"diffsinger", "singingvocoders", "g2p", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
+        if run.info.spec.engine_name() not in {"diffsinger", "diffsinger_benchmark", "singingvocoders", "g2p", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
             raise ValueError("Checkpoint retention is supported for DiffSinger and SingingVocoders runs")
         from ..engines.diffsinger.checkpoint_store import listing, retain
 
@@ -444,7 +444,7 @@ class TrainingManager:
                 run.save()
                 run.publish(run.emit("prepare", stage="download", progress=value, message=info.message))
 
-            model = await self.tk.models.require(engine, model_id, progress)
+            model = await self.tk.models.require("diffsinger" if engine == "diffsinger_benchmark" else engine, model_id, progress)
             ckpt = model.file("checkpoint")
             resolved[key] = str(ckpt if ckpt is not None else model.path)
         return resolved
@@ -618,7 +618,7 @@ class TrainingManager:
         elif kind == "checkpoint":
             ckpt = Checkpoint(step=int(event.get("step") or 0), path=str(event.get("path") or ""),
                               size=int(event.get("size") or 0), time=now)
-            if info.spec.engine_name() in {"diffsinger", "singingvocoders", "g2p", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
+            if info.spec.engine_name() in {"diffsinger", "diffsinger_benchmark", "singingvocoders", "g2p", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
                 from ..engines.diffsinger.checkpoint_store import retained_path
 
                 divisor = 2 if info.spec.engine_name() == "singingvocoders" else 1
@@ -627,7 +627,7 @@ class TrainingManager:
             info.checkpoints.sort(key=lambda c: c.step)
         elif kind == "checkpoint_removed":
             step = int(event.get("step") or -1)
-            if info.spec.engine_name() in {"diffsinger", "singingvocoders", "g2p", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
+            if info.spec.engine_name() in {"diffsinger", "diffsinger_benchmark", "singingvocoders", "g2p", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
                 from ..engines.diffsinger.checkpoint_store import retained_path
 
                 divisor = 2 if info.spec.engine_name() == "singingvocoders" else 1

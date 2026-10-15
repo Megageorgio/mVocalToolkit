@@ -413,10 +413,12 @@ class DatasetBuildRequest(BaseModel):
 class RecordingPreparationRequest(BaseModel):
     folder: str
     out_dir: str
+    recursive: bool = True
     segment: bool = True
     max_length: float = Field(20.0, ge=2, le=600)
     min_silence: float = Field(.25, ge=.01, le=10)
     estimate_notes: bool = False
+    replace_notes: bool = False
     note_model: str = "game-small"
     language: str = ""
     label_mode: Literal["existing", "missing", "replace"] = "existing"
@@ -429,8 +431,12 @@ class RecordingPreparationRequest(BaseModel):
     language_prefix: bool = False
     edge_silence: float | None = Field(None, ge=0, le=10, description="Maximum SP at segment edges; None preserves all")
     fade_ms: float = Field(0, ge=0, le=100, description="Fade only inside labelled edge silence")
+    breath_padding: float = Field(0, ge=0, le=2, description="Silence added at an exposed AP boundary; 0 disables")
+    liquid_rules: dict[str, bool | list[str]] = Field(default_factory=dict, description="Liquid -> true, false or allowed preceding consonants; language/phone keys supported")
+    cache: Literal["use", "refresh", "off"] = "use"
+    refine: RefineOptions | None = None
     write_ds: bool = True
-    f0_method: Literal["none", "preserve", "rmvpe", "parselmouth", "harvest"] = "rmvpe"
+    f0_method: Literal["auto", "none", "preserve", "rmvpe", "parselmouth", "harvest"] = "rmvpe"
     vowels: list[str] = Field(default_factory=list)
     liquids: list[str] = Field(default_factory=list)
 

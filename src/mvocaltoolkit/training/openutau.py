@@ -590,4 +590,18 @@ def lint(bank: Path) -> list[dict[str, str]]:
             p.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             problems.append({"file": str(p), "problem": "not UTF-8"})
+    for cfg_path in configs:
+        try:
+            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            phone_path = cfg_path.parent / cfg.get("phonemes", "phonemes.json")
+            inventory = set(json.loads(phone_path.read_text(encoding="utf-8")))
+            for dictionary in cfg_path.parent.glob("dsdict*.yaml"):
+                data = yaml.safe_load(dictionary.read_text(encoding="utf-8")) or {}
+                used = {p for row in data.get("entries") or [] for p in row.get("phonemes", [])}
+                used.update(row["to"] for row in data.get("replacements") or [] if row.get("to"))
+                missing = sorted(used - inventory)
+                if missing:
+                    problems.append({"file": str(dictionary), "problem": "dictionary emits untrained phonemes: " + " ".join(missing[:40])})
+        except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
+            problems.append({"file": str(cfg_path), "problem": "dictionary/vocabulary inspection failed: " + str(error)})
     return problems

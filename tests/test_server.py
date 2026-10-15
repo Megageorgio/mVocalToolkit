@@ -61,6 +61,59 @@ def test_preparation_profiles_and_preflight_do_not_start_workers(tmp_path):
         assert response.status_code == 400
 
 
+def test_persisted_bank_workflow_review_and_resume_without_training(tmp_path):
+    for i in range(2):
+        audio = make_wav(tmp_path / "corpus" / f"clip{i}.wav", rate=16000 + i)
+        audio.with_suffix(".lab").write_text("0 10000000 a\n")
+    with _client(tmp_path) as client:
+        request = dict(project_dir=str(tmp_path / "project"), name="Fixture", sources=[dict(folder=str(tmp_path / "corpus"), speaker="s", language="ru")],
+            prepare=False, acoustic=False, variance=False, export=False, review_before_training=True)
+        assert client.post("/training/workflows/check", json=request).json()["ok"]
+        assert client.get("/training/workflows").json() == []
+        state = client.post("/training/workflows", json=request).json()
+        def wait_status(status):
+            for _ in range(100):
+                latest = next(s for s in client.get("/training/workflows").json() if s["id"] == state["id"])
+                if latest["status"] == status:
+                    return latest
+                assert latest["status"] != "failed", latest
+                time.sleep(.02)
+            raise AssertionError(latest)
+        reviewed = wait_status("review")
+        assert reviewed["results"]["dataset"]["speaker_coverage"] == {"s": {"ru": {"a": 2}}}
+        assert client.post(f"/training/workflows/{state['id']}/resume").status_code == 200
+        assert wait_status("done")["runs"] == {}
+
+
+def test_workflow_preparation_uses_cancellable_real_rpc_adapter(tmp_path, monkeypatch):
+    import asyncio
+    from pathlib import Path
+    for i in range(2):
+        audio = make_wav(tmp_path / "corpus" / f"clip{i}.wav", rate=16000 + i)
+        audio.with_suffix(".lab").write_text("0 10000000 a\n")
+    tk = Toolkit(Home(tmp_path / "home"), engine_dirs=[FAKE_ENGINES])
+    async def call(engine, method, params, **kwargs):
+        assert engine == "audio" and method == "slice_audio"
+        await asyncio.sleep(.25)  # exercises job.cancelled polling in training_call
+        for part in params["slices"]:
+            target = Path(part["path"])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(Path(params["audio"]).read_bytes())
+        return {}
+    monkeypatch.setattr(tk.engines, "call", call)
+    with TestClient(create_app(tk)) as client:
+        request = dict(project_dir=str(tmp_path / "project"), name="Fixture", sources=[dict(folder=str(tmp_path / "corpus"), speaker="s", language="ru")],
+            preparation=dict(label_mode="existing", f0_method="none", estimate_notes=False), acoustic=False, variance=False, export=False)
+        state = client.post("/training/workflows", json=request).json()
+        assert client.get("/health").json()["background_active"]
+        for _ in range(200):
+            current = next(s for s in client.get("/training/workflows").json() if s["id"] == state["id"])
+            if current["status"] == "done": break
+            assert current["status"] != "failed", current["error"]
+            time.sleep(.02)
+        assert current["status"] == "done"
+
+
 def test_align_folder_with_transcription(tmp_path):
     corpus = tmp_path / "corpus"
     make_wav(corpus / "a.wav")

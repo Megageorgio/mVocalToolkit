@@ -18,7 +18,7 @@ from .preparation_check import preparation_check, validate_model, model_language
 SILENCES = {"sp", "sil", "pau", "<sp>", "silence", ""}
 
 
-def add_groups(label: Label, vowels: list[str], liquids: list[str]) -> bool:
+def add_groups(label: Label, vowels: list[str], liquids: list[str], rules: dict | None = None) -> bool:
     """Fill absent ph_num groups using an explicit language inventory, never a first-letter guess."""
     if label.words:
         return True
@@ -29,7 +29,7 @@ def add_groups(label: Label, vowels: list[str], liquids: list[str]) -> bool:
     def is_vowel(phone):
         return phone.text in vowels or phone.text.split("/", 1)[-1] in vowels
     def is_liquid(phone):
-        return phone.text in liquids or phone.text.split("/", 1)[-1] in liquids
+        return phone.text in liquids or phone.text.split("/", 1)[-1] in liquids or phone.text in (rules or {}) or phone.text.split("/", 1)[-1] in (rules or {})
     boundaries = {0, len(phones)}
     for i, phone in enumerate(phones):
         if phone.text.lower() in SILENCES or phone.text in {"AP", "br"}:
@@ -37,7 +37,10 @@ def add_groups(label: Label, vowels: list[str], liquids: list[str]) -> bool:
         elif is_vowel(phone):
             start = i
             if i > 1 and is_liquid(phones[i - 1]) and not is_vowel(phones[i - 2]) and phones[i - 2].text.lower() not in SILENCES:
-                start -= 1
+                liquid, preceding = phones[i - 1].text, phones[i - 2].text
+                rule = (rules or {}).get(liquid, (rules or {}).get(liquid.split("/", 1)[-1], True))
+                if rule is True or isinstance(rule, list) and (preceding in rule or preceding.split("/", 1)[-1] in rule):
+                    start -= 1
             boundaries.add(start)
     limits = sorted(boundaries)
     label.tiers["words"] = [Interval(start=phones[a].start, end=phones[b - 1].end,
@@ -173,6 +176,7 @@ def preserved_f0(audio: Path, index: dict, start: float, end: float) -> tuple[li
 
 
 async def prepare_recordings(tk, job, req, call) -> dict[str, Any]:
+    from . import preparation_cache as cache
     check = preparation_check(tk, req)
     if not check["ok"]:
         raise ValueError("Preparation check failed: " + "; ".join(p["problem"] for p in check["problems"] if p["severity"] == "error"))
@@ -183,30 +187,46 @@ async def prepare_recordings(tk, job, req, call) -> dict[str, Any]:
         raise ValueError("Preparation output and source folders must not overlap")
     if out.exists() and any(out.iterdir()):
         raise ValueError("Preparation output must be empty")
-    files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO)
+    files = sorted(p for p in (root.rglob("*") if req.recursive else root.glob("*")) if p.is_file() and p.suffix.lower() in AUDIO)
     if not files:
         raise ValueError("No WAV or FLAC recordings found")
     out.mkdir(parents=True, exist_ok=True)
     index, csv_cache = _label_index(root), {}
     rows, made, problems, conversions = [], [], [], []
+    cache_hits = 0
+    cache_root = (tk.home.cache if tk is not None and hasattr(tk, "home") else out.parent) / "recording-preparation"
     label_model = None
-    if check["pending_auto_labels"]:
-        label_model = await tk.models.require("wfl_asr", req.label_model)
-        validate_model(label_model, req)
-        language_ids = model_language_ids(label_model)
     model = None
-    if req.estimate_notes:
-        model = await tk.models.require("game", req.note_model)
     method, model_path = req.f0_method, None
-    if req.write_ds and method not in {"none", "preserve"}:
-        from ..pipelines.extra import _pitch_model
-        method, model_path, _ = await _pitch_model(tk, job, method)
     for i, audio in enumerate(files):
         job.check_cancelled()
         job.progress(i / len(files), stage="prepare_recordings", message=audio.name)
         csv_cache.setdefault(audio.parent, _csv_rows(audio.parent) or _csv_rows(root))
         label = _label_for(audio, csv_cache[audio.parent], index)
+        label_before_processing = label.model_copy(deep=True) if label else None
+        stamp = {}
+        source_ds = _ds_for(audio, index)
+        if source_ds:
+            stamp["ds"] = cache.digest(source_ds)
+        def update_models():
+            if tk is not None:
+                stamp.update(cache.model_stamp(tk, (req.label_model, req.note_model if req.estimate_notes else "", req.refine.model if req.refine else "",
+                    "rmvpe" if req.f0_method == "auto" else req.f0_method), {"audio", "game", "pitch", "wfl_asr", "wfl_asr_v2", "refiner"}))
+        update_models()
+        key = cache.cache_key(audio, label, req, audio.relative_to(root), stamp) if req.cache != "off" else ""
+        if req.cache == "use" and (saved := cache.restore(cache_root, key, out, root)):
+            rows.extend(saved["rows"])
+            made.extend(str(out / p) for p in saved["files"])
+            problems.extend(saved["problems"])
+            conversions.extend(saved["conversions"])
+            cache_hits += 1
+            continue
+        row_start, made_start, problem_start, conversion_start = len(rows), len(made), len(problems), len(conversions)
         automatic = req.label_mode == "replace" or not label or not label.phones
+        if automatic and req.label_mode != "existing" and label_model is None:
+            label_model = await tk.models.require("wfl_asr", req.label_model)
+            validate_model(label_model, req)
+            language_ids = model_language_ids(label_model)
         if automatic and label_model is not None:
             generation = int(label_model.layout.get("generation", 1))
             res = await call(tk, job, "wfl_asr_v2" if generation >= 2 else "wfl_asr", "segment", {
@@ -225,6 +245,24 @@ async def prepare_recordings(tk, job, req, call) -> dict[str, Any]:
         if not label or not label.phones:
             problems.append({"file": str(audio), "problem": "no phoneme labels", "code": "no_labels"})
             continue
+        if automatic:
+            # Gaps left by blind recognition denote silence, including the tail.
+            import wave
+            try:
+                with wave.open(str(audio), "rb") as wav:
+                    duration = wav.getnframes() / wav.getframerate()
+            except (OSError, wave.Error):
+                duration = label.end_time()
+            label.tiers["phones"] = fill_gaps(label.phones, duration)
+        if req.refine:
+            from ..pipelines.refine import apply_refined
+            refiner = await tk.models.require("refiner", req.refine.model)
+            refined = await call(tk, job, "refiner", "refine", dict(model={"path": refiner.path, "layout": refiner.layout},
+                items=[dict(audio=str(audio), name=audio.stem, phones=[[p.start, p.end, p.text] for p in label.phones])],
+                **req.refine.model_dump(exclude={"model"})))
+            if not refined or not refined[0].get("ok", True):
+                raise ValueError(f"Boundary refinement failed: {audio}")
+            label = apply_refined(label, refined[0]["phones"])
         findings, metadata = inspect_recording(audio, label)
         errors = [p for p in findings if p.get("severity") == "error"]
         if errors:
@@ -246,21 +284,40 @@ async def prepare_recordings(tk, job, req, call) -> dict[str, Any]:
                 conversions=conversions, out_dir=str(out), status="blocked_unknown_phonemes"), ensure_ascii=False, indent=1), encoding="utf-8")
             raise ValueError("Unmapped WFL phonemes: " + ", ".join(conversion["unknown"]) + f". See {out / 'preparation-report.json'}")
         vowels = req.vowels or vowel_inventory(req.phonemizer_profiles, prefix_languages)
-        if not add_groups(label, vowels, req.liquids):
+        if not add_groups(label, vowels, req.liquids, req.liquid_rules):
             problems.append({"file": str(audio), "problem": "no word groups: provide vowel/liquid inventory for ph_num; fallback is one phoneme per group", "code": "missing_word_groups"})
         points = cut_points(label, req.max_length, req.min_silence) if req.segment else [0.0, label.end_time()]
         prefix = audio.stem + "-" + hashlib.sha256(str(audio.relative_to(root)).encode()).hexdigest()[:8]
         slices = [{**bounds, "path": str(out / "wavs" / f"{prefix}-{j + 1:03d}.wav")}
                   for j, (a, b) in enumerate(zip(points, points[1:]))
                   if (bounds := segment_bounds(label, a, b, req.edge_silence, req.fade_ms))]
+        for part in slices:
+            active = [p for p in label.phones if p.end > part["start"] + 1e-7 and p.start < part["end"] - 1e-7]
+            part["pad_before"] = req.breath_padding if active and active[0].text == "AP" else 0
+            part["pad_after"] = req.breath_padding if active and active[-1].text == "AP" else 0
         await call(tk, job, "audio", "slice_audio", {"audio": str(audio), "slices": slices})
         for part in slices:
             job.check_cancelled()
             target = Path(part["path"])
             piece = crop_label(label, part["start"], part["end"])
+            before, after = part["pad_before"], part["pad_after"]
+            if before or after:
+                for entries in piece.tiers.values():
+                    for interval in entries:
+                        interval.start += before
+                        interval.end += before
+                for tier in ("phones", "words"):
+                    entries = piece.tiers.setdefault(tier, [])
+                    if before:
+                        entries.insert(0, Interval(start=0, end=before, text="SP"))
+                    if after:
+                        end_time = part["end"] - part["start"] + before
+                        entries.append(Interval(start=end_time, end=end_time + after, text="SP"))
             if req.segment and part["end"] - part["start"] > req.max_length + .001:
                 problems.append({"file": str(target), "problem": "no safe pause within target duration", "code": "long_phrase"})
-            if model is not None:
+            if req.estimate_notes and (req.replace_notes or not piece.tiers.get("notes")):
+                if model is None:
+                    model = await tk.models.require("game", req.note_model)
                 res = await call(tk, job, "game", "extract", {"model": {"path": model.path, "layout": model.layout},
                     "audio": str(target), "output_dir": str(out / "notes"), "language": req.language or None,
                     "output_formats": ["csv"], "round_pitch": True})
@@ -276,26 +333,43 @@ async def prepare_recordings(tk, job, req, call) -> dict[str, Any]:
             rows.append(row)
             if req.write_ds:
                 curve, hop = None, .01
-                if method == "preserve":
+                used_source_f0 = False
+                if method in {"preserve", "auto"}:
                     curve, hop = preserved_f0(audio, index, part["start"], part["end"])
-                    if curve is None:
+                    used_source_f0 = curve is not None
+                    if curve is None and method == "preserve":
                         problems.append({"file": str(audio), "code": "missing_f0", "problem": "No single-segment source DS curve to preserve; output DS has no f0"})
-                elif method != "none":
+                if curve is None and method not in {"none", "preserve"}:
+                    hop = .01
+                    actual_method = "rmvpe" if method == "auto" else method
+                    if model_path is None and actual_method not in {"parselmouth", "harvest"}:
+                        from ..pipelines.extra import _pitch_model
+                        actual_method, model_path, _ = await _pitch_model(tk, job, actual_method)
                     res = await call(tk, job, "pitch", "pitch", {"items": [{"audio": str(target)}],
-                        "method": method, "model_path": model_path, "hop": .01, "f0_min": 50.0, "f0_max": 1600.0})
+                        "method": actual_method, "model_path": model_path, "hop": .01, "f0_min": 50.0, "f0_max": 1600.0})
                     if not res[0].get("ok", True):
                         raise ValueError(res[0].get("error", "Pitch extraction failed"))
                     curve = res[0]["f0"]
+                if used_source_f0:
+                    curve = [0.0] * round(before / hop) + curve + [0.0] * round(after / hop)
                 dest = out / "ds" / (target.stem + ".ds")
                 dest.parent.mkdir(exist_ok=True)
                 dest.write_text(json.dumps([ds_segment(row, curve, hop)], ensure_ascii=False, indent=1), encoding="utf-8")
             made.append(str(target))
+        if req.cache != "off":
+            update_models()  # Models installed on first use must use the same key on the next run.
+            key = cache.cache_key(audio, label_before_processing, req, audio.relative_to(root), stamp)
+            paths = [p for p in out.rglob("*") if p.is_file() and (p.stem.startswith(prefix) or p == out / "original-labels" / audio.relative_to(root).with_suffix(".json"))]
+            cache.store(cache_root, key, out, paths, dict(rows=rows[row_start:], files=[str(Path(p).relative_to(out)) for p in made[made_start:]],
+                problems=problems[problem_start:], conversions=conversions[conversion_start:]), root)
     (out / "transcriptions.csv").write_text(ds_csv.dumps_rows(rows), encoding="utf-8")
     result = {"out_dir": str(out), "files": made, "count": len(made), "problems": problems,
               "notes": req.estimate_notes, "f0_method": method if req.write_ds else None,
               "phonemizer_profiles": req.phonemizer_profiles, "conversions": conversions,
               "label_model": label_model.id if label_model else None, "primary_language": req.language,
               "extra_languages": req.extra_languages}
+    result["cache_hits"] = cache_hits
+    result["cache_dir"] = str(cache_root)
     (out / "preparation-report.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     if not made:
         raise ValueError("No labelled recordings could be prepared; check source labels")

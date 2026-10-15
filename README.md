@@ -41,6 +41,18 @@ creation, and RMVPE/Parselmouth/Harvest f0. DiffSinger supports guided model opt
 variance/acoustic rendering, independent voicebank heads, frozen export controls, speaker-filtered checkpoint
 copies and an optional managed local TensorBoard viewer. These operations are exposed through the training API.
 
+Persisted `/training/workflows` chains optional source processing, WFL labelling/conversion, segmentation,
+dataset checks, acoustic/variance training, ONNX export, OpenUtau assembly and an optional exported-bank preview.
+Short prototypes cap training steps; completed stages and checkpoints are reused on explicit resume. The review
+gate rechecks edited data. Sources remain separate from outputs. Per-record content caches, selected-entry cleanup,
+speaker/language coverage and optional signal heuristics support repeated preparation. SOME is excluded.
+
+The API also imports DiffTrainer/config/checkpoint folders without inspecting pickled checkpoint objects,
+previews external checkpoints in separate workspaces and exposes pinned main/benchmark sources. The `bank_render`
+engine executes actual exported ONNX graphs on CPU with a compatible local vocoder and DS; it does not execute
+OpenUtau text plugins. Conversion examples support interval listening and optional exact user-supplied IPA/feature
+merge suggestions. Synthetic execution checks do not establish real bank compatibility or voice quality.
+
 ## Install
 
 ```

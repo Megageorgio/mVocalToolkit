@@ -32,6 +32,88 @@ Each model belongs to a **task**: `transcribe`, `align`, `segment`, `midi`, `tem
 
 The command line has the same: `mvt languages --task align`, `mvt models list --task align --lang ru`.
 
+## Persisted bank workflows
+
+`GET /training/workflows` returns persisted states, requests, completed stages, run IDs, results and errors.
+`POST /training/workflows/check` validates the request and training configuration without installing engines or
+running models. `POST /training/workflows` accepts the same request and starts the chain:
+
+```json
+{
+  "project_dir": "D:/voices/example", "name": "example",
+  "sources": [{"folder": "D:/recordings", "speaker": "voice", "language": "ru", "role": "main"}],
+  "prototype": true, "prototype_steps": 200, "prepare": true,
+  "preparation": {"label_model": "auto", "label_mode": "missing", "extra_languages": ["en"],
+    "segment": true, "max_length": 20, "breath_padding": 0, "cache": "use", "f0_method": "auto"},
+  "phonemizer_profiles": {"ru": "ru-hhskt"},
+  "pipeline": {}, "checks": {"detailed_audio": false},
+  "acoustic": true, "variance": true, "training": {}, "acoustic_settings": {}, "variance_settings": {},
+  "device": "auto", "source": "main", "export": true, "review_before_training": false,
+  "render_ds": "", "vocoder": "", "render_options": {}
+}
+```
+
+Use the exact profile IDs from `GET /training/phonemizers`; an empty profile ID explicitly disables the preferred
+fallback. `auto` WFL prefers installed compatible weights and otherwise requests the bundled multi13 model on
+first use. Model/environment downloads follow toolkit settings. `f0_method:auto` preserves a matching source DS
+curve, otherwise extracts RMVPE f0. Existing notes are preserved unless `replace_notes:true`; missing notes use GAME
+when pitch training needs them. SOME weights are not used. `liquid_rules` accepts boolean rules or preceding-phone
+lists, optionally with language-qualified keys. `breath_padding` adds silence only at exposed AP boundaries and
+shifts phone/word/note/f0 timing consistently. Separation, alignment and refinement are disabled by default.
+
+`pipeline.separation` is a list of `{model, stem, stems?, options?}` passes, e.g. vocals then dry. `pipeline.alignment`
+accepts AlignRequest options except managed input/output/language; `replace` controls alignment of existing labels.
+Optional transcription uses the aligner's normal settings; interactive transcription review belongs in the
+labelling tool, while this chain offers `review_before_training`. `pipeline.cache` is use/refresh/off. Final audio
+and labels are separate from intermediate stems. `exclusions` lists absolute original audio paths.
+
+`prototype:true` always caps `overrides.max_updates` at `prototype_steps`, even with a saved full recipe. Full mode
+uses normal presets; `training` and per-model settings accept the normal DiffSinger configuration fields. Dataset,
+workspace and base-config paths are managed by the workflow and cannot be replaced through overrides. Variance
+note/group requirements follow the selected prediction heads. Disable a trainer and set `acoustic_export` or
+`variance_export` to reuse compatible exports; a variance export is optional for an acoustic-only bank.
+
+`POST /training/workflows/{id}/stop` stops the chain and requests a checkpoint from its active trainer.
+`POST /training/workflows/{id}/resume` continues stopped/failed/interrupted states from completed stages. A `review`
+state is approved only by this explicit resume; its editable dataset copy is rechecked into a new snapshot.
+Restarted toolkits mark active chains interrupted and require manual resume. Training processes follow their normal
+recovery rules. Source/setting changes require a new workflow; completed stages retain their original snapshots.
+Active background work is exposed as `GET /health.background_active` so clients can detach without shutting down
+the shared toolkit. Banks go under `<project_dir>/exports/<name>-<workflow-id>`.
+
+`GET /training/preparation/cache` lists namespaced cache keys, bytes, timestamps and categories. `POST
+/training/preparation/cache/remove {"keys":["recording-preparation/<hash>","source-pipeline/<hash>"]}` removes
+selected allowlisted cache entries only, while no jobs/workflows/trainers are active. Sources, completed outputs
+and checkpoints are retained. Cache restoration verifies output hashes and copies files independently. Keys include
+content/settings, model file metadata and implementation fingerprints. Refresh recomputes outputs; existing cache
+entries are immutable and can be explicitly removed to repair them.
+
+## Migration, conversion inspection and exported-bank preview
+
+- `POST /training/import/check {"folder":"D:/DiffTrainer"}` inspects YAML/checkpoint metadata without unpickling.
+- `POST /training/import {"folder":"D:/DiffTrainer","project_dir":"D:/voices/imported","copy_data":true,
+  "source":"benchmark"}` returns a job. Optional `configs` selects discovered config paths. Copies resolved configs,
+  maps, checkpoints and optionally data/binaries into stopped runs; originals are preserved. False `copy_data`
+  retains absolute data references. Review matching source versions and external asset paths before continuing.
+- `POST /training/render/external` returns a job and accepts checkpoint, config, ds, kind (default acoustic),
+  source (main/benchmark), device, steps, language and speaker. It creates a separate checkpoint workspace.
+- `POST /training/voicebank/render` returns a job and accepts bank, ds, optional vocoder folder, speaker, language,
+  steps (1–1000), depth (0–1], gender, velocity, expression, predict (dur/pitch/variance) and explicit inputs tensors.
+  The isolated CPU worker executes the bank's exported graphs and validates vocabularies and input contracts.
+  DS must contain timed phones and f0 or notes. Missing pitch/expressions are predicted when bank heads exist;
+  duration prediction is explicit and keeps word anchors. A local compatible vocoder.yaml+ONNX is required. Results
+  include WAV paths and render-report.json. This is DS inference, without OpenUtau's text frontend/plugin runtime.
+- `POST /training/phonemizers/preview` accepts path (audio with labels or a label), language, profiles, alphabet
+  and mappings; returns up to 2000 timed source/target examples and conversion findings without modifying sources.
+- `POST /training/phonemizers/clip` accepts audio, start and end; returns a job creating a short WAV for listening.
+- `POST /training/phonemizers/merge-suggestions` accepts entries with phone, ipa and optional feature mappings.
+  Only exact IPA/feature matches across languages are suggested. No merge is applied automatically.
+
+Imports/workflows are fixture-tested. Exported-bank sessions are tested with synthetic ONNX graphs, including all
+five model components and a vocoder. Real pretrained GPU chains, arbitrary upstream export variants, phonemizer
+plugins and listening quality require separate validation. Detailed audio metrics are advisory noise/bandwidth/tail
+heuristics rather than a reliable reverb diagnosis.
+
 ## Inputs and outputs
 
 Every operation takes an `input`:

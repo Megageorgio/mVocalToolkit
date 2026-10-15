@@ -68,7 +68,7 @@ def preparation_check(tk, req) -> dict:
         if entry is None:
             raise ValueError("WFL model is not installed or listed in the catalog")
         validate_model(entry, req, installed=installed is not None)
-    files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO)
+    files = sorted(p for p in (root.rglob("*") if req.recursive else root.glob("*")) if p.is_file() and p.suffix.lower() in AUDIO)
     if not files:
         raise ValueError("No WAV or FLAC recordings found")
     index, csv_cache = _label_index(root), {}

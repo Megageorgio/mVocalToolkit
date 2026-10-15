@@ -55,6 +55,12 @@ class RunSpec(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
     def engine_name(self) -> str:
+        if not self.engine and self.kind.startswith("diffsinger"):
+            source = self.config.get("source", "main")
+            if source not in {"main", "benchmark"}:
+                raise ValueError("DiffSinger source must be main or benchmark")
+            if source == "benchmark":
+                return "diffsinger_benchmark"
         return self.engine or self.kind.split("_", 1)[0]
 
 

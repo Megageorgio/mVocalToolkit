@@ -58,6 +58,7 @@ class BuildResult:
     recordings: list[dict[str, Any]] = field(default_factory=list)
     coverage: dict[str, dict[str, int]] = field(default_factory=dict)
     phonemizer_profiles: dict[str, str] = field(default_factory=dict)
+    speaker_coverage: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
 
 
 def _audio_seconds(path: Path) -> float | None:
@@ -304,6 +305,8 @@ def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[s
                     raise ValueError(f"Invalid language-tagged phoneme: {iv.text}")
                 phonemes_by_lang.setdefault(phone_language, set()).add(symbol)
                 counts_by_lang.setdefault(phone_language, Counter())[symbol] += 1
+                by_speaker = result.speaker_coverage.setdefault(speaker, {}).setdefault(phone_language, {})
+                by_speaker[symbol] = by_speaker.get(symbol, 0) + 1
         # Even a wholly code-switched recording still belongs to this source;
         # DiffSinger needs a dictionary for its default dataset language too.
         phonemes_by_lang.setdefault(language, set())
@@ -360,6 +363,7 @@ def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[s
         "problems": result.problems, "files": result.files, "seconds": result.seconds,
         "recordings": result.recordings, "coverage": result.coverage,
         "phonemizer_profiles": result.phonemizer_profiles,
+        "speaker_coverage": result.speaker_coverage,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     if progress is not None:
         progress(1.0, "Dataset written")

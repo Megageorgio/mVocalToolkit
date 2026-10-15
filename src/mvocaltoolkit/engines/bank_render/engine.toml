@@ -1,0 +1,9 @@
+name = "bank_render"
+title = "OpenUtau bank ONNX preview"
+description = "Executes the exported linguistic, duration, pitch, variance, acoustic and vocoder ONNX graphs on a DS phrase. No training environment."
+capabilities = ["bank_render"]
+python = "3.11"
+torch = false
+requirements = ["onnxruntime>=1.20", "numpy", "soundfile>=0.12", "pyyaml"]
+size_hint = "~60 MB; the chosen bank and vocoder are separate"
+license = "MIT (ONNX Runtime); bank models retain their own licenses"

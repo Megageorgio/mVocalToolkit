@@ -70,4 +70,10 @@ def load_engine_specs(*dirs: Path) -> dict[str, EngineSpec]:
             data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
             spec = EngineSpec.model_validate({**data, "dir": toml_path.parent})
             specs[spec.name] = spec
+    base = specs.get("diffsinger")
+    if base is not None and base.source and base.source.repo == "openvpi/DiffSinger":
+        specs["diffsinger_benchmark"] = base.model_copy(update={
+            "name": "diffsinger_benchmark", "title": "DiffSinger benchmark",
+            "description": "Optional benchmark source, isolated from main runs and pinned to a recorded revision.",
+            "source": SourceSpec(repo="agentasteriski/DiffSinger", commit="38d61c5ba57c5fddc844eefae2f2ce1aa2e54c6c")})
     return specs

@@ -29,6 +29,8 @@ class Toolkit:
         self.models = ModelStore(self.home, self.settings, self.catalog)
         self.datasets = DatasetStore(self.models)
         self.training = TrainingManager(self)
+        from .training.workflows import BankWorkflows
+        self.workflows = BankWorkflows(self)
         self.tensorboard = TensorBoardViewer()
         self._jobs: JobManager | None = None
 
@@ -43,8 +45,10 @@ class Toolkit:
         self.engines.start_idle_watcher()
         # runs that were training when the server last stopped are followed again
         self.training.load()
+        self.workflows.load()
 
     async def stop(self) -> None:
+        await self.workflows.close()
         await self.tensorboard.stop()
         await self.training.stop_all()
         await self.engines.stop_all()
