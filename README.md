@@ -193,3 +193,10 @@ VoxCPM2 (full or LoRA). They use frozen recording manifests, recording-disjoint 
 networks, checkpoint/optimizer resume, cooperative stop and inference export. No training environment or base
 weight is installed by preflight. See [the training API](docs/API.md#additional-model-trainers) for kinds,
 input formats and current verification limits.
+
+Recording preparation also accepts raw WAV through WFL-ASR, with primary/additional languages, explicit native
+or shared-canonical multi13 conversion, per-language phonemizer inventories and conversion reports. Pause cuts
+can cap edge silence and fade only within labelled silence; existing DS f0 can be preserved. Read-only preflight
+starts no workers and downloads no weights. OpenUtau assembly writes expanded/stock phonemizer remappers with
+coverage reports, including preferred hhskt-ru and approximate stock Russian compatibility. See
+[recording preparation](docs/API.md#recording-preparation-and-diffsinger-settings) for requests and limits.

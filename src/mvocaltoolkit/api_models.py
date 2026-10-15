@@ -384,6 +384,8 @@ class VoicebankRequest(BaseModel):
     vocoder: str = Field("", description="Folder with a custom vocoder (ONNX + vocoder.yaml); empty: the standard one")
     phoneme_types: dict[str, str] = Field(default_factory=dict, description="phoneme -> vowel | stop | affricate | fricative | liquid | nasal | semivowel")
     vowels: dict[str, list[str]] = Field(default_factory=dict, description="language -> vowels (for the dsdict types)")
+    phonemizer_profiles: dict[str, str] = Field(default_factory=dict, description="language -> trained phoneme alphabet / preferred OpenUtau phonemizer")
+    default_phonemizer_profile: str = ""
     notes: str = ""
     licenses: list[str] = Field(default_factory=list)
     credits: list[str] = Field(default_factory=list)
@@ -405,6 +407,7 @@ class DatasetBuildRequest(BaseModel):
     dictionaries: dict[str, str] = Field(default_factory=dict, description="language -> dictionary file; missing ones are made from the labels")
     validation_files: int = Field(3, ge=1, description="Validation files per speaker (chosen by name, the same every time)")
     extra_phonemes: list[str] = Field(default_factory=list)
+    phonemizer_profiles: dict[str, str] = Field(default_factory=dict)
 
 
 class RecordingPreparationRequest(BaseModel):
@@ -416,8 +419,18 @@ class RecordingPreparationRequest(BaseModel):
     estimate_notes: bool = False
     note_model: str = "game-small"
     language: str = ""
+    label_mode: Literal["existing", "missing", "replace"] = "existing"
+    label_model: str = ""
+    extra_languages: list[str] = Field(default_factory=list)
+    source_alphabet: Literal["target", "wfl-native", "wfl-multi13-canonical"] = "target"
+    phonemizer_profiles: dict[str, str] = Field(default_factory=dict)
+    phoneme_mappings: dict[str, list[str]] = Field(default_factory=dict)
+    unknown_phonemes: Literal["error", "keep"] = "error"
+    language_prefix: bool = False
+    edge_silence: float | None = Field(None, ge=0, le=10, description="Maximum SP at segment edges; None preserves all")
+    fade_ms: float = Field(0, ge=0, le=100, description="Fade only inside labelled edge silence")
     write_ds: bool = True
-    f0_method: Literal["none", "rmvpe", "parselmouth", "harvest"] = "rmvpe"
+    f0_method: Literal["none", "preserve", "rmvpe", "parselmouth", "harvest"] = "rmvpe"
     vowels: list[str] = Field(default_factory=list)
     liquids: list[str] = Field(default_factory=list)
 

@@ -922,13 +922,27 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
 
             result = await asyncio.to_thread(
                 build_dataset, [SourceSpec(**s.model_dump()) for s in req.sources], Path(req.out_dir),
-                req.dictionaries or None, req.validation_files, progress, extra_phonemes=req.extra_phonemes)
+                req.dictionaries or None, req.validation_files, progress, extra_phonemes=req.extra_phonemes,
+                phonemizer_profiles=req.phonemizer_profiles)
             return {"out_dir": result.out_dir, "speakers": result.speakers, "dictionaries": result.dictionaries,
                     "phonemes": result.phonemes, "problems": result.problems, "files": result.files,
                     "seconds": result.seconds, "coverage": result.coverage, "recordings": result.recordings,
                     "spec": spec_from_result(result)}
 
         return submit(tk, "dataset_build", work, req.model_dump())
+
+    @app.get("/training/phonemizers", tags=["training"], dependencies=[Depends(auth)])
+    async def training_phonemizers() -> list[dict]:
+        from ..training.phonemizers import PROFILES
+        return list(PROFILES.values())
+
+    @app.post("/training/dataset/prepare/check", tags=["training"], dependencies=[Depends(auth)])
+    async def training_preparation_check(req: RecordingPreparationRequest, tk: Toolkit = Depends(get_tk)) -> dict:
+        from ..training.preparation_check import preparation_check
+        try:
+            return await asyncio.to_thread(preparation_check, tk, req)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post("/training/dataset/prepare", tags=["training"], dependencies=[Depends(auth)])
     async def training_dataset_prepare(req: RecordingPreparationRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:

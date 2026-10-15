@@ -65,6 +65,28 @@ def test_single_language_bank(tmp_path):
     assert lint(bank) == []
 
 
+def test_hhskt_default_and_compatible_dictionaries_reach_every_variance_head(tmp_path):
+    from mvocaltoolkit.training.phonemizers import PROFILES
+    p = PROFILES["ru-hhskt"]
+    phones = ["SP", "AP", *p["vowels"], *p["consonants"]]
+    _export(tmp_path / "aco", "acoustic", "acoustic", phones, {"ru": 0}, dictionaries={"ru": [("да", "d a")]})
+    _export(tmp_path / "var", "variance", "variance", phones, {"ru": 0})
+    result = assemble(VoicebankSpec(name="Hhskt", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "aco"),
+        variance=[str(tmp_path / "var")], phonemizer_profiles={"ru": "ru-hhskt"}, default_phonemizer_profile="ru-hhskt"))
+    bank = tmp_path / "out/Hhskt"
+    assert yaml.safe_load((bank / "character.yaml").read_text())["default_phonemizer"] == p["phonemizer"]
+    for head in (bank, bank / "dsdur", bank / "dspitch", bank / "dsvariance"):
+        assert (head / "dsdict-ru-hhskt.yaml").is_file() and (head / "dsdict-ru.yaml").is_file()
+    assert "phonemizer-report.json" in result.files
+    assert result.problems == []
+    # Later project changes must not reinterpret an already trained alphabet.
+    (tmp_path / "aco/dataset-report.json").write_text(json.dumps({"phonemizer_profiles": {"ru": "ru-hhskt"}}))
+    with pytest.raises(ValueError, match="training snapshot"):
+        assemble(VoicebankSpec(name="Conflict", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "aco"),
+            phonemizer_profiles={"ru": "ru-openutau"}))
+    assert not (tmp_path / "out/Conflict").exists()
+
+
 def test_custom_vocoder_keeps_its_data_and_weights_license(tmp_path):
     _export(tmp_path / "aco", "acoustic", "acoustic", ["AP", "SP", "a"], {"ja": 0}, dictionaries={"ja": [("a", "a")]})
     vocoder = tmp_path / "voc"

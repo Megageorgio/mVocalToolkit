@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "name": "bundled recording preparation",
+  "models": [
+    {
+      "id": "wfl-multi13-v0.0.1",
+      "engine": "wfl_asr",
+      "name": "WFL-ASR multi13 v0.0.1",
+      "author": "m & HHS_kt",
+      "languages": ["de", "el", "en", "es", "fr", "it", "ja", "ko", "nan", "pt", "ru", "yue", "zh"],
+      "tasks": ["segment"],
+      "tags": ["multilingual", "generation-2", "preparation"],
+      "description": "Multilingual phoneme labelling with primary and additional language selection.",
+      "homepage": "https://github.com/Megageorgio/WFL-ASR-Models/releases/tag/Multi13_v0.0.1",
+      "size_hint": "147 MB",
+      "source": {
+        "type": "github_release",
+        "repo": "Megageorgio/WFL-ASR-Models",
+        "tag": "Multi13_v0.0.1",
+        "asset": "wfl_multi13_v0.0.1.zip"
+      }
+    }
+  ]
+}

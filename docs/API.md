@@ -573,6 +573,61 @@ a vowel inventory, one phoneme per group is used with a warning. GAME is the suc
 models are available. `f0_method` also accepts `parselmouth`, `harvest` and `none`. Review estimated notes before
 pitch training. The normal dataset builder rescues matching `.ds` sidecars from wavs/ or ds/, preserving f0/notes.
 
+`GET /training/phonemizers` lists versioned target inventories, vowel lists, preferred profiles, OpenUtau class
+names, dictionary filenames and source revisions. Expanded profiles are ru-hhskt, en-arpa-plus, de-marzipan,
+fr-millefeuille and ko-g2p. Stock profiles cover Russian, English, German, Italian, Spanish and Portuguese.
+These describe supported alphabets, not a promise that every WFL phone has an exact counterpart in every profile.
+
+The same preparation request accepts:
+
+```json
+{"folder":"D:/raw-wav","out_dir":"D:/prepared/wfl-copy","language":"ru",
+ "label_mode":"missing","label_model":"wfl-multi13-v0.0.1","extra_languages":["en","de"],
+ "phonemizer_profiles":{"ru":"ru-hhskt","en":"en-arpa-plus","de":"de-marzipan"},
+ "source_alphabet":"wfl-native","unknown_phonemes":"error","language_prefix":true,
+ "phoneme_mappings":{},"segment":true,"max_length":20,"min_silence":0.25,
+ "edge_silence":0.25,"fade_ms":5,"write_ds":true,"f0_method":"none"}
+```
+
+- `label_mode`: `existing` uses existing timed phoneme labels; `missing` invokes WFL only where labels are
+  absent/unreadable; `replace` ignores all existing labels in the output copy. Originals are unchanged.
+- Primary/additional languages must be declared by the model. Actual numeric IDs come from `langs.txt`,
+  never list position. Additional languages require generation 2. WFL selects languages at phrase level.
+- WFL returns **native language symbols**. `source_alphabet=target` validates existing prepared labels;
+  `wfl-native` converts native output; `wfl-multi13-canonical` first restores native symbols using the bundled
+  multi13-v1 merge table (its SHA-256 is stored beside the profiles). Never apply canonical restoration twice.
+  For another model revision supply explicit mappings where its alphabet differs.
+- Full `language/phone` override keys take precedence over unprefixed keys. Override values are lists;
+  splitting divides duration equally and is reported as approximate. Empty/deleting mappings are forbidden.
+  Unknown symbols block by default. `unknown_phonemes=keep` preserves them with warnings for custom dictionaries.
+  Russian stock conversion folds reduced vowels and reports those losses; hhskt-ru preserves them.
+- Multilingual phones retain language prefixes. Dataset construction creates separate unprefixed dictionaries
+  for those languages, while keeping code-switched phonemes in the recording CSV/DS.
+- `edge_silence=null` preserves edge pauses; 0–10 seconds caps only labelled SP. `fade_ms` is bounded by
+  remaining labelled edge silence, never applied to voiced phones or breaths.
+- `f0_method=preserve` crops an existing single-segment DS curve on its sample grid without invoking a model.
+  Missing/insufficient curves are reported; no replacement curve is invented.
+
+`POST /training/dataset/prepare/check` accepts this same request and checks paths, labels, model-language
+metadata, conversions and inventories without creating output, starting workers or downloading weights.
+It returns `ok`, `files`, `labelled`, `pending_auto_labels`, `phonemes` and coded `problems`. Raw WAV inventories
+can only be checked after WFL inference. Jobs retain original WFL JSON under `original-labels/` and detailed
+per-file mappings, losses, extensions and unknowns in `preparation-report.json`. If unknown WFL phones block a
+job, that report and original labels remain available for review; use a new output folder after correcting it.
+
+Voicebank assembly additionally accepts `phonemizer_profiles` (language -> trained alphabet) and
+`default_phonemizer_profile`. It writes profile-specific dictionaries at the root and beside every variance
+head. For hhskt Russian, both `dsdict-ru-hhskt.yaml` and a stock `dsdict-ru.yaml` remapper target the same trained
+symbols. Stock compatibility is approximate where vowel distinctions differ. `phonemizer-report.json` lists
+missing trained/G2P phones and plugin requirements. Remappers never rename the ONNX vocabulary. hhskt-ru must
+be installed separately in OpenUtau; no DLL is installed by bank assembly. Other profile pairs may have partial
+coverage and need custom mappings/dictionaries. Automated checks use synthetic labels/audio and fake exports;
+real WFL accuracy and OpenUtau playback remain to be checked.
+
+Dataset build accepts the same `phonemizer_profiles` map and freezes it in the dataset report/run spec.
+Exported reports retain it. Bank assembly inherits that snapshot and rejects an explicitly conflicting target
+alphabet, so changing project settings cannot silently reinterpret a model that was already trained.
+
 DiffSinger run `config.options` accepts `backbone` (lynxnet2/lynxnet/wavenet), `dual_timestep`, `stretch`,
 `mix_layer_norm`, `melody_encoder`, `pitch_augmentation`, `time_augmentation`, `prefer_ds`, `hnsep` (vr/world) and
 `tensor_acceleration`. Backbone selection replaces architecture-specific argument dictionaries. `overrides` still

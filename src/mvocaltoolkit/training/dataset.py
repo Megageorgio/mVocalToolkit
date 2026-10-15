@@ -27,6 +27,7 @@ from ..formats import ds_csv
 from ..labels import Label
 from .doctor import inspect_recording
 from .dictionaries import read_entries
+from .phonemizers import profile, SPECIALS
 
 AUDIO = (".wav", ".flac")
 LABELS = (".lab", ".TextGrid", ".textgrid", ".txt", ".json")
@@ -56,6 +57,7 @@ class BuildResult:
     seconds: float = 0.0
     recordings: list[dict[str, Any]] = field(default_factory=list)
     coverage: dict[str, dict[str, int]] = field(default_factory=dict)
+    phonemizer_profiles: dict[str, str] = field(default_factory=dict)
 
 
 def _audio_seconds(path: Path) -> float | None:
@@ -68,10 +70,22 @@ def _audio_seconds(path: Path) -> float | None:
     return None
 
 
+class LabelIndex(dict):
+    """Sidecars with audio-name ambiguity tracked across recording sessions."""
+    def __init__(self):
+        super().__init__()
+        self.ambiguous_audio_stems: set[str] = set()
+
+
 def _label_index(root: Path) -> dict[str, list[Path]]:
     """Label files below the source root by stem: labels often live in a folder of their own (lab/ next to wav/)."""
-    index: dict[str, list[Path]] = {}
+    index = LabelIndex()
+    seen_audio = set()
     for path in root.rglob("*"):
+        if path.is_file() and path.suffix.lower() in AUDIO:
+            if path.stem in seen_audio:
+                index.ambiguous_audio_stems.add(path.stem)
+            seen_audio.add(path.stem)
         if path.is_file() and (path.suffix in LABELS or path.suffix.lower() in (".lab", ".textgrid", ".json", ".ds")):
             index.setdefault(path.stem, []).append(path)
     return index
@@ -81,6 +95,8 @@ def _ds_for(audio: Path, index: dict[str, list[Path]] | None = None) -> Path | N
     adjacent = audio.with_suffix(".ds")
     if adjacent.is_file():
         return adjacent
+    if audio.stem in getattr(index, "ambiguous_audio_stems", set()):
+        return None
     choices = [p for p in (index or {}).get(audio.stem, []) if p.suffix.lower() == ".ds"]
     return choices[0] if len(choices) == 1 else None
 
@@ -105,11 +121,12 @@ def _label_for(audio: Path, csv_rows: dict[str, Label], index: dict[str, list[Pa
 
 
 def _base_label_for(audio: Path, csv_rows: dict[str, Label], index: dict[str, list[Path]] | None = None) -> Label | None:
-    if audio.stem in csv_rows:
+    ambiguous = audio.stem in getattr(index, "ambiguous_audio_stems", set())
+    if audio.stem in csv_rows and (not ambiguous or (audio.parent / "transcriptions.csv").is_file()):
         return csv_rows[audio.stem]
     candidates = [audio.with_suffix(ext) for ext in LABELS]
     for other in (index or {}).get(audio.stem, []):
-        if other.parent != audio.parent and other not in candidates:
+        if not ambiguous and other.parent != audio.parent and other not in candidates:
             candidates.append(other)
     for candidate in candidates:
         ext = candidate.suffix if candidate.suffix in LABELS else candidate.suffix.lower()
@@ -160,11 +177,14 @@ def _stable_choice(names: list[str], count: int) -> list[str]:
 
 
 def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[str, str] | None = None,
-                  validation_files: int = 3, progress: Any = None, extra_phonemes: list[str] | None = None) -> BuildResult:
+                  validation_files: int = 3, progress: Any = None, extra_phonemes: list[str] | None = None,
+                  phonemizer_profiles: dict[str, str] | None = None) -> BuildResult:
     out_dir = Path(out_dir)
     if validation_files < 1:
         raise ValueError("At least one validation file is required")
-    result = BuildResult(out_dir=str(out_dir))
+    for language, identifier in (phonemizer_profiles or {}).items():
+        profile(identifier, language)
+    result = BuildResult(out_dir=str(out_dir), phonemizer_profiles=dict(phonemizer_profiles or {}))
     phonemes_by_lang: dict[str, set[str]] = {}
     speakers: dict[tuple[str, str], dict[str, Any]] = {}
     speaker_languages: dict[str, set[str]] = {}
@@ -279,8 +299,14 @@ def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[s
                                   "role": source.role, "license": source.license, "sha256": digest, **metadata})
         for iv in phones:
             if iv.text not in GLOBAL_PHONEMES:
-                phonemes_by_lang.setdefault(language, set()).add(iv.text)
-                counts_by_lang.setdefault(language, Counter())[iv.text] += 1
+                phone_language, symbol = iv.text.split("/", 1) if "/" in iv.text else (language, iv.text)
+                if not phone_language or "/" in symbol or not symbol:
+                    raise ValueError(f"Invalid language-tagged phoneme: {iv.text}")
+                phonemes_by_lang.setdefault(phone_language, set()).add(symbol)
+                counts_by_lang.setdefault(phone_language, Counter())[symbol] += 1
+        # Even a wholly code-switched recording still belongs to this source;
+        # DiffSinger needs a dictionary for its default dataset language too.
+        phonemes_by_lang.setdefault(language, set())
     for (speaker, language), entry in speakers.items():
         rows = entry.pop("rows", [])
         (Path(entry["raw_data_dir"]) / "transcriptions.csv").write_text(ds_csv.dumps_rows(rows), encoding="utf-8")
@@ -296,8 +322,15 @@ def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[s
         threshold = 600 if entry["role"] == "donor" else 1800
         if entry["seconds"] < threshold:
             result.problems.append({"speaker": speaker, "language": language, "code": "little_data", "severity": "warning", "problem": f"less than {threshold // 60} minutes for this {entry['role']} speaker"})
+    result.phonemizer_profiles = {lang: identifier for lang, identifier in result.phonemizer_profiles.items() if lang in phonemes_by_lang}
     for language, found in phonemes_by_lang.items():
         result.phonemes[language] = sorted(found)
+        if language in result.phonemizer_profiles:
+            selected = profile(result.phonemizer_profiles[language], language)
+            custom = sorted(found - set(selected["vowels"] + selected["consonants"]) - SPECIALS - set(extra_phonemes or []))
+            if custom:
+                result.problems.append({"language": language, "code": "profile_extensions", "severity": "warning",
+                    "problem": "phonemes outside the selected phonemizer alphabet need a custom dictionary/phonemizer", "phonemes": custom})
         if dictionaries and dictionaries.get(language):
             source_dictionary = Path(dictionaries[language])
             snapshot = out_dir / f"dictionary-{language}.txt"
@@ -326,6 +359,7 @@ def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[s
         "speakers": result.speakers, "dictionaries": result.dictionaries, "phonemes": result.phonemes,
         "problems": result.problems, "files": result.files, "seconds": result.seconds,
         "recordings": result.recordings, "coverage": result.coverage,
+        "phonemizer_profiles": result.phonemizer_profiles,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     if progress is not None:
         progress(1.0, "Dataset written")
@@ -362,6 +396,7 @@ def spec_from_result(result: BuildResult, kind: str = "diffsinger_acoustic", pre
         "datasets": [{"raw_data_dir": s["raw_data_dir"], "speaker": s["speaker"], "language": s["language"],
                       "test_prefixes": s["test_prefixes"]} for s in result.speakers],
         "dictionaries": dict(result.dictionaries),
+        "phonemizer_profiles": dict(result.phonemizer_profiles),
         "preset": preset or {"goal": "full"},
         "data_report": str(Path(result.out_dir) / "dataset.json"),
         **extra,

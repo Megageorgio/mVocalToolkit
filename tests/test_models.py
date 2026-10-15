@@ -294,15 +294,17 @@ def test_main_catalog_is_read_at_start_with_fallbacks(tmp_path):
     try:
         cat = Catalog(home, settings, {"sofa", "wfl_asr"})
         cat.load(fetch_main=True)
-        # the main catalog replaces the copy inside the toolkit; models of engines this toolkit lacks are left out
-        assert set(cat.entries) == {"only-in-main"} and cat.sources[0] == str(main)
+        # Main models override the fallback; bundled preparation assets stay
+        # available even when a remote catalog has not added them yet.
+        expected = {"only-in-main", "wfl-multi13-v0.0.1"}
+        assert set(cat.entries) == expected and cat.sources[0] == str(main)
         main.unlink()  # offline: the last copy read
         cat.load(fetch_main=True)
-        assert set(cat.entries) == {"only-in-main"} and "copy of" in cat.sources[0]
+        assert set(cat.entries) == expected and "copy of" in cat.sources[0]
         # a newer format is not read: the last good copy is kept
         main.write_text(json.dumps({"format": 2, "models": []}), encoding="utf-8")
         cat.load(fetch_main=True)
-        assert set(cat.entries) == {"only-in-main"}
+        assert set(cat.entries) == expected
         (home.dir("catalogs/remote") / "main.json").unlink()
         cat.load(fetch_main=True)  # nothing usable: the catalog inside the toolkit
         assert "sofa-ru-hhskt-v0.0.1" in cat.entries

@@ -21,6 +21,16 @@ def slice_audio(audio: str, slices: list[dict]) -> dict:
                 raise ValueError(f"Output already exists: {target}")
             source.seek(start)
             data = source.read(end - start, dtype="float64", always_2d=True)
+            # Requested by the preparation planner only within labelled silence.
+            import numpy as np
+            for key, tail in (("fade_in", False), ("fade_out", True)):
+                frames = min(len(data) // 2, max(0, round(float(item.get(key, 0)) * source.samplerate)))
+                if frames:
+                    ramp = np.linspace(0.0, 1.0, frames)[:, None]
+                    if tail:
+                        data[-frames:] *= ramp[::-1]
+                    else:
+                        data[:frames] *= ramp
             subtype = source.subtype if source.subtype in {"PCM_16", "PCM_24", "PCM_32", "FLOAT", "DOUBLE"} else "PCM_24"
             sf.write(target, data, source.samplerate, subtype=subtype)
             files.append(str(target))

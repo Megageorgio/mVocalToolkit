@@ -255,9 +255,10 @@ class Catalog:
         sources: list[str] = []
         main = self._main(fetch_main or refresh_remote)
         if main is not None:
-            training_assets = BUILTIN_DIR / "training.json"
-            if training_assets.is_file():
-                self._merge(entries, json.loads(training_assets.read_text(encoding="utf-8")), str(training_assets), datasets)
+            for filename in ("training.json", "preparation.json"):
+                assets = BUILTIN_DIR / filename
+                if assets.is_file():
+                    self._merge(entries, json.loads(assets.read_text(encoding="utf-8")), str(assets), datasets)
             self._merge(entries, main[0], main[1], datasets)
             sources.append(main[1])
             builtin: list[Path] = []

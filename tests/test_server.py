@@ -44,6 +44,23 @@ def test_health_and_engines(tmp_path):
         assert "align" in info["methods"]
 
 
+def test_preparation_profiles_and_preflight_do_not_start_workers(tmp_path):
+    audio = make_wav(tmp_path / "corpus" / "sample.wav")
+    audio.with_suffix(".lab").write_text("0 10000000 ax\n")
+    with _client(tmp_path) as client:
+        profiles = client.get("/training/phonemizers").json()
+        assert next(p for p in profiles if p["id"] == "ru-hhskt")["dictionary"] == "dsdict-ru-hhskt.yaml"
+        response = client.post("/training/dataset/prepare/check", json={"folder": str(audio.parent),
+            "out_dir": str(tmp_path / "prepared"), "language": "ru", "phonemizer_profiles": {"ru": "ru-hhskt"}})
+        assert response.status_code == 200 and response.json()["ok"]
+        assert response.json()["phonemes"] == {"ax": 1}
+        assert not (tmp_path / "prepared").exists()
+        assert client.get("/jobs").json() == []
+        response = client.post("/training/dataset/prepare/check", json={"folder": str(audio.parent),
+            "out_dir": str(audio.parent / "bad"), "language": "ru"})
+        assert response.status_code == 400
+
+
 def test_align_folder_with_transcription(tmp_path):
     corpus = tmp_path / "corpus"
     make_wav(corpus / "a.wav")

@@ -27,6 +27,8 @@ from typing import Any
 
 import yaml
 
+from .phonemizers import PROFILES, profile, compatibility_aliases
+
 STANDARD_VOCODER = "pc_nsf_hifigan_44.1k_hop512_128bin_2025.02"
 PHONEMIZER = "OpenUtau.Core.DiffSinger.DiffSingerPhonemizer"
 # languages whose built-in OpenUtau phonemizers take language-tagged phonemes themselves
@@ -84,6 +86,8 @@ class VoicebankSpec:
     # phoneme -> type (vowel, stop, ...) overrides for the dsdict
     phoneme_types: dict[str, str] = field(default_factory=dict)
     vowels: dict[str, list[str]] = field(default_factory=dict)  # language -> vowels
+    phonemizer_profiles: dict[str, str] = field(default_factory=dict)
+    default_phonemizer_profile: str = ""
     # shown in readme.txt
     notes: str = ""
     licenses: list[str] = field(default_factory=list)
@@ -120,6 +124,25 @@ def _phoneme_type(phoneme: str, language: str | None, spec: VoicebankSpec) -> st
         return spec.phoneme_types[short]
     if language and short in spec.vowels.get(language, []):
         return "vowel"
+    language = phoneme.split("/", 1)[0] if "/" in phoneme else language
+    selected = spec.phonemizer_profiles.get(language or "")
+    if selected:
+        if short in profile(selected)["vowels"]:
+            return "vowel"
+        if short in profile(selected)["consonants"]:
+            if short == "ch" and language == "de" or short == "j" and language == "fr":
+                return "fricative"
+            if short in {"l", "ly", "r", "ry", "rh", "rr", "rx", "L", "LL"}:
+                return "liquid"
+            if short in {"w", "y", "j"}:
+                return "semivowel"
+            if short in {"m", "my", "n", "ny", "ng", "gn", "nh", "N", "NG", "M", "JJ"}:
+                return "nasal"
+            if short in {"ch", "ts", "jh", "dz", "tS", "dZ", "tSS", "dZZ", "tsh", "dsh"}:
+                return "affricate"
+            if short.startswith(("f", "v", "s", "z", "h")) or short in {"dh", "th", "ch", "xh", "S", "Z", "X"}:
+                return "fricative"
+            return "stop"
     return TYPE_BY_FIRST.get(short[:1], "stop")
 
 
@@ -163,7 +186,7 @@ def write_dsdicts(target: Path, dictionaries: dict[str, Path], phonemes: list[st
     globals_ = [p for p in extra if p not in ("AP", "SP")]
     if not multilingual:
         lang = next(iter(dictionaries), None)
-        symbols = [(p, _phoneme_type(p, lang, spec)) for p in globals_]
+        symbols = [(p, _phoneme_type(p, lang, spec)) for p in phonemes if p not in {"AP", "SP"}]
         entries = [(p, [p]) for p in globals_]
         for lang_code, path in dictionaries.items():
             for grapheme, phones in _read_dictionary(path):
@@ -207,8 +230,62 @@ def write_dsdicts(target: Path, dictionaries: dict[str, Path], phonemes: list[st
     return written
 
 
+def write_profile_dictionaries(target: Path, dictionaries: dict[str, Path], phonemes: list[str],
+                               spec: VoicebankSpec) -> tuple[list[Path], list[dict]]:
+    """Make G2P remappers to the trained inventory, never rename ONNX symbols."""
+    made, report, by_filename = [], [], {}
+    symbols = [(p, _phoneme_type(p, p.split("/", 1)[0] if "/" in p else next(iter(spec.phonemizer_profiles), None), spec))
+               for p in phonemes if p not in {"AP", "SP"}]
+    inventory = set(phonemes)
+    for lang, target_id in spec.phonemizer_profiles.items():
+        trained = profile(target_id, lang)
+        def model_symbol(phone):
+            return f"{lang}/{phone}" if f"{lang}/{phone}" in inventory else phone if phone in inventory else None
+        entries = [(word, [p if "/" in p else model_symbol(p) or p for p in phones])
+                   for word, phones in _read_dictionary(dictionaries[lang])] if lang in dictionaries else []
+        unsupported_entries = [word for word, phones in entries if any(p not in inventory for p in phones)]
+        # A malformed/custom word entry must not generate unsupported symbols.
+        entries = [(word, phones) for word, phones in entries if all(p in inventory for p in phones)]
+        if unsupported_entries:
+            report.append(dict(profile=target_id, language=lang, dictionary=trained["dictionary"],
+                               problem="Dictionary entries use untrained symbols", entries=unsupported_entries))
+        candidates = sorted((p for p in PROFILES.values() if p["language"] == lang), key=lambda p: p["id"] != target_id)
+        for candidate in candidates:
+            aliases, missing = compatibility_aliases(candidate["id"], target_id)
+            replacements = {}
+            for source, phone in aliases.items():
+                symbol = model_symbol(phone)
+                if symbol:
+                    replacements[source] = symbol
+                else:
+                    missing.append(source)
+            filename = candidate["dictionary"]
+            if filename in by_filename:
+                previous, previous_entries = by_filename[filename]
+                conflicts = [s for s, d in replacements.items() if s in previous and previous[s] != d]
+                if conflicts:
+                    report.append(dict(profile=candidate["id"], dictionary=filename, problem="Shares a dictionary filename with a conflicting alphabet", phonemes=conflicts))
+                    continue
+                replacements = {**replacements, **previous}
+            by_filename[filename] = (replacements, entries)
+            report.append(dict(profile=candidate["id"], trained_profile=target_id, language=lang,
+                dictionary=filename, missing_phonemes=sorted(set(missing)), complete=not missing,
+                external_plugin=candidate["external_plugin"], source=candidate["source"],
+                reduced_vowel_folding=lang == "ru" and candidate["id"] != target_id))
+    for filename, (replacements, entries) in by_filename.items():
+        path = target / filename
+        _write_dsdict(path, symbols, entries, list(replacements.items()))
+        made.append(path)
+    (target / "phonemizer-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    return made, report
+
+
 def assemble(spec: VoicebankSpec) -> VoicebankResult:
     problems: list[dict[str, str]] = []
+    for lang, identifier in spec.phonemizer_profiles.items():
+        profile(identifier, lang)
+    if spec.default_phonemizer_profile and spec.default_phonemizer_profile not in spec.phonemizer_profiles.values():
+        raise ValueError("Default phonemizer must be one of the bank's trained alphabet profiles")
     name = spec.name.strip()
     if (not name or name in {".", ".."} or name.endswith((".", " "))
             or re.search(r'[\\/:*?"<>|\x00-\x1f]', name)
@@ -231,6 +308,17 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
         source_report = model_dir / "dataset-report.json"
         if source_report.is_file():
             report = json.loads(source_report.read_text(encoding="utf-8"))
+            saved_profiles = report.get("phonemizer_profiles") or {}
+            if model_dir == acoustic.dir and saved_profiles:
+                conflicts = [lang for lang, identifier in saved_profiles.items()
+                             if lang in spec.phonemizer_profiles and spec.phonemizer_profiles[lang] != identifier]
+                if conflicts:
+                    raise ValueError("Requested phonemizer alphabet differs from the acoustic training snapshot: " + ", ".join(conflicts))
+                spec.phonemizer_profiles = {**spec.phonemizer_profiles, **saved_profiles}
+                for lang, identifier in spec.phonemizer_profiles.items():
+                    profile(identifier, lang)
+                if not spec.default_phonemizer_profile:
+                    spec.default_phonemizer_profile = next(iter(saved_profiles.values()))
             data_reports.append({"export": str(model_dir), "speakers": report.get("speakers", []), "files": report.get("files", 0), "seconds": report.get("seconds", 0)})
             if report.get("license"):
                 licenses.append(str(report["license"]))
@@ -366,7 +454,7 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
     (bank / "character.txt").write_text(f"name={spec.name}\n", encoding="utf-8")
     character: dict[str, Any] = {
         "singer_type": "diffsinger",
-        "default_phonemizer": PHONEMIZER,
+        "default_phonemizer": profile(spec.default_phonemizer_profile)["phonemizer"] if spec.default_phonemizer_profile else PHONEMIZER,
         "text_file_encoding": "utf-8",
         "image": None, "portrait": None, "portrait_opacity": 0.45,
     }
@@ -378,7 +466,8 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
     dictionaries = acoustic.dictionaries()
     for language in sorted(set(languages_map) - set(dictionaries)):
         problems.append({"file": str(acoustic.dir), "problem": f"no dictionary-{language}.txt for model language {language}"})
-    if dictionaries and spec.include_dictionary:
+    phonemizer_report = []
+    if (dictionaries or spec.phonemizer_profiles) and spec.include_dictionary:
         used: set[str] = set()
         for lang, path in dictionaries.items():
             for _, phones in _read_dictionary(path):
@@ -386,6 +475,12 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
                 used.update(phones)
         extra = [p for p in phonemes_list if p not in ("AP", "SP") and p not in used]
         made = write_dsdicts(bank, dictionaries, phonemes_list, extra, spec, multilingual)
+        if spec.phonemizer_profiles:
+            profile_files, phonemizer_report = write_profile_dictionaries(bank, dictionaries, phonemes_list, spec)
+            made = list(dict.fromkeys([*made, *profile_files]))
+            for entry in phonemizer_report:
+                if entry.get("missing_phonemes") or entry.get("problem"):
+                    problems.append({"file": entry["dictionary"], "problem": entry.get("problem") or "G2P coverage incomplete: " + " ".join(entry["missing_phonemes"])})
         for sub_name in ("dsdur", "dspitch", "dsvariance"):
             sub = bank / sub_name
             if sub.exists():
@@ -402,6 +497,12 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
     if speakers:
         lines.append("Speakers: " + ", ".join(speakers))
     lines.append("Vocoder: " + str(main_cfg.get("vocoder")))
+    if spec.phonemizer_profiles:
+        lines += ["", "Phonemizer alphabets: " + ", ".join(f"{lang}: {identifier}" for lang, identifier in spec.phonemizer_profiles.items()),
+                  "See phonemizer-report.json for dictionary coverage and compatibility."]
+        if "ru-hhskt" in spec.phonemizer_profiles.values():
+            lines += ["Install the hhskt-ru OpenUtau phonemizer plugin: https://github.com/Megageorgio/hhskt_ru_phonemizer",
+                      "Stock Russian compatibility folds vowel allophones; hhskt-ru is preferred."]
     if data_reports:
         lines += ["", "Training data:"]
         for data in data_reports:
@@ -426,6 +527,7 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
         "vocoder": main_cfg.get("vocoder"),
         "models": models, "speakers": speakers, "languages": sorted(languages_map),
         "licenses": licenses, "credits": spec.credits, "notes": spec.notes, "training_data": data_reports,
+        "phonemizer_profiles": spec.phonemizer_profiles, "phonemizers": phonemizer_report,
         "problems": problems,
     }
     (bank / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
