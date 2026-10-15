@@ -522,6 +522,8 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         """Queues a training run. One run trains at a time; the trainer is a process of its own that keeps running
         when the server stops. Progress: GET /training/runs/{id} (numbers), /events (everything), WS /events."""
         from ..training.recipes import FAMILIES, snapshot as recipe_snapshot
+        if spec.kind == "refiner_boundary" or spec.engine == "refiner_train":
+            raise HTTPException(400, "Boundary-refiner training is excluded; use WFL or an aligner for preparation")
         if spec.kind in FAMILIES:
             engine = FAMILIES[spec.kind]["engine"]
             if spec.device == "mps" or spec.engine and spec.engine != engine:
@@ -1045,6 +1047,11 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
 
     @app.post("/training/voicebank/render", tags=["training"], dependencies=[Depends(auth)])
     async def onnx_bank_render(req: dict, tk: Toolkit = Depends(get_tk)):
+        from ..training.render_resources import validate_render_resources
+        try:
+            validate_render_resources(req)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         async def work(job):
             params = {**req, "out_dir": str(tk.home.outputs / job.id)}
             async with tk.training.inference_slot():

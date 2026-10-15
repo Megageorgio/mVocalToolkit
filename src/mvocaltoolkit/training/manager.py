@@ -178,6 +178,8 @@ class TrainingManager:
         return self.runs.get(run_id)
 
     def start(self, spec: RunSpec) -> Run:
+        if spec.kind == "refiner_boundary" or spec.engine == "refiner_train":
+            raise ValueError("Boundary-refiner training is excluded")
         self.load()
         run_id = uuid.uuid4().hex[:10]
         run_dir = Path(spec.dir).expanduser().resolve() if spec.dir else self.root / run_id

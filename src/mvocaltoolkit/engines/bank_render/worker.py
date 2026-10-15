@@ -8,6 +8,7 @@ import soundfile as sf
 import yaml
 import onnxruntime as ort
 import mvt_engine as rt
+from mvt_mel import compatibility_errors
 
 
 def local(root, ref):
@@ -26,9 +27,9 @@ def vocab(folder, cfg, key):
     return {s: i for i, s in enumerate(data)} if isinstance(data, list) else data
 
 
-def session(path):
+def session(path, threads=2):
     options = ort.SessionOptions()
-    options.intra_op_num_threads = 2
+    options.intra_op_num_threads = threads
     return ort.InferenceSession(str(path), sess_options=options, providers=["CPUExecutionProvider"])
 
 
@@ -121,7 +122,22 @@ def tokens_for(phones, folder, cfg, language):
 @rt.method()
 def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker: str | None = None,
            language: str = "ru", steps: int = 20, depth: float = 1, predict: list[str] | None = None,
-           gender: float = 0, velocity: float = 1, expression: float = 1, inputs: dict | None = None) -> dict:
+           gender: float = 0, velocity: float = 1, expression: float = 1, inputs: dict | None = None,
+           cpu_threads: int = 2, cache_models: bool = True) -> dict:
+    if type(cpu_threads) is not int or not 1 <= cpu_threads <= 32 or type(cache_models) is not bool:
+        raise ValueError("cpu_threads must be an integer from 1 to 32 and cache_models a boolean")
+    graphs = {}
+    loads = hits = 0
+    def load_graph(path):
+        nonlocal loads, hits
+        if cache_models and path in graphs:
+            hits += 1
+            return graphs[path]
+        loaded = session(path, cpu_threads)
+        loads += 1
+        if cache_models:
+            graphs[path] = loaded
+        return loaded
     root, out = Path(bank).resolve(), Path(out_dir).resolve()
     if root == out or root in out.parents or out in root.parents:
         raise ValueError("Render output and bank must not overlap")
@@ -130,13 +146,16 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
     if not 1 <= steps <= 1000 or not 0 < depth <= 1 or velocity <= 0:
         raise ValueError("Invalid sampling steps, depth or velocity")
     cfg = config(root)
-    acoustic = session(local(root, cfg["acoustic"]))
+    acoustic_path = local(root, cfg["acoustic"])
     vocoder_root = Path(vocoder).resolve() if vocoder else root / "dsvocoder"
     vcfg_path = vocoder_root / "vocoder.yaml"
     if not vcfg_path.is_file():
         raise ValueError("Choose a local ONNX vocoder folder (vocoder.yaml); a training PTH is not an ONNX vocoder")
     vcfg = yaml.safe_load(vcfg_path.read_text(encoding="utf-8")) or {}
-    voc = session(local(vocoder_root, vcfg.get("model", "vocoder.onnx")))
+    issues = compatibility_errors(cfg, vcfg)
+    if issues:
+        raise ValueError("Incompatible vocoder: " + "; ".join(issues))
+    vocoder_path = local(vocoder_root, vcfg.get("model", "vocoder.onnx"))
     rate = int(cfg.get("sample_rate", 44100))
     hop = int(cfg.get("hop_size", 512))
     if int(vcfg.get("sample_rate", rate)) != rate or int(vcfg.get("hop_size", hop)) != hop:
@@ -148,6 +167,8 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
     predicted = set(predict or [])
     if predicted - {"dur", "pitch", "variance"}:
         raise ValueError("Supported bank predictions: dur, pitch, variance")
+    acoustic = load_graph(acoustic_path)
+    voc = load_graph(vocoder_path)
     chunks, report = [], []
     for index, segment in enumerate(segments):
         rt.progress(index / len(segments), "Rendering bank ONNX graphs", stage="bank_render")
@@ -190,12 +211,12 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
             values["word_dur"] = np.array([[durations[a:b].sum() for a, b in zip(positions, positions[1:])]], np.int64)
             starts = np.r_[0, np.cumsum(durations)]
             values["ph_midi"] = np.array([[round(float(base_pitch[min(count - 1, int((a + b) / 2))])) for a, b in zip(starts, starts[1:])]], np.int64)
-            values.update(run_graph(session(local(duration_folder, sub["linguistic"])), values))
+            values.update(run_graph(load_graph(local(duration_folder, sub["linguistic"])), values))
             spk = embedding(duration_folder, sub, speaker, len(phones))
             if spk is not None:
                 values["spk_embed"] = spk
             values.update(inputs or {})
-            raw = next(iter(run_graph(session(local(duration_folder, sub["dur"])), values).values())).reshape(-1)
+            raw = next(iter(run_graph(load_graph(local(duration_folder, sub["dur"])), values).values())).reshape(-1)
             if len(raw) != len(phones) or np.any(raw < 0):
                 raise ValueError("Invalid predicted durations")
             # Keep word/note anchors while distributing each word across phones.
@@ -227,7 +248,7 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
             positions = np.r_[0, np.cumsum(groups)]
             values["word_div"] = np.array([groups], np.int64)
             values["word_dur"] = np.array([[durations[a:b].sum() for a, b in zip(positions, positions[1:])]], np.int64)
-            linguistic = run_graph(session(local(folder, sub["linguistic"])), values)
+            linguistic = run_graph(load_graph(local(folder, sub["linguistic"])), values)
             values.update(linguistic)
             spk = embedding(folder, sub, speaker, count)
             if spk is not None:
@@ -241,7 +262,7 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
                 output_keys = [key for key in ("energy", "breathiness", "voicing", "tension") if sub.get("predict_" + key)]
                 values["retake"] = np.ones((1, count, len(output_keys)), bool)
             values.update(inputs or {})
-            output = run_graph(session(local(folder, sub[component])), values)
+            output = run_graph(load_graph(local(folder, sub[component])), values)
             if component == "pitch":
                 pitch = next(iter(output.values()))
                 values["pitch"] = pitch
@@ -285,8 +306,9 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
     out.mkdir(parents=True, exist_ok=True)
     path = out / "bank-preview.wav"
     sf.write(path, audio, rate, subtype="FLOAT")
-    (out / "render-report.json").write_text(json.dumps(dict(bank=str(root), ds=ds, sample_rate=rate, segments=report), indent=1), encoding="utf-8")
-    return dict(files=[str(path)], out_dir=str(out), sample_rate=rate, seconds=len(audio) / rate)
+    resources = dict(cpu_threads=cpu_threads, cache_models=cache_models, session_loads=loads, session_reuses=hits)
+    (out / "render-report.json").write_text(json.dumps(dict(bank=str(root), ds=ds, sample_rate=rate, segments=report, resources=resources), indent=1), encoding="utf-8")
+    return dict(files=[str(path)], out_dir=str(out), sample_rate=rate, seconds=len(audio) / rate, resources=resources)
 
 
 if __name__ == "__main__":

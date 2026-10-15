@@ -16,6 +16,7 @@ from onnx import helper, TensorProto, numpy_helper
 
 
 def load_worker(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1] / "src/mvocaltoolkit/engines/_runtime"))
     runtime = SimpleNamespace(method=lambda: lambda f: f, progress=lambda *a, **k: None)
     monkeypatch.setitem(sys.modules, "mvt_engine", runtime)
     file = Path(__file__).parents[1] / "src/mvocaltoolkit/engines/bank_render/worker.py"
@@ -79,6 +80,37 @@ def test_actual_onnx_sessions_render_a_synthetic_bank_and_reject_unknown_phones(
     generated=worker.render(str(bank),phrase["path"],str(tmp_path/"generated-render"))
     samples,rate=sf.read(generated["files"][0])
     assert abs(len(samples)/rate-phrase["seconds"])<.011
+    ds.write_text(json.dumps([dict(ph_seq="a a", ph_dur=".05 .05", ph_num="2", note_seq="C4", note_dur=".1")] * 2))
+    original_session = worker.session
+    session_calls = []
+    def measured_session(path, threads=2):
+        session_calls.append((path, threads))
+        return original_session(path, threads)
+    monkeypatch.setattr(worker, "session", measured_session)
+    cached = worker.render(str(bank), str(ds), str(tmp_path / "cached"), cpu_threads=1,
+                           predict=["dur", "pitch", "variance"] if heads else None)
+    cached_calls = len(session_calls)
+    assert cached_calls == (8 if heads else 2)
+    assert all(threads == 1 for _, threads in session_calls)
+    assert cached["resources"]["session_reuses"] == (6 if heads else 0)
+    session_calls.clear()
+    uncached = worker.render(str(bank), str(ds), str(tmp_path / "uncached"), cache_models=False,
+                             predict=["dur", "pitch", "variance"] if heads else None)
+    assert len(session_calls) == (14 if heads else 2)
+    assert uncached["resources"]["session_reuses"] == 0
+    assert np.array_equal(sf.read(cached["files"][0])[0], sf.read(uncached["files"][0])[0])
+    main_cfg = yaml.safe_load((bank / "dsconfig.yaml").read_text())
+    main_cfg["num_mel_bins"] = 128
+    (bank / "dsconfig.yaml").write_text(yaml.safe_dump(main_cfg))
+    vcfg = yaml.safe_load((voc / "vocoder.yaml").read_text())
+    vcfg["num_mel_bins"] = 80
+    (voc / "vocoder.yaml").write_text(yaml.safe_dump(vcfg))
+    session_calls.clear()
+    with pytest.raises(ValueError, match="num_mel_bins differ"):
+        worker.render(str(bank), str(ds), str(tmp_path / "mismatched-vocoder"))
+    assert session_calls == [] and not (tmp_path / "mismatched-vocoder").exists()
+    vcfg["num_mel_bins"] = 128
+    (voc / "vocoder.yaml").write_text(yaml.safe_dump(vcfg))
     ds.write_text(json.dumps([dict(ph_seq="not-trained", ph_dur=".1", note_seq="C4", note_dur=".1")]))
     with pytest.raises(ValueError, match="Untrained phoneme"):
         worker.render(str(bank), str(ds), str(tmp_path / "invalid"))

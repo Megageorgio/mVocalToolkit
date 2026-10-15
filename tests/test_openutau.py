@@ -104,6 +104,37 @@ def test_custom_vocoder_keeps_its_data_and_weights_license(tmp_path):
     assert any(item["files"] == 5 for item in report["training_data"])
 
 
+def test_custom_vocoder_uses_yaml_selection_and_reports_mel_mismatch(tmp_path):
+    _export(tmp_path / "aco", "acoustic", "acoustic", ["AP", "SP", "a"], {"ja":0}, dictionaries={"ja":[("a","a")]})
+    aco_yaml = tmp_path / "aco/dsconfig.yaml"
+    cfg = yaml.safe_load(aco_yaml.read_text())
+    cfg.update(num_mel_bins=128, mel_scale="slaney", fft_size=2048)
+    aco_yaml.write_text(yaml.safe_dump(cfg))
+    vocoder = tmp_path / "voc"
+    (vocoder / "graphs").mkdir(parents=True)
+    (vocoder / "wrong.onnx").write_bytes(b"unselected")
+    (vocoder / "graphs/chosen.onnx").write_bytes(b"selected")
+    (vocoder / "vocoder.yaml").write_text(yaml.safe_dump(dict(model="graphs/chosen.onnx", num_mel_bins=80, mel_scale="htk", fft_size=1024)))
+    result = assemble(VoicebankSpec(name="Custom", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "aco"), vocoder=str(vocoder)))
+    bank = tmp_path / "out/Custom"
+    assert (bank / "dsvocoder/graphs/chosen.onnx").read_bytes() == b"selected"
+    assert not (bank / "dsvocoder/wrong.onnx").exists()
+    assert yaml.safe_load((bank / "dsvocoder/vocoder.yaml").read_text())["model"] == "graphs/chosen.onnx"
+    assert all(any(key in p["problem"] for p in result.problems) for key in ("num_mel_bins", "mel_scale", "fft_size"))
+
+
+def test_invalid_vocoder_reference_is_rejected_before_writing_a_bank(tmp_path):
+    _export(tmp_path / "aco", "acoustic", "acoustic", ["AP", "SP", "a"], {"ja":0})
+    vocoder = tmp_path / "voc"
+    vocoder.mkdir()
+    (tmp_path / "outside.onnx").write_bytes(b"original")
+    (vocoder / "vocoder.yaml").write_text("model: ../outside.onnx\n")
+    with pytest.raises(ValueError, match="inside its folder"):
+        assemble(VoicebankSpec(name="Custom", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "aco"), vocoder=str(vocoder)))
+    assert not (tmp_path / "out").exists()
+    assert (tmp_path / "outside.onnx").read_bytes() == b"original"
+
+
 def test_multilingual_speakers_and_linter(tmp_path):
     phonemes = ["AP", "SP", "en/a", "en/k", "xx/a", "xx/k", "xx/n"]
     langs = {"en": 0, "xx": 1}

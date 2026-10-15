@@ -13,6 +13,21 @@ def request(tmp_path, **options):
         sources=[dict(folder=str(source), speaker="singer", language="ru")], **options)
 
 
+def test_legacy_boundary_refinement_is_removed_from_bank_workflows_without_mutating_input(tmp_path):
+    prep = dict(refine=dict(model="old-refiner"), segment=False)
+    pipeline = dict(alignment=dict(model="aligner", refine=dict(model="old-refiner")))
+    req = request(tmp_path, preparation=prep, pipeline=pipeline)
+    assert req.preparation == {"segment": False}
+    assert req.pipeline == {"alignment": {"model": "aligner"}}
+    assert prep["refine"] == {"model": "old-refiner"} and "refine" in pipeline["alignment"]
+
+
+@pytest.mark.parametrize("settings", [dict(cpu_threads=0), dict(cpu_threads=True), dict(cpu_threads=33), dict(cache_models="yes")])
+def test_render_resource_settings_fail_preflight_without_models(tmp_path, settings):
+    with pytest.raises(ValueError):
+        check_workflow(request(tmp_path, render_options=settings))
+
+
 def test_plan_includes_optional_stages_in_execution_order_without_creating_outputs(tmp_path):
     req = request(tmp_path, prototype_steps=9, review_before_training=True,
         vocoder_training=dict(accept_license=True, steps=100),

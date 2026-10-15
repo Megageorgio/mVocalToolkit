@@ -14,7 +14,6 @@ def describe_workflow(req, overlays):
         if req.prepare:
             actions.append("labels")
             if req.preparation.get("segment", True): actions.append("segmentation")
-            if req.preparation.get("refine"): actions.append("refinement")
             if req.preparation.get("f0_method", "auto") != "none": actions.append("f0")
             if req.preparation.get("estimate_notes", bool(overlays.get("variance", {}).get("predict_pitch"))):
                 actions.append("notes")

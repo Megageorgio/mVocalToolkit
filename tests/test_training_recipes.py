@@ -112,8 +112,11 @@ def test_recipe_api_derives_engine_and_never_installs_during_preflight(tmp_path,
     from mvocaltoolkit.toolkit import Toolkit
     from mvocaltoolkit.settings import Home,Settings
     from mvocaltoolkit.server.app import create_app
-    from mvocaltoolkit.training.runs import RunInfo
+    from mvocaltoolkit.training.runs import RunInfo, RunSpec
     tk=Toolkit(Home(tmp_path/"home"),Settings(catalog_url=""))
+    with pytest.raises(ValueError, match="excluded"):
+        tk.training.start(RunSpec(kind="refiner_boundary", dir=str(tmp_path/"must-not-exist")))
+    assert not (tmp_path/"must-not-exist").exists()
     config={"sources":sources(tmp_path)}
     async def forbidden(*args,**kwargs):raise AssertionError("Preflight tried to install an engine")
     monkeypatch.setattr(tk.engines,"call",forbidden)
@@ -123,7 +126,14 @@ def test_recipe_api_derives_engine_and_never_installs_during_preflight(tmp_path,
         return SimpleNamespace(info=RunInfo(id="example",spec=spec,dir=str(tmp_path/"run")))
     monkeypatch.setattr(tk.training,"start",start)
     with TestClient(create_app(tk)) as client:
-        assert len(client.get("/training/recipes").json())==8
+        recipes = client.get("/training/recipes").json()
+        assert len(recipes) == 7 and "refiner_boundary" not in recipes
+        assert client.post("/training/recipes/refiner_boundary/check", json=config).status_code == 400
+        assert client.post("/training/runs", json={"kind":"refiner_boundary","config":config}).status_code == 400
+        assert not queued
+        assert client.post("/training/voicebank/render", json={"cpu_threads":0}).status_code == 400
+        assert client.post("/training/voicebank/render", json={"cache_models":"yes"}).status_code == 400
+        assert client.get("/jobs").json() == []
         assert client.post("/training/recipes/tifa_aligner/check",json=config).status_code==200
         response=client.post("/training/runs",json={"kind":"tifa_aligner","device":"cpu","config":config})
         assert response.status_code==200,response.text

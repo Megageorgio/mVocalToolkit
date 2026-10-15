@@ -314,6 +314,28 @@ def build_overlay(kind: str, config: dict[str, Any]) -> dict[str, Any]:
     overrides = config.get("overrides") or {}
     if overrides:
         _deep_update(overlay, overrides)
+    # Validate the effective values, including native configuration imports.
+    for key, lower, upper, default in (("ds_workers", 0, 64, 0), ("accumulate_grad_batches", 1, 1024, 1),
+                                       ("num_ckpt_keep", -1, 1000, 5), ("permanent_ckpt_interval", 0, 10_000_000, 0)):
+        value = overlay.get(key, default)
+        if type(value) is not int or not lower <= value <= upper:
+            raise ValueError(f"{key} must be a whole number between {lower} and {upper}")
+    interval = overlay.get("permanent_ckpt_interval", 0)
+    if 0 < interval < 10:
+        raise ValueError("permanent_ckpt_interval must be 0 (disabled) or at least 10")
+    if not isinstance(overlay["binarization_args"], dict):
+        raise ValueError("binarization_args must be an object")
+    workers = overlay["binarization_args"].get("num_workers", 0)
+    if type(workers) is not int or not 0 <= workers <= 64:
+        raise ValueError("binarization_args.num_workers must be a whole number between 0 and 64")
+    if overlay["ds_workers"] == 0:
+        overlay["dataloader_prefetch_factor"] = None
+    elif overlay.get("dataloader_prefetch_factor") is None:
+        overlay["dataloader_prefetch_factor"] = 2
+    if device == "cpu":
+        overlay["pl_trainer_precision"] = "32"
+    if str(overlay.get("pl_trainer_precision")) not in {"16", "32", "64", "bf16", "16-mixed", "bf16-mixed", "16-true", "bf16-true", "32-true", "64-true"}:
+        raise ValueError("Unsupported pl_trainer_precision; choose 16-mixed, bf16-mixed or 32")
     for key in ("max_updates", "val_check_interval", "max_batch_frames", "max_batch_size"):
         if isinstance(overlay.get(key), bool) or not isinstance(overlay.get(key), int) or overlay[key] < 1:
             raise ValueError(f"{key} must be a positive integer")

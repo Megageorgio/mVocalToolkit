@@ -5,6 +5,29 @@ from mvocaltoolkit.training.diffsinger import build_overlay, resolve_assets
 BASE = {"datasets": [{"raw_data_dir": "raw", "speaker": "s", "language": "xx"}], "dictionaries": {"xx": "dict"}, "preset": {"goal": "check"}}
 
 
+def test_effective_compute_controls_preserve_binarization_options_and_force_cpu_fp32():
+    options = dict(ds_workers=3, accumulate_grad_batches=4, num_ckpt_keep=2, permanent_ckpt_interval=0,
+                   pl_trainer_precision="bf16-mixed", binarization_args=dict(num_workers=2))
+    gpu = build_overlay("diffsinger_acoustic", {**BASE, "overrides": options})
+    assert gpu["ds_workers"] == 3 and gpu["dataloader_prefetch_factor"] == 2
+    assert gpu["accumulate_grad_batches"] == 4 and gpu["pl_trainer_precision"] == "bf16-mixed"
+    assert gpu["num_ckpt_keep"] == 2 and gpu["permanent_ckpt_interval"] == 0
+    assert gpu["binarization_args"]["num_workers"] == 2 and not gpu["binarization_args"]["prefer_ds"]
+    cpu = build_overlay("diffsinger_variance", {**BASE, "device": "cpu", "overrides": {**options, "ds_workers": 0}})
+    assert cpu["pl_trainer_precision"] == "32" and cpu["dataloader_prefetch_factor"] is None
+    assert options["pl_trainer_precision"] == "bf16-mixed"
+    for count in (-1, 0):
+        assert build_overlay("diffsinger_acoustic", {**BASE, "overrides":{"num_ckpt_keep":count}})["num_ckpt_keep"] == count
+
+
+@pytest.mark.parametrize("overrides", [dict(ds_workers=-1), dict(ds_workers=True), dict(accumulate_grad_batches=0),
+    dict(accumulate_grad_batches=1.5), dict(num_ckpt_keep=-2), dict(permanent_ckpt_interval=1),
+    dict(binarization_args=dict(num_workers=65)), dict(binarization_args=[]), dict(pl_trainer_precision="int8")])
+def test_invalid_compute_controls_fail_before_training(overrides):
+    with pytest.raises(ValueError):
+        build_overlay("diffsinger_acoustic", {**BASE, "overrides": overrides})
+
+
 def test_backbone_and_augmentations_use_compatible_arguments():
     config = {**BASE, "options": {"backbone": "wavenet", "pitch_augmentation": False, "time_augmentation": False, "hnsep": "world", "prefer_ds": True, "mix_layer_norm": True}}
     result = build_overlay("diffsinger_acoustic", config)

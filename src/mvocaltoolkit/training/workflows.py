@@ -10,7 +10,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..api_models import DatasetSource, RecordingPreparationRequest
 from .dataset import SourceSpec, build_dataset, spec_from_result, validate_report
@@ -29,7 +29,7 @@ class BankWorkflowRequest(BaseModel):
     prototype_steps: int = Field(200, ge=1, le=100000)
     prepare: bool = True
     preparation: dict = Field(default_factory=dict)
-    # Optional separation passes, then alignment/transcription, then refinement.
+    # Optional separation passes, then alignment/transcription.
     pipeline: dict = Field(default_factory=dict)
     dictionaries: dict[str, str] = Field(default_factory=dict)
     phonemizer_profiles: dict[str, str] = Field(default_factory=dict)
@@ -57,6 +57,15 @@ class BankWorkflowRequest(BaseModel):
     vocoder_training: dict | None = None
     g2p_training: list[dict] = Field(default_factory=list)
 
+    @field_validator("preparation", "pipeline")
+    @classmethod
+    def exclude_boundary_refinement(cls, value: dict, info) -> dict:
+        # Migrate old recipes without changing independent toolkit labelling APIs.
+        if info.field_name == "preparation":
+            return {key: val for key, val in value.items() if key != "refine"}
+        return {key: ({k: v for k, v in val.items() if k != "refine"}
+                     if key == "alignment" and isinstance(val, dict) else val) for key, val in value.items()}
+
 
 def training_config(req, kind, data):
     settings = req.acoustic_settings if kind == "acoustic" else req.variance_settings
@@ -71,6 +80,8 @@ def training_config(req, kind, data):
 
 
 def check_workflow(req: BankWorkflowRequest) -> dict:
+    from .render_resources import validate_render_resources
+    validate_render_resources(req.render_options)
     root = Path(req.project_dir).expanduser().resolve()
     if not req.name.strip() or any(c in req.name for c in '/\\:*?"<>|') or req.name in {".", ".."}:
         raise ValueError("Choose a bank name without path separators")

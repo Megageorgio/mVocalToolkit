@@ -69,7 +69,7 @@ Grouped by step. **[have]** means mVocalToolkit or mLabeler already does it and 
 
 ### Data
 - From raw songs: vocal separation, de-reverb **[have]**, cutting at pauses **[have, --split]**, transcription
-  **[have]**, SOFA/HubertFA/TIFA alignment **[have]**, mRefiner boundary refinement **[have]**, GAME notes **[have]**,
+  **[have]**, SOFA/HubertFA/TIFA alignment **[have]**, mRefiner boundary refinement **[excluded from bank creation]**, GAME notes **[have]**,
   RMVPE f0 **[have]**, `transcriptions.csv` export **[have]**.
 - Missing: automatic `ph_num` for any dictionary (MakeDiffSinger #11), building `.ds` with notes and slurs, breaths
   (AP) and their check, labelling voice colours/styles.

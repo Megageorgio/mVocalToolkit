@@ -47,6 +47,11 @@ Short prototypes cap training steps; completed stages and checkpoints are reused
 gate rechecks edited data. Sources remain separate from outputs. Per-record content caches, selected-entry cleanup,
 speaker/language coverage and optional signal heuristics support repeated preparation. SOME is excluded.
 
+SingForge bank workflows also exclude boundary refinement, including old saved `preparation.refine` and nested
+alignment options. New boundary-refiner training jobs are rejected; independent labelling/refinement APIs stay
+compatible for other clients. Guided compute controls expose native precision, accumulation, loader/binarizer
+processes and future checkpoint rotation. ONNX previews can reuse graphs within a request and limit CPU threads.
+
 The API also imports DiffTrainer/config/checkpoint folders without inspecting pickled checkpoint objects,
 previews external checkpoints in separate workspaces and exposes pinned main/benchmark sources. The `bank_render`
 engine executes actual exported ONNX graphs on CPU with a compatible local vocoder and DS; it does not execute

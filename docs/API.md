@@ -77,7 +77,8 @@ first use. Model/environment downloads follow toolkit settings. `f0_method:auto`
 curve, otherwise extracts RMVPE f0. Existing notes are preserved unless `replace_notes:true`; missing notes use GAME
 when pitch training needs them. SOME weights are not used. `liquid_rules` accepts boolean rules or preceding-phone
 lists, optionally with language-qualified keys. `breath_padding` adds silence only at exposed AP boundaries and
-shifts phone/word/note/f0 timing consistently. Separation, alignment and refinement are disabled by default.
+shifts phone/word/note/f0 timing consistently. Separation and alignment are disabled by default. Bank requests
+remove legacy preparation/alignment `refine` options; independent labelling APIs remain compatible.
 
 `pipeline.separation` is a list of `{model, stem, stems?, options?}` passes, e.g. vocals then dry. `pipeline.alignment`
 accepts AlignRequest options except managed input/output/language; `replace` controls alignment of existing labels.
@@ -131,6 +132,33 @@ Imports/workflows are fixture-tested. Exported-bank sessions are tested with syn
 five model components and a vocoder. Real pretrained GPU chains, arbitrary upstream export variants, phonemizer
 plugins and listening quality require separate validation. Detailed audio metrics are advisory noise/bandwidth/tail
 heuristics rather than a reliable reverb diagnosis.
+
+## Compute settings and ONNX preview resources
+
+DiffSinger's native `overrides` accepts `pl_trainer_precision` (guided choices: `16-mixed`, `bf16-mixed`, `32`),
+`accumulate_grad_batches` (1–1024), `ds_workers` (0–64), `binarization_args.num_workers` (0–64),
+`num_ckpt_keep` (1–1000, -1 keeps all, 0 disables regular saves) and `permanent_ckpt_interval` (0 disables new periodic permanent saves, otherwise at
+least 10 steps). Existing preset schedules, permanent-checkpoint start and protected checkpoints still apply.
+Saving settings does not remove old files. Effective values are checked after override merging; CPU uses FP32,
+and data-loader prefetch is normalized for zero/nonzero workers. BF16 requires compatible hardware/trainer support.
+Gradient accumulation changes effective batch size; it does not automatically reduce the chosen micro-batch.
+Training precision does not convert exported ONNX weights or create a compact architecture.
+
+`POST /training/voicebank/render` and workflow `render_options` accept `cpu_threads` (integer 1–32, default 2)
+and `cache_models` (boolean, default true). With caching, each auxiliary graph is loaded once per request;
+disabling it lowers retained graph memory at the cost of repeated loading. No sessions are reused across requests.
+The result/report includes `resources` with thread/cache settings and `session_loads`/`session_reuses` counters.
+Invalid resource settings fail before job submission. Preview still uses the CPU execution provider.
+
+Custom vocoder assembly uses the `model` reference from `vocoder.yaml`, preserves nested relative paths and rejects
+escaping/missing references before writing a bank. Several ONNX files require an explicit selection. Bank linting
+reports incompatible declared mel metadata, and preview rejects it before loading graphs. Shared checks cover
+sample rate, hop, FFT/window size, mel bins/scale and frequency range. Natural/base-10 log conversion is supported;
+other mel conversions are not implicit. Unspecified legacy metadata does not establish full compatibility.
+
+Boundary-refiner training is excluded from the offered recipes and rejected by new-job creation, including direct
+manager calls. Old bank preparation/alignment `refine` settings are removed on request loading. This does not delete
+existing weights, runs or reports, nor remove the independent low-level toolkit `/refine` and labelling APIs.
 
 ## Recording plans from dataset coverage
 
@@ -938,7 +966,6 @@ The normal `POST /training/runs` freezes the checked inputs again and derives th
 | `sofa_aligner` | `sofa_train` | Timed phonemes; SOFA inference checkpoint/vocabulary |
 | `wfl_asr_teacher` | `label_train` | Timed phonemes; WFL-ASR v2 package with frozen Whisper encoder |
 | `mcfl_student` | `label_train` | Timed phonemes and WFL v2 teacher; native fp32/int8 ONNX package |
-| `refiner_boundary` | `refiner_train` | Corrected internal phoneme boundaries; native boundary refiner |
 | `game_notes` | `game_train` | Timed notes in CSV/DS; native GAME weights and five ONNX graphs |
 | `qwen_tts_voice` | `qwen_tts` | Audio + matching `.txt`, up to 32 speakers; Qwen custom_voice package |
 | `voxcpm_voice` | `voxcpm` | Audio + matching `.txt`, speaker references; VoxCPM2 full weights or LoRA |
@@ -975,8 +1002,8 @@ also needs a local/cached encoder. Full precision TTS training needs substantial
 
 Prepare-only runs resume into training. Optimizer state, schedulers and checkpoints survive stop/resume;
 augmentation order is not promised to be bitwise identical after restart. The normal export/checkpoint-star/
-TensorBoard endpoints work for these engines. Exported labelling/note/refiner packages can be copied into
-`POST /models/import` using engines tifa/sofa/wfl_asr/mcfl/refiner/game. TTS packages use their native inference
+TensorBoard endpoints work for these engines. Exported labelling/note packages can be copied into
+`POST /models/import` using engines tifa/sofa/wfl_asr/mcfl/game. TTS packages use their native inference
 programs; a VoxCPM LoRA package requires its original base model. Validation/audio preview generation for Vox
 follows the native ten-batch evaluation limit and is not a full-corpus quality measurement.
 

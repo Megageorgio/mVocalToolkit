@@ -18,7 +18,6 @@ FAMILIES = {
     "sofa_aligner": {"engine": "sofa_train", "input": "phones", "title": "SOFA", "lr": .0002},
     "wfl_asr_teacher": {"engine": "label_train", "input": "phones", "title": "WFL-ASR", "lr": .0001},
     "mcfl_student": {"engine": "label_train", "input": "phones", "title": "MCFL", "lr": .002},
-    "refiner_boundary": {"engine": "refiner_train", "input": "phones", "title": "mRefinerModel", "lr": .001},
     "game_notes": {"engine": "game_train", "input": "notes", "title": "GAME", "lr": .0002},
     "qwen_tts_voice": {"engine": "qwen_tts", "input": "text", "title": "Qwen3-TTS", "lr": .00002},
     "voxcpm_voice": {"engine": "voxcpm", "input": "text", "title": "VoxCPM2", "lr": .0001},
@@ -162,8 +161,6 @@ def scan(kind: str, config: dict) -> dict:
                     if not label.phones or not any(p.text not in SILENCE for p in label.phones):
                         raise ValueError("Phoneme labels are empty or contain only silence")
                     record["phones"] = _intervals(label.phones, seconds)
-                    if kind == "refiner_boundary" and len(record["phones"]) < 2:
-                        raise ValueError("A boundary refiner needs internal phoneme boundaries")
                 with path.open("rb") as stream:
                     digest = hashlib.file_digest(stream, "sha256").hexdigest()
                 if digest in seen:

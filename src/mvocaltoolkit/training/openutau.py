@@ -280,6 +280,28 @@ def write_profile_dictionaries(target: Path, dictionaries: dict[str, Path], phon
     return made, report
 
 
+def _vocoder_source(folder: Path):
+    yaml_path = folder / "vocoder.yaml"
+    config = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {} if yaml_path.is_file() else {}
+    if not isinstance(config, dict):
+        raise ValueError("vocoder.yaml must contain an object")
+    ref = config.get("model")
+    if ref:
+        if not isinstance(ref, str):
+            raise ValueError("vocoder.yaml model must name an ONNX file")
+        model = (folder / ref).resolve()
+        if not model.is_relative_to(folder.resolve()) or not model.is_file() or model.suffix.lower() != ".onnx":
+            raise ValueError("vocoder.yaml model must be an existing ONNX file inside its folder")
+    else:
+        models = sorted(folder.glob("*.onnx"))
+        if len(models) > 1:
+            raise ValueError("Multiple vocoder ONNX files: select one with model in vocoder.yaml")
+        model = models[0].resolve() if models else None
+    if model:
+        config["model"] = model.relative_to(folder.resolve()).as_posix()
+    return model, yaml_path, config
+
+
 def assemble(spec: VoicebankSpec) -> VoicebankResult:
     problems: list[dict[str, str]] = []
     for lang, identifier in spec.phonemizer_profiles.items():
@@ -294,6 +316,7 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
                                                  *(f"LPT{i}" for i in range(1, 10))}):
         raise ValueError("Use a non-empty voicebank name without path separators or reserved filename characters")
     acoustic = _detect_export(Path(spec.acoustic))
+    vocoder_source = _vocoder_source(Path(spec.vocoder)) if spec.vocoder else None
     if set(spec.components) - {"dur", "pitch", "variance"}:
         raise ValueError("Component keys must be dur, pitch or variance")
     variance_paths = list(dict.fromkeys([*spec.variance, *spec.components.values()]))
@@ -380,16 +403,17 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
     # --- the vocoder
     if spec.vocoder:
         voc_dir = Path(spec.vocoder)
-        onnx = next(iter(voc_dir.glob("*.onnx")), None)
+        onnx, voc_yaml, voc_config = vocoder_source
         if onnx is None:
             problems.append({"file": str(voc_dir), "problem": "no ONNX file in the vocoder folder"})
         else:
             dsvoc = bank / "dsvocoder"
             dsvoc.mkdir()
-            shutil.copy2(onnx, dsvoc / onnx.name)
-            voc_yaml = voc_dir / "vocoder.yaml"
+            destination = dsvoc / voc_config["model"]
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(onnx, destination)
             if voc_yaml.is_file():
-                shutil.copy2(voc_yaml, dsvoc / "vocoder.yaml")
+                (dsvoc / "vocoder.yaml").write_text(yaml.safe_dump(voc_config, allow_unicode=True, sort_keys=False), encoding="utf-8")
             else:
                 problems.append({"file": str(voc_yaml), "problem": "the vocoder folder has no vocoder.yaml"})
             main_cfg["vocoder"] = onnx.stem
@@ -539,6 +563,21 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
 def lint(bank: Path) -> list[dict[str, str]]:
     """What OpenUtau would stumble over: missing files, dangling references, mismatched settings."""
     problems: list[dict[str, str]] = []
+    vocoder_yaml = bank / "dsvocoder/vocoder.yaml"
+    if vocoder_yaml.is_file():
+        try:
+            from ..engines._runtime.mvt_mel import compatibility_errors
+            main = yaml.safe_load((bank / "dsconfig.yaml").read_text(encoding="utf-8")) or {}
+            voc = yaml.safe_load(vocoder_yaml.read_text(encoding="utf-8")) or {}
+            if not isinstance(main, dict) or not isinstance(voc, dict):
+                raise ValueError("Acoustic and vocoder configurations must contain objects")
+            problems.extend({"file": str(vocoder_yaml), "problem": issue} for issue in compatibility_errors(main, voc))
+            ref = voc.get("model", "vocoder.onnx")
+            model = (vocoder_yaml.parent / str(ref)).resolve()
+            if not model.is_relative_to(vocoder_yaml.parent.resolve()) or not model.is_file():
+                problems.append({"file": str(vocoder_yaml), "problem": "vocoder model is missing or outside its folder"})
+        except (OSError, ValueError, TypeError, yaml.YAMLError) as exc:
+            problems.append({"file": str(vocoder_yaml), "problem": str(exc)})
 
     def need(path: Path, what: str) -> bool:
         if not path.is_file():
