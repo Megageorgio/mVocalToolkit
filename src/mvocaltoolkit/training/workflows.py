@@ -100,13 +100,38 @@ def check_workflow(req: BankWorkflowRequest) -> dict:
             raise ValueError("Every source needs a primary language and singer")
         if req.prepare:
             RecordingPreparationRequest(**{**req.preparation, "folder": str(path), "out_dir": str(root / "workflows" / "_check"), "language": src.language})
-    if req.export and not req.acoustic and not Path(req.acoustic_export).is_dir():
-        raise ValueError("Select an existing acoustic ONNX export when acoustic training is disabled")
+    if req.export:
+        for kind, enabled, folder in [("acoustic", req.acoustic, req.acoustic_export), ("variance", req.variance, req.variance_export)]:
+            if not enabled and (kind == "acoustic" or folder):
+                if not folder.strip() or not (Path(folder) / "dsconfig.yaml").is_file():
+                    raise ValueError(f"Select an existing {kind} ONNX export with dsconfig.yaml when its training is disabled")
     if req.render_ds and not Path(req.render_ds).is_file():
         raise ValueError("Test DS does not exist")
+    if (req.render_ds or req.render_test_phrase) and not req.export:
+        raise ValueError("Enable bank export/assembly before requesting a test render")
+    if req.render_test_phrase and not req.auto_test_phrase and not req.render_ds:
+        raise ValueError("Enable test phrase generation or select a test DS before requesting a render")
+    if req.export and req.auto_test_phrase and not req.render_ds:
+        from .test_phrases import PhraseRequest, note_midi
+        phrase = PhraseRequest.model_validate({**req.test_phrase, "model_dir": "", "run_id": "", "config": "", "language": req.sources[0].language})
+        if phrase.mode not in {"cv", "vc", "v", "cvc", "manual"}:
+            raise ValueError("Phrase mode must be cv, vc, v, cvc or manual")
+        if not phrase.notes.split(): raise ValueError("Specify at least one test note")
+        for note in phrase.notes.split(): note_midi(note)
+        if phrase.mode == "manual" and not 1 <= len(phrase.phonemes.replace("|", " ").split()) <= 512:
+            raise ValueError("Enter 1–512 test phonemes; use | or new lines between syllables")
+    if req.export and req.vocoder_training is None:
+        if req.vocoder and not (Path(req.vocoder) / "vocoder.yaml").is_file():
+            raise ValueError("Select a local ONNX vocoder folder with vocoder.yaml")
+        if (req.render_ds or req.render_test_phrase) and not req.vocoder:
+            raise ValueError("Test rendering needs a local ONNX vocoder or vocoder training in this chain")
     if req.vocoder_training is not None:
         from .vocoder import build_overlay as vocoder_overlay
         vocoder_overlay({**req.vocoder_training, "device": req.device})
+    for settings in req.g2p_training:
+        steps = settings.get("max_steps", 0)
+        if isinstance(steps, bool) or not isinstance(steps, int) or not 0 <= steps <= 10_000_000:
+            raise ValueError("G2P max_steps must be a whole number between 0 and 10000000")
     forbidden = {"datasets", "dictionaries", "data_report", "overlay", "binary_data_dir"}
     if any(forbidden & set(v) for v in (req.training, req.acoustic_settings, req.variance_settings)):
         raise ValueError("Workflow data paths are managed by its immutable dataset snapshot")
@@ -115,11 +140,14 @@ def check_workflow(req: BankWorkflowRequest) -> dict:
         raise ValueError("Dataset/workspace paths cannot be replaced through overrides")
     data = dict(datasets=[dict(raw_data_dir=s.folder, speaker=s.speaker, language=s.language) for s in req.sources],
         dictionaries=req.dictionaries or {s.language: "_generated_dictionary" for s in req.sources})
+    overlays = {}
     for kind, enabled in [("acoustic", req.acoustic), ("variance", req.variance)]:
         if enabled:
-            build_overlay("diffsinger_" + kind, {**training_config(req, kind, data), "device": req.device})
+            overlays[kind] = build_overlay("diffsinger_" + kind, {**training_config(req, kind, data), "device": req.device})
+    from .workflow_plan import describe_workflow
     return dict(ok=True, stages=[s for s, on in [("prepare", req.prepare), ("dataset", True), ("acoustic", req.acoustic),
-        ("variance", req.variance), ("export", req.export), ("bank_render", bool(req.render_ds))] if on],
+        ("variance", req.variance), ("export", req.export), ("bank_render", bool(req.render_ds or req.render_test_phrase))] if on],
+        **describe_workflow(req, overlays),
         prototype=req.prototype, warning="A prototype checks the pipeline; short training does not establish voice quality" if req.prototype else "")
 
 

@@ -53,6 +53,22 @@ running models. `POST /training/workflows` accepts the same request and starts t
 }
 ```
 
+The check response retains `ok`, `stages`, `prototype` and `warning`, and adds `plan`, `notices`, `device` and
+`source`. `plan` is an ordered list of `{id, kind, ...details}`: per-source preparation/input, dataset, optional
+manual review, vocoder/G2P training and exports, acoustic/variance training and exports, assembly, phrase creation
+and rendering. Training rows contain their effective step caps (G2P `null` means epoch-limited); preparation rows
+contain source/speaker/language and enabled `actions`. Assembly lists reused local exports in `components`.
+`notices` contains stable codes for contextual GUI explanations, including review pauses and disabled bank export.
+This is a configuration/path preflight: it does not enumerate/decode/hash audio, probe GPU memory, load checkpoint
+objects, create outputs, install engines or download weights. Timing, actual VRAM use, phoneme coverage and graph
+compatibility are not established by this check.
+
+Render requests require assembly plus a local ONNX vocoder (`vocoder.yaml`) or a vocoder trained in the chain.
+A generated render requires phrase generation or an explicit existing DS. Reused acoustic/variance folders must
+contain `dsconfig.yaml`; empty paths are rejected for required acoustic exports. Generated phrase parameters and
+note syntax are checked before starting, while trained-vocabulary compatibility is checked after training.
+An explicit DS takes precedence over generated syllables; disabled generation settings are ignored.
+
 Use the exact profile IDs from `GET /training/phonemizers`; an empty profile ID explicitly disables the preferred
 fallback. `auto` WFL prefers installed compatible weights and otherwise requests the bundled multi13 model on
 first use. Model/environment downloads follow toolkit settings. `f0_method:auto` preserves a matching source DS

@@ -88,7 +88,10 @@ def note_midi(note):
         key, acc, octave = match.groups()
         number = (int(octave) + 1) * 12 + dict(C=0, D=2, E=4, F=5, G=7, A=9, B=11)[key.upper()] + {"": 0, "#": 1, "b": -1}[acc]
     else:
-        number = float(note)
+        try:
+            number = float(note)
+        except ValueError as error:
+            raise ValueError("Notes must be C4/F#4/Bb3 or MIDI numbers 1–127") from error
     if not math.isfinite(number) or not 1 <= number <= 127:
         raise ValueError("Notes must be C4/F#4/Bb3 or MIDI numbers 1–127")
     return number
