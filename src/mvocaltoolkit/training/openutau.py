@@ -6,14 +6,14 @@ The layout OpenUtau's DiffSinger renderer reads (the one DiffTrainer and the com
         character.txt           name=...
         character.yaml          singer_type: diffsinger, default_phonemizer, subbanks (speakers as colours)
         dsconfig.yaml           the acoustic model: acoustic, phonemes, languages, vocoder, speakers, use_*_embed...
-        dsmain/                 acoustic.onnx, phonemes.json, languages.json, linguistic.onnx (from the variance run)
+        dsmain/                 acoustic.onnx, phonemes.json, languages.json
         embeds/                 <speaker>.emb of the acoustic model
-        dsdur/                  dur.onnx, phonemes.json, languages.json, dsconfig.yaml, embeds/, dsdict*.yaml
+        dsdur/                  dur.onnx, linguistic.onnx, phonemes.json, languages.json, dsconfig.yaml, embeds/, dsdict*.yaml
         dspitch/                pitch.onnx, dsconfig.yaml, embeds/, dsdict*.yaml
         dsvariance/             variance.onnx, dsconfig.yaml, embeds/, dsdict*.yaml
         dsvocoder/              a custom vocoder (vocoder.onnx + vocoder.yaml); otherwise dsconfig names the
                                 standard one, which OpenUtau downloads as a dependency
-        readme.txt              what the bank was made of
+        readme.txt, report.json what the bank was made of, licenses and linter findings
 """
 
 from __future__ import annotations
@@ -159,7 +159,7 @@ def write_dsdicts(target: Path, dictionaries: dict[str, Path], phonemes: list[st
     """dsdict.yaml (all languages) and dsdict-<lang>.yaml per language, as OpenUtau's phonemizers read them."""
     written = []
     globals_ = [p for p in extra if p not in ("AP", "SP")]
-    if not multilingual or len(dictionaries) <= 1:
+    if not multilingual:
         lang = next(iter(dictionaries), None)
         symbols = [(p, _phoneme_type(p, lang, spec)) for p in globals_]
         entries = [(p, [p]) for p in globals_]
@@ -207,16 +207,28 @@ def write_dsdicts(target: Path, dictionaries: dict[str, Path], phonemes: list[st
 
 def assemble(spec: VoicebankSpec) -> VoicebankResult:
     problems: list[dict[str, str]] = []
+    name = spec.name.strip()
+    if (not name or name in {".", ".."} or name.endswith((".", " "))
+            or re.search(r'[\\/:*?"<>|\x00-\x1f]', name)
+            or name.split(".")[0].upper() in {"CON", "PRN", "AUX", "NUL",
+                                                 *(f"COM{i}" for i in range(1, 10)),
+                                                 *(f"LPT{i}" for i in range(1, 10))}):
+        raise ValueError("Use a non-empty voicebank name without path separators or reserved filename characters")
     acoustic = _detect_export(Path(spec.acoustic))
     variances = [_detect_export(Path(v)) for v in spec.variance]
-    bank = Path(spec.out_dir) / re.sub(r"[\\/:*?\"<>|]+", "_", spec.name.strip()).strip() or Path(spec.out_dir) / "voicebank"
+    bank = Path(spec.out_dir) / name
+    resolved_bank = bank.resolve()
+    for source in [acoustic.dir, *(v.dir for v in variances), *([Path(spec.vocoder)] if spec.vocoder else [])]:
+        resolved_source = source.resolve()
+        if resolved_source == resolved_bank or resolved_bank in resolved_source.parents or resolved_source in resolved_bank.parents:
+            raise ValueError("The voicebank output must not overlap a model export folder")
     if bank.exists() and any(bank.iterdir()):
         if not spec.overwrite:
             raise FileExistsError(f"{bank} exists and is not empty")
         shutil.rmtree(bank)
     dsmain = bank / "dsmain"
     embeds = bank / "embeds"
-    dsmain.mkdir(parents=True)
+    dsmain.mkdir(parents=True, exist_ok=True)
     embeds.mkdir()
 
     # --- the acoustic model
@@ -279,14 +291,9 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
 
     # --- the variance models: dur, pitch, variance from one or several exports
     models = ["acoustic"]
-    linguistic_done = False
-    dsdur = bank / "dsdur"
     for var in variances:
         var_cfg = var.dsconfig
         ling = var.file("linguistic.onnx")
-        if ling is not None and not linguistic_done:
-            shutil.copy2(ling, dsmain / "linguistic.onnx")
-            linguistic_done = True
         var_speakers = [e.name[len(var.name) + 1:-4] for e in var.embeds()]
         if var_speakers and sorted(var_speakers) != sorted(speakers) and speakers:
             problems.append({"file": str(var.dir), "problem": f"speakers differ from the acoustic model: {var_speakers} vs {speakers}"})
@@ -309,17 +316,16 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
             folder.mkdir()
             shutil.copy2(onnx, folder / f"{key}.onnx")
             sub = dict(base)
-            if folder_name == "dsdur":
-                for src_key, name in (("phonemes", "phonemes.json"), ("languages", "languages.json")):
-                    src = var.dir / str(var_cfg.get(src_key) or "")
-                    if src.is_file():
-                        shutil.copy2(src, folder / name)
-                sub["phonemes"] = "phonemes.json"
-                sub["languages"] = "languages.json"
-            else:
-                sub["phonemes"] = "../dsdur/phonemes.json" if dsdur.exists() else "../dsmain/phonemes.json"
-                sub["languages"] = "../dsdur/languages.json" if dsdur.exists() else "../dsmain/languages.json"
-            sub["linguistic"] = "../dsmain/linguistic.onnx"
+            for src_key, filename in (("phonemes", "phonemes.json"), ("languages", "languages.json")):
+                src = var.dir / str(var_cfg.get(src_key) or "")
+                if src.is_file():
+                    shutil.copy2(src, folder / filename)
+                sub[src_key] = filename
+            # Each head must use the encoder and token IDs it was trained with.
+            # Separate runs can have different encoder weights even with identical dictionaries.
+            if ling is not None:
+                shutil.copy2(ling, folder / "linguistic.onnx")
+            sub["linguistic"] = "linguistic.onnx"
             sub[key] = f"{key}.onnx"
             if flag:
                 sub[flag] = True
@@ -333,8 +339,6 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
                 sub["speakers"] = [f"embeds/{s}" for s in var_speakers]
             (folder / "dsconfig.yaml").write_text(yaml.safe_dump(sub, allow_unicode=True, sort_keys=False), encoding="utf-8")
             models.append(key)
-    if variances and not linguistic_done:
-        problems.append({"file": str(variances[0].dir), "problem": "no linguistic.onnx in the variance export"})
 
     # --- character files
     (bank / "character.txt").write_text(f"name={spec.name}\n", encoding="utf-8")
@@ -350,6 +354,8 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
 
     # --- dictionaries (dsdict) at the root and next to every model that phonemizes (dsdur, dspitch, dsvariance)
     dictionaries = acoustic.dictionaries()
+    for language in sorted(set(languages_map) - set(dictionaries)):
+        problems.append({"file": str(acoustic.dir), "problem": f"no dictionary-{language}.txt for model language {language}"})
     if dictionaries:
         used: set[str] = set()
         for lang, path in dictionaries.items():
@@ -383,6 +389,14 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
     (bank / "readme.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     problems += lint(bank)
+    report = {
+        "name": spec.name, "acoustic": str(acoustic.dir),
+        "variance": [str(v.dir) for v in variances], "vocoder": main_cfg.get("vocoder"),
+        "models": models, "speakers": speakers, "languages": sorted(languages_map),
+        "licenses": spec.licenses, "credits": spec.credits, "notes": spec.notes,
+        "problems": problems,
+    }
+    (bank / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     files = sorted(str(p.relative_to(bank)).replace("\\", "/") for p in bank.rglob("*") if p.is_file())
     return VoicebankResult(dir=str(bank), files=files, problems=problems, speakers=speakers,
                            languages=sorted(languages_map), models=models)

@@ -1,6 +1,7 @@
 """The OpenUtau voicebank assembly and its linter, on fake export folders."""
 import json
 
+import pytest
 import yaml
 
 from mvocaltoolkit.training.openutau import VoicebankSpec, assemble, lint
@@ -48,16 +49,19 @@ def test_single_language_bank(tmp_path):
     assert main["acoustic"] == "dsmain/acoustic.onnx" and main["vocoder"].startswith("pc_nsf_hifigan")
     assert main["use_key_shift_embed"] is True and main["mel_base"] == "e"
     dur = yaml.safe_load((bank / "dsdur" / "dsconfig.yaml").read_text(encoding="utf-8"))
-    assert dur["linguistic"] == "../dsmain/linguistic.onnx" and dur["dur"] == "dur.onnx" and dur["phonemes"] == "phonemes.json"
+    assert dur["linguistic"] == "linguistic.onnx" and dur["dur"] == "dur.onnx" and dur["phonemes"] == "phonemes.json"
     pitch = yaml.safe_load((bank / "dspitch" / "dsconfig.yaml").read_text(encoding="utf-8"))
-    assert pitch["phonemes"] == "../dsdur/phonemes.json" and pitch["use_expr"] is True and pitch["pitch"] == "pitch.onnx"
-    assert (bank / "dsmain" / "linguistic.onnx").is_file() and (bank / "dsvariance" / "variance.onnx").is_file()
+    assert pitch["phonemes"] == "phonemes.json" and pitch["use_expr"] is True and pitch["pitch"] == "pitch.onnx"
+    assert (bank / "dsdur" / "linguistic.onnx").is_file() and (bank / "dsvariance" / "variance.onnx").is_file()
     dsdict = yaml.safe_load((bank / "dsdict.yaml").read_text(encoding="utf-8"))
     symbols = {s["symbol"]: s["type"] for s in dsdict["symbols"]}
     assert symbols["a"] == "vowel" and symbols["k"] == "stop" and symbols["n"] == "nasal" and symbols["SP"] == "vowel"
     assert {"grapheme": "ka", "phonemes": ["k", "a"]} in dsdict["entries"]
     assert (bank / "dsdur" / "dsdict.yaml").is_file() and (bank / "dspitch" / "dsdict.yaml").is_file()
     assert "CC BY 4.0" in (bank / "readme.txt").read_text(encoding="utf-8")
+    report = json.loads((bank / "report.json").read_text(encoding="utf-8"))
+    assert report["licenses"] == ["CC BY 4.0"] and report["problems"] == []
+    assert "report.json" in result.files
     assert lint(bank) == []
 
 
@@ -100,3 +104,72 @@ def test_mismatched_exports_are_reported(tmp_path):
     result = assemble(VoicebankSpec(name="Odd", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "aco"), variance=[str(tmp_path / "var")]))
     problems = " ".join(p["problem"] for p in result.problems)
     assert "speakers differ" in problems and "phoneme set differs" in problems
+
+
+def test_separate_variance_runs_keep_their_own_encoders(tmp_path):
+    phones = ["AP", "SP", "a"]
+    _export(tmp_path / "aco", "acoustic", "acoustic", phones, {"ja": 0}, dictionaries={"ja": [("a", "a")]})
+    for name, keep in (("duration", "dur"), ("pitch", "pitch")):
+        folder = tmp_path / name
+        _export(folder, "variance", "variance", phones, {"ja": 0})
+        (folder / "variance.linguistic.onnx").write_bytes(name.encode())
+        for part in {"dur", "pitch", "variance"} - {keep}:
+            (folder / f"variance.{part}.onnx").unlink()
+    result = assemble(VoicebankSpec(name="Separate", out_dir=str(tmp_path / "out"),
+                                    acoustic=str(tmp_path / "aco"),
+                                    variance=[str(tmp_path / "duration"), str(tmp_path / "pitch")]))
+    assert result.problems == []
+    bank = tmp_path / "out" / "Separate"
+    assert (bank / "dsdur" / "linguistic.onnx").read_bytes() == b"duration"
+    assert (bank / "dspitch" / "linguistic.onnx").read_bytes() == b"pitch"
+
+
+def test_multilingual_model_with_one_dictionary_keeps_language_tags(tmp_path):
+    _export(tmp_path / "aco", "acoustic", "acoustic", ["AP", "SP", "ja/a", "en/a"],
+            {"ja": 0, "en": 1}, dictionaries={"ja": [("a", "a")]})
+    result = assemble(VoicebankSpec(name="Tagged", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "aco")))
+    bank = tmp_path / "out" / "Tagged"
+    dictionary = yaml.safe_load((bank / "dsdict-ja.yaml").read_text(encoding="utf-8"))
+    assert {"grapheme": "a", "phonemes": ["ja/a"]} in dictionary["entries"]
+    assert any("no dictionary-en.txt" in p["problem"] for p in result.problems)
+
+
+def test_missing_encoder_is_reported_for_its_own_component(tmp_path):
+    phones = ["AP", "SP", "a"]
+    _export(tmp_path / "aco", "acoustic", "acoustic", phones, {"ja": 0}, dictionaries={"ja": [("a", "a")]})
+    _export(tmp_path / "var", "variance", "variance", phones, {"ja": 0})
+    (tmp_path / "var" / "variance.linguistic.onnx").unlink()
+    result = assemble(VoicebankSpec(name="Missing", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "aco"),
+                                    variance=[str(tmp_path / "var")]))
+    for component in ("dsdur", "dspitch", "dsvariance"):
+        assert any(component in p["file"] and "linguistic.onnx not found" in p["problem"] for p in result.problems)
+
+
+@pytest.mark.parametrize("name", ["", ".", "..", "../outside", "bad/name", "bad\\name", "CON", "nul.txt", "Singer.", "line\nbreak"])
+def test_invalid_bank_names_do_not_touch_output(tmp_path, name):
+    out = tmp_path / "out"
+    out.mkdir()
+    marker = out / "keep.txt"
+    marker.write_text("keep", encoding="utf-8")
+    with pytest.raises(ValueError):
+        assemble(VoicebankSpec(name=name, out_dir=str(out), acoustic="missing", overwrite=True))
+    assert marker.read_text(encoding="utf-8") == "keep"
+
+
+def test_output_cannot_overwrite_source_export(tmp_path):
+    folder = tmp_path / "aco"
+    _export(folder, "acoustic", "acoustic", ["AP", "SP", "a"], {"ja": 0})
+    with pytest.raises(ValueError, match="overlap"):
+        assemble(VoicebankSpec(name="aco", out_dir=str(tmp_path), acoustic=str(folder), overwrite=True))
+    assert (folder / "acoustic.onnx").read_bytes() == b"onnx"
+
+
+def test_existing_bank_is_preserved_and_empty_folder_is_usable(tmp_path):
+    _export(tmp_path / "aco", "acoustic", "acoustic", ["AP", "SP", "a"], {"ja": 0}, dictionaries={"ja": [("a", "a")]})
+    bank = tmp_path / "out" / "Singer"
+    bank.mkdir(parents=True)
+    spec = VoicebankSpec(name="Singer", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "aco"))
+    assert assemble(spec).problems == []
+    with pytest.raises(FileExistsError):
+        assemble(spec)
+    assert (bank / "character.txt").read_text(encoding="utf-8") == "name=Singer\n"
