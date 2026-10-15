@@ -14,6 +14,7 @@ from .models.store import ModelStore
 from .engines.manager import EngineManager
 from .settings import Home, Settings
 from .training.manager import TrainingManager
+from .training.tensorboard import TensorBoardViewer
 
 
 class Toolkit:
@@ -28,6 +29,7 @@ class Toolkit:
         self.models = ModelStore(self.home, self.settings, self.catalog)
         self.datasets = DatasetStore(self.models)
         self.training = TrainingManager(self)
+        self.tensorboard = TensorBoardViewer()
         self._jobs: JobManager | None = None
 
     @property
@@ -43,5 +45,6 @@ class Toolkit:
         self.training.load()
 
     async def stop(self) -> None:
+        await self.tensorboard.stop()
         await self.training.stop_all()
         await self.engines.stop_all()

@@ -210,3 +210,22 @@ def test_diffsinger_overlay_and_dataset(tmp_path):
         assert "coupled" in str(e)
     else:
         raise AssertionError("coupled parameters accepted")
+
+
+def test_prepare_only_does_not_launch_and_can_train_without_rebinarizing(tmp_path):
+    async def main():
+        tk = _toolkit(tmp_path)
+        await tk.start()
+        try:
+            run = tk.training.start(RunSpec(kind="fake_acoustic", config={"prepare_only": True, "max_steps": 10, "val_every": 5}))
+            info = await _wait_status(run, {RunStatus.done, RunStatus.failed})
+            assert info.status == RunStatus.done and info.stage == "prepared" and info.step == 0
+            assert not any(e["event"] == "launched" for e in run.read_events_since(0))
+            prepared_time = (run.dir / "prepare.log").stat().st_mtime_ns
+            await tk.training.resume(run.id)
+            info = await _wait_status(run, {RunStatus.done, RunStatus.failed})
+            assert info.status == RunStatus.done and info.step == 10
+            assert (run.dir / "prepare.log").stat().st_mtime_ns == prepared_time
+        finally:
+            await tk.stop()
+    asyncio.run(main())

@@ -265,6 +265,8 @@ def main() -> int:
         from utils.hparams import hparams, set_hparams  # noqa: PLC0415
 
         set_hparams()
+        import torch
+        torch.set_float32_matmul_precision(hparams.get("matmul_precision", "medium"))
         from checkpoint_store import protect_removal
         from utils.training_utils import DsModelCheckpoint
 

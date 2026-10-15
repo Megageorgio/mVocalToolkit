@@ -1,0 +1,10 @@
+name = "g2p"
+title = "G2P pronunciation training"
+description = "RNN transducer trained on pronunciation dictionaries, with word-disjoint validation and SOFA/ONNX export."
+capabilities = ["train"]
+python = "3.11"
+torch = true
+size_hint = "~2.5 GB with CUDA (shared package cache); no pretrained weights required"
+homepage = "https://github.com/stakira/OpenUtau/tree/master/py/g2p"
+license = "MIT"
+requirements = ["torch>=2.7,<2.9", "torchaudio>=2.7,<2.9", "PyYAML>=6", "onnx>=1.16,<2", "onnxruntime>=1.20"]

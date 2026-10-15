@@ -1,0 +1,9 @@
+name = "audio"
+title = "Audio preparation"
+description = "Lossless WAV/FLAC slicing for labelled training recordings. No model weights."
+capabilities = ["audio_prepare"]
+python = "3.11"
+torch = false
+size_hint = "~30 MB"
+license = "BSD (SoundFile)"
+requirements = ["soundfile>=0.12", "numpy"]

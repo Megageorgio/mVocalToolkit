@@ -30,6 +30,17 @@ closing, and support stop/resume, protected checkpoints, validation samples and 
 clean original 44.1 kHz audio and the full OpenVPI training base (CC BY-NC-SA 4.0). Its source imports and real data
 preparation are checked; a full GPU training/export cycle still needs validation. See [training API](docs/API.md).
 
+The `g2p_rnnt` trainer learns pronunciations from a dictionary, with word-disjoint validation, PER/WER reports,
+early stopping, base-model fine-tuning and optional vocabulary expansion. It exports SOFA-style weights and a
+greedy ONNX transducer with its vocabularies. Small CPU training/fine-tuning/resume/export checks passed; useful
+pronunciation quality needs a substantial, consistent dictionary. Custom OpenUtau vocabularies need phonemizer
+integration.
+
+Training data preparation includes pause segmentation, phoneme grouping, GAME note estimation, `.ds` import and
+creation, and RMVPE/Parselmouth/Harvest f0. DiffSinger supports guided model options, prepare-only runs, chained
+variance/acoustic rendering, independent voicebank heads, frozen export controls, speaker-filtered checkpoint
+copies and an optional managed local TensorBoard viewer. These operations are exposed through the training API.
+
 ## Install
 
 ```

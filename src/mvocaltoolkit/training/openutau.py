@@ -78,6 +78,8 @@ class VoicebankSpec:
     out_dir: str
     acoustic: str  # export folder of the acoustic model
     variance: list[str] = field(default_factory=list)  # export folders with dur / pitch / variance models
+    components: dict[str, str] = field(default_factory=dict)
+    include_dictionary: bool = True
     vocoder: str = ""  # folder with a custom vocoder (ONNX + vocoder.yaml), or empty for the standard one
     # phoneme -> type (vowel, stop, ...) overrides for the dsdict
     phoneme_types: dict[str, str] = field(default_factory=dict)
@@ -215,7 +217,14 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
                                                  *(f"LPT{i}" for i in range(1, 10))}):
         raise ValueError("Use a non-empty voicebank name without path separators or reserved filename characters")
     acoustic = _detect_export(Path(spec.acoustic))
-    variances = [_detect_export(Path(v)) for v in spec.variance]
+    if set(spec.components) - {"dur", "pitch", "variance"}:
+        raise ValueError("Component keys must be dur, pitch or variance")
+    variance_paths = list(dict.fromkeys([*spec.variance, *spec.components.values()]))
+    variances = [_detect_export(Path(v)) for v in variance_paths]
+    for component, folder in spec.components.items():
+        selected = next(v for v in variances if v.dir.resolve() == Path(folder).resolve())
+        if selected.file(component + ".onnx") is None:
+            raise ValueError(f"The selected {component} export has no {component}.onnx")
     data_reports = []
     licenses = list(spec.licenses)
     for model_dir in [acoustic.dir, *(v.dir for v in variances), *([Path(spec.vocoder)] if spec.vocoder else [])]:
@@ -317,6 +326,8 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
             pass
         base = {k: v for k, v in var_cfg.items() if k not in ("phonemes", "languages", "linguistic", "dur", "pitch", "variance", "speakers")}
         for key, folder_name, flag in (("dur", "dsdur", "predict_dur"), ("pitch", "dspitch", "predict_pitch"), ("variance", "dsvariance", None)):
+            if spec.components and (key not in spec.components or var.dir.resolve() != Path(spec.components[key]).resolve()):
+                continue
             onnx = var.file(f"{key}.onnx")
             if onnx is None:
                 continue
@@ -367,7 +378,7 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
     dictionaries = acoustic.dictionaries()
     for language in sorted(set(languages_map) - set(dictionaries)):
         problems.append({"file": str(acoustic.dir), "problem": f"no dictionary-{language}.txt for model language {language}"})
-    if dictionaries:
+    if dictionaries and spec.include_dictionary:
         used: set[str] = set()
         for lang, path in dictionaries.items():
             for _, phones in _read_dictionary(path):
@@ -380,7 +391,7 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
             if sub.exists():
                 for f in made:
                     shutil.copy2(f, sub / f.name)
-    else:
+    elif spec.include_dictionary:
         problems.append({"file": str(acoustic.dir), "problem": "no dictionary-<lang>.txt next to the export: no dsdict.yaml made"})
 
     # --- readme
@@ -405,10 +416,14 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
         lines += ["", spec.notes]
     (bank / "readme.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    problems += lint(bank)
+    lint_problems = lint(bank)
+    if not spec.include_dictionary:
+        lint_problems = [p for p in lint_problems if not p["problem"].startswith("no dsdict.yaml")]
+    problems += lint_problems
     report = {
         "name": spec.name, "acoustic": str(acoustic.dir),
-        "variance": [str(v.dir) for v in variances], "vocoder": main_cfg.get("vocoder"),
+        "variance": [str(v.dir) for v in variances], "components": spec.components, "include_dictionary": spec.include_dictionary,
+        "vocoder": main_cfg.get("vocoder"),
         "models": models, "speakers": speakers, "languages": sorted(languages_map),
         "licenses": licenses, "credits": spec.credits, "notes": spec.notes, "training_data": data_reports,
         "problems": problems,

@@ -234,6 +234,10 @@ def cmd_train(args) -> None:
             spec.dir = args.dir
         if args.device:
             spec.device = args.device
+        if spec.kind == "g2p_rnnt":
+            from .training.g2p import snapshot
+            prepared = snapshot(spec.config, tk.home.dir("training") / "g2p-data")
+            spec.config = {**{k: v for k, v in spec.config.items() if k != "prepared"}, **prepared}
         if spec.kind == "singingvocoders_vocoder":
             from .training.vocoder import build_overlay as vocoder_overlay, resolve_assets as vocoder_assets, scan_sources
 
@@ -248,7 +252,7 @@ def cmd_train(args) -> None:
             from .training.dataset import validate_report  # noqa: PLC0415
 
             overlay = build_overlay(spec.kind, {**spec.config, "device": spec.device})
-            validate_report(str(spec.config.get("data_report") or ""), bool(overlay.get("predict_pitch")))
+            validate_report(str(spec.config.get("data_report") or ""), bool(overlay.get("predict_pitch")), bool(overlay.get("predict_dur")))
             spec.config = {**spec.config, "overlay": overlay, "assets": resolve_assets(spec.config)}
 
         async def main():

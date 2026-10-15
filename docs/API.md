@@ -555,3 +555,87 @@ dictionaries and OpenUtau dsdict YAML, with language-prefix filtering as used by
 `POST /training/dictionary/save` accepts `entries` and `out_dir`. Words/phonemes are normalized to Unicode NFC,
 validated and written to a new UTF-8 text file. The returned `path` can be selected for that language in a voice.
 Existing files and training snapshots are never overwritten. Editing/mapping is done by the client before save.
+
+## Recording preparation and DiffSinger settings
+
+`POST /training/dataset/prepare` is a cancellable job. Outputs must be outside the source tree and initially empty:
+
+```json
+{"folder":"D:/recordings","out_dir":"D:/prepared/corpus-1","segment":true,"max_length":20,
+ "min_silence":0.25,"vowels":["a","e","i","o","u"],"liquids":["l","r","w","y"],
+ "estimate_notes":true,"note_model":"game-small","language":"ja","write_ds":true,"f0_method":"rmvpe"}
+```
+
+The result contains `out_dir`, output audio `files`, `count` and coded `problems`. Preparation writes WAV, HTK,
+TextGrid, transcriptions.csv and optionally ds/. Cuts are inside labelled silence and outside labelled words;
+unbroken phrases can exceed the duration target. Existing word/ph_num groups take precedence. Without groups or
+a vowel inventory, one phoneme per group is used with a warning. GAME is the successor of SOME; small/medium/large
+models are available. `f0_method` also accepts `parselmouth`, `harvest` and `none`. Review estimated notes before
+pitch training. The normal dataset builder rescues matching `.ds` sidecars from wavs/ or ds/, preserving f0/notes.
+
+DiffSinger run `config.options` accepts `backbone` (lynxnet2/lynxnet/wavenet), `dual_timestep`, `stretch`,
+`mix_layer_norm`, `melody_encoder`, `pitch_augmentation`, `time_augmentation`, `prefer_ds`, `hnsep` (vr/world) and
+`tensor_acceleration`. Backbone selection replaces architecture-specific argument dictionaries. `overrides` still
+apply last. Positive schedule/batch values and final variance-module compatibility are checked. An explicit empty
+`finetune.ignored_params` preserves all matching parameters. `config.prepare_only=true` ends with `stage=prepared`;
+POST resume starts training using its binaries. It does not repeat binarization.
+
+`POST /training/config/read` with `{"content":"JSON or YAML text"}` returns a JSON-compatible settings object,
+without executing YAML constructors. Maximum content size is 1 MB.
+
+## Advanced export and quick inference
+
+Training export accepts `export_spk` (names or `alias=singer:0.7|other:0.3` mixes), `freeze_spk`,
+`freeze_gender` (−1…1), `freeze_velocity`, `freeze_glide`, `freeze_expr`. Exported-speaker and frozen-speaker
+selection are mutually exclusive. Freezing a speaker bypasses automatic main-speaker export selection.
+
+`POST /training/runs/{id}/checkpoint-copy` with `{"step":200,"retain":["main"],"fill":"zeros"}` creates a
+separate DiffSinger checkpoint folder. Fill can also be random/mean/cyclic. Non-retained embedding rows are
+replaced, the speaker map is filtered and optimizer state is removed. Shared network weights still reflect all
+training data; this operation does not remove donor influence from those weights. The original is preserved.
+
+Voicebank assembly accepts `components={"dur":"<export>","pitch":"<different export>","variance":"<export>"}`
+to select heads independently. Omit unwanted keys; each chosen export must contain the selected ONNX head.
+Its own encoder, token IDs and embeddings accompany it. The older `variance` list remains supported.
+`include_dictionary` defaults true; `phoneme_types` overrides dsdict symbol classes.
+
+Acoustic render can include `variance_run` and `variance_step`. Variance inference runs first, and its `.ds`
+becomes the acoustic input. `predict` chooses dur/pitch/energy/breathiness/voicing/tension to replace; enabled
+parameters missing from the phrase are completed as well. `device` can be auto/cpu/cuda/cuda:N/mps; acoustic
+sampling uses `steps` and `depth`. Input/output files, chosen variance run and normalized phrase SHA-256 are
+recorded in render history, enabling content-matched A/B comparisons. Export/render/preparation reserve the
+training queue; cancellation aborts engine children before releasing it.
+
+`POST /training/runs/{id}/tensorboard` starts/reuses one CPU-only viewer on an ephemeral localhost port and
+returns `url` and `pid`. It requires an existing DiffSinger/SingingVocoders environment. Opening a different run
+replaces the viewer. `DELETE` on the same URL stops it; toolkit shutdown and deleting the viewed run also stop it.
+The log is `<run>/tensorboard.log`. Remote users need their own port forwarding; the service never binds publicly.
+
+## Pronunciation training
+
+`POST /training/g2p/check` validates a G2P config without installing an engine. Start via `/training/runs`
+(or `mvt train start spec.json --wait`):
+
+```json
+{"kind":"g2p_rnnt","device":"cpu","dir":"D:/voice/runs/g2p-1",
+ "config":{"dictionary":"D:/voice/dictionary.txt","language":"ru","lowercase":true,
+ "epochs":50,"batch_size":16,"hidden_size":128,"layers":2,"learning_rate":0.001,
+ "validation_fraction":0.1,"patience":8,"seed":42}}
+```
+
+The dictionary is NFC-normalized and snapshotted. Alternate pronunciations of one word always stay together.
+Splits, batches and initialization use the seed; resume restores optimizer and random state. Validation selects
+the closest accepted pronunciation and reports phoneme edit error (PER), word error (WER) and error examples.
+`val_loss` is held-out PER, not the RNN-T training loss. `validation.json` is the latest report; validations/ keeps
+per-check reports. Early stopping uses PER; `patience=0` disables it. Large dictionary data stays outside polled
+RunInfo JSON. Dependencies are installed only when training starts.
+
+Fine-tune with `base_model="<folder containing cfg.yaml and model.ptsd>"`. The base architecture/token IDs are
+inherited. `expand_vocabulary=true` appends missing letters/phonemes and initializes only new embedding/output
+rows; otherwise incompatible dictionaries fail preflight. The starting weights are hash-checked and copied.
+
+`POST /training/runs/{id}/predict` accepts `{"words":["example"],"step":200}` and returns raw model pronunciations
+without dictionary lookup. Export writes cfg.yaml, model.ptsd, dict.txt, g2p.onnx, vocabulary.json and validation
+reports. The ONNX graph is checked and compared to PyTorch at dynamic input lengths. SOFA's compatible G2P loader
+can use the weights/config. An arbitrary vocabulary is not a drop-in OpenUtau language pack: its phonemizer must
+use those exact grapheme/phoneme IDs and language-specific symbol types.

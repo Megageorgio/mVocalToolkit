@@ -108,6 +108,13 @@ def _extract(method: str, path: str, model_path: str | None, f0_min: float, f0_m
                                      f0_min=f0_min, f0_max=f0_max, interp_uv=False,
                                      output_interp_target_length=n_frames)
         f0 = f0.squeeze().detach().cpu().numpy().astype(np.float64)
+    elif method == "harvest":
+        import pyworld
+
+        audio, sr = _load(path, None)
+        f0, times = pyworld.harvest(audio.astype(np.float64), sr, f0_floor=f0_min,
+                                  f0_ceil=f0_max, frame_period=NATIVE_HOP * 1000)
+        f0 = pyworld.stonemask(audio.astype(np.float64), f0, times, sr)
     elif method == "parselmouth":
         import parselmouth  # noqa: PLC0415
 
@@ -123,7 +130,7 @@ def _extract(method: str, path: str, model_path: str | None, f0_min: float, f0_m
         f0 = np.interp(grid, times, values, left=0.0, right=0.0)
         f0[np.interp(grid, times, (values > 0).astype(float), left=0, right=0) < 0.5] = 0.0
     else:
-        raise ValueError(f"Unknown pitch method {method!r} (rmvpe, fcpe, parselmouth)")
+        raise ValueError(f"Unknown pitch method {method!r} (rmvpe, fcpe, parselmouth, harvest)")
     f0[(f0 < f0_min * 0.5) | ~np.isfinite(f0)] = 0.0
     return f0
 

@@ -13,13 +13,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..labels import Label
-from . import audacity, ds_csv, htk, json_format, textgrid
+from . import audacity, ds_csv, ds_project, htk, json_format, textgrid
 
 FORMATS = {
     "htk": htk,
     "textgrid": textgrid,
     "json": json_format,
     "audacity": audacity,
+    "ds": ds_project,
 }
 # ds_csv works on many files at once, see ds_csv.write_rows / read_rows
 
@@ -42,6 +43,7 @@ EXTENSIONS = {
     "json": ".json",
     "audacity": ".txt",
     "ds_csv": ".csv",
+    "ds": ".ds",
 }
 
 
@@ -55,6 +57,8 @@ def normalize_format(name: str) -> str:
 
 def detect_format(path: Path) -> str:
     suffix = path.suffix.lower()
+    if suffix == ".ds":
+        return "ds"
     if suffix == ".lab":
         return "htk"
     if suffix == ".textgrid":

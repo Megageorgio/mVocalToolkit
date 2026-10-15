@@ -246,7 +246,7 @@ def export(run_dir: str, kind: str, out_dir: str, step: int | None = None, expor
 @rt.method()
 def render(run_dir: str, kind: str, ds: str, out_dir: str, step: int | None = None, spk: str | None = None,
            lang: str | None = None, title: str | None = None, steps: int | None = None, depth: float | None = None,
-           predict: list[str] | None = None, seed: int | None = None) -> dict[str, Any]:
+           predict: list[str] | None = None, seed: int | None = None, device: str = "auto") -> dict[str, Any]:
     """Sings a .ds file with a checkpoint (acoustic: a WAV; variance: a .ds with the predicted parameters)."""
     run_path = Path(run_dir).resolve()
     out = Path(out_dir).resolve()
@@ -256,7 +256,7 @@ def render(run_dir: str, kind: str, ds: str, out_dir: str, step: int | None = No
 
     restore(run_path, step)
     name = title or ds_path.stem
-    args = ["scripts/infer.py", "acoustic" if _is_acoustic(kind) else "variance", str(ds_path), "--exp", str(run_path),
+    args = [str(ENGINE_DIR / "mvt_ds_infer.py"), "acoustic" if _is_acoustic(kind) else "variance", str(ds_path), "--exp", str(run_path),
             "--out", str(out), "--title", name]
     if step is not None:
         args += ["--ckpt", str(step)]
@@ -272,10 +272,13 @@ def render(run_dir: str, kind: str, ds: str, out_dir: str, step: int | None = No
         if depth is not None:
             args += ["--depth", str(depth)]
     else:
-        for p in predict or []:
+        from inference_options import prediction_tags
+        config = _load_yaml(run_path / "config.yaml")
+        segments = json.loads(ds_path.read_text(encoding="utf-8-sig"))
+        for p in prediction_tags(config, segments if isinstance(segments, list) else [segments], predict or []):
             args += ["--predict", p]
     rt.progress(None, "Rendering", stage="render")
-    _run(args, run_path / "render.log")
+    _run(args, run_path / "render.log", env={"MVT_INFER_DEVICE": device})
     produced = sorted(str(p) for p in out.glob(f"{name}*") if p.is_file())
     return {"out_dir": str(out), "files": produced}
 
@@ -298,11 +301,60 @@ def drop_speakers(checkpoint: str, out: str, drop: list[str] | None = None, reta
                   fill: str = "zeros") -> dict[str, Any]:
     args = ["scripts/drop_spk.py", str(Path(checkpoint).resolve()), str(Path(out).resolve()), "--fill", fill, "--overwrite"]
     if drop:
-        args += ["--drop", *drop]
+        args += ["--drop", ",".join(drop)]
     if retain:
-        args += ["--retain", *retain]
+        args += ["--retain", ",".join(retain)]
     _run(args, Path(out).resolve().parent / "export.log")
     return {"path": str(Path(out).resolve())}
+
+
+@rt.method()
+def copy_checkpoint(run_dir: str, retain: list[str], step: int | None = None, fill: str = "zeros") -> dict[str, Any]:
+    """A shareable copy with other speaker rows replaced and optimizer state removed."""
+    import shutil
+    import uuid
+    import torch
+    from checkpoint_store import listing
+    root = Path(run_dir).resolve()
+    choices = [c for c in listing(root) if step is None or c["step"] == step]
+    if not choices:
+        raise ValueError("No matching checkpoint")
+    selected = max(choices, key=lambda c: c["step"])
+    mapping = json.loads((root / "spk_map.json").read_text(encoding="utf-8"))
+    if not retain or set(retain) - set(mapping):
+        raise ValueError("Select existing speaker names: " + ", ".join(mapping))
+    if fill not in {"zeros", "random", "mean", "cyclic"}:
+        raise ValueError("Unknown speaker fill method")
+    kept = sorted({int(mapping[name]) for name in retain})
+    loaded = torch.load(selected["path"], map_location="cpu", weights_only=False)
+    weights = loaded["state_dict"]
+    changed = 0
+    for key in ("model.fs2.spk_embed.weight", "model.spk_embed.weight"):
+        if key not in weights:
+            continue
+        tensor = weights[key].clone()
+        dropped = sorted(set(range(tensor.shape[0])) - set(kept))
+        mean = tensor[kept].mean(dim=0)
+        for i, speaker_id in enumerate(dropped):
+            if fill == "zeros": tensor[speaker_id].zero_()
+            elif fill == "random": tensor[speaker_id].normal_()
+            elif fill == "mean": tensor[speaker_id] = mean
+            else: tensor[speaker_id] = tensor[kept[i % len(kept)]]
+        weights[key] = tensor
+        changed += len(dropped)
+    out = root / "checkpoint-copies" / uuid.uuid4().hex[:12]
+    out.mkdir(parents=True)
+    target = out / f"model_ckpt_steps_{selected['step']}.ckpt"
+    torch.save({"state_dict": weights, "global_step": selected["step"], "epoch": loaded.get("epoch", 0)}, target)
+    config = _load_yaml(root / "config.yaml")
+    config["datasets"] = [d for d in config.get("datasets", []) if d.get("speaker") in retain]
+    (out / "config.yaml").write_text(_yaml().safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    (out / "spk_map.json").write_text(json.dumps({name: mapping[name] for name in retain}, ensure_ascii=False), encoding="utf-8")
+    for pattern in ("*phonemes*.json", "*languages*.json", "lang_map.json", "dictionary-*.txt"):
+        for path in root.glob(pattern):
+            if path.is_file(): shutil.copy2(path, out / path.name)
+    return {"out_dir": str(out), "path": str(target), "retained": retain, "replaced_rows": changed,
+            "optimizer_removed": True, "files": sorted(str(p) for p in out.iterdir())}
 
 
 @rt.method()

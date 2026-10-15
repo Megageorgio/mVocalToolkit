@@ -204,3 +204,18 @@ def test_export_data_snapshot_carries_donor_license_into_bank(tmp_path):
     assert saved["training_data"][0]["seconds"] == 600
     assert "donor (donor, ja): 10.0 minutes" in (bank / "readme.txt").read_text(encoding="utf-8")
     assert result.problems == []
+
+
+def test_select_heads_independently_from_exports_and_keep_each_encoder(tmp_path):
+    phones = ["AP", "SP", "a"]
+    _export(tmp_path / "a", "acoustic", "acoustic", phones, {"xx": 0}, dictionaries={"xx": [("a", "a")]})
+    for name in ("duration", "pitch"):
+        _export(tmp_path / name, "variance", "variance", phones, {"xx": 0})
+        (tmp_path / name / "variance.linguistic.onnx").write_bytes(name.encode())
+    result = assemble(VoicebankSpec(name="Mixed", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "a"),
+        components={"dur": str(tmp_path / "duration"), "pitch": str(tmp_path / "pitch")}, phoneme_types={"a": "vowel"}))
+    bank = tmp_path / "out/Mixed"
+    assert result.problems == [] and result.models == ["acoustic", "dur", "pitch"]
+    assert (bank / "dsdur/linguistic.onnx").read_bytes() == b"duration"
+    assert (bank / "dspitch/linguistic.onnx").read_bytes() == b"pitch"
+    assert not (bank / "dsvariance").exists()

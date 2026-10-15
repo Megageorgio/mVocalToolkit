@@ -89,3 +89,38 @@ def test_render_cancellation_aborts_worker_and_releases_training_queue(tmp_path,
         assert result["status"] == "cancelled" and not tk.training._inference
         assert aborted == ["fake"]
         assert run.info.renders == []
+
+
+def test_variance_to_acoustic_chain_passes_predicted_file_and_saves_provenance(tmp_path, monkeypatch):
+    from pathlib import Path
+    tk = Toolkit(Home(tmp_path / "home"), engine_dirs=[FAKE_ENGINES])
+    calls = []
+    async def call(engine, method, params, **kwargs):
+        calls.append(params)
+        folder = Path(params["out_dir"])
+        folder.mkdir(parents=True, exist_ok=True)
+        if params["kind"].endswith("variance"):
+            result = folder / "predicted.ds"
+            result.write_text('[{"ph_seq":"a", "f0_seq":"440"}]')
+        else:
+            assert json.loads(Path(params["ds"]).read_text())[0]["f0_seq"] == "440"
+            result = make_wav(folder / "phrase.wav", seconds=.05)
+        return {"out_dir": str(folder), "files": [str(result)]}
+    monkeypatch.setattr(tk.engines, "call", call)
+    with TestClient(create_app(tk)) as client:
+        for name, kind in (("a", "diffsinger_acoustic"), ("v", "diffsinger_variance")):
+            run = Run(RunInfo(id=name, spec=RunSpec(kind=kind), dir=str(tmp_path / name), status=RunStatus.done))
+            tk.training.runs[name] = run
+            run.save(force=True)
+        ds = tmp_path / "phrase.ds"
+        ds.write_text('[{"ph_seq":"a"}]')
+        response = client.post("/training/runs/a/render", json={"ds": str(ds), "variance_run": "v", "variance_step": 20, "device": "cpu"})
+        assert response.status_code == 200, response.text
+        job = response.json()
+        for _ in range(20):
+            info = client.get(f"/jobs/{job['id']}", params={"wait": 1}).json()
+            if info["status"] in {"done", "failed"}: break
+        assert info["status"] == "done", info
+        assert len(calls) == 2 and calls[0]["step"] == 20 and all(c["device"] == "cpu" for c in calls)
+        assert info["result"]["variance_run"] == "v" and Path(info["result"]["predicted_input"]).is_file()
+        assert json.loads(ds.read_text()) == [{"ph_seq": "a"}]

@@ -77,7 +77,34 @@ def _label_index(root: Path) -> dict[str, list[Path]]:
     return index
 
 
+def _ds_for(audio: Path, index: dict[str, list[Path]] | None = None) -> Path | None:
+    adjacent = audio.with_suffix(".ds")
+    if adjacent.is_file():
+        return adjacent
+    choices = [p for p in (index or {}).get(audio.stem, []) if p.suffix.lower() == ".ds"]
+    return choices[0] if len(choices) == 1 else None
+
+
 def _label_for(audio: Path, csv_rows: dict[str, Label], index: dict[str, list[Path]] | None = None) -> Label | None:
+    label = _base_label_for(audio, csv_rows, index)
+    ds = _ds_for(audio, index)
+    if ds is not None:
+        try:
+            extra = formats.read(ds)
+            if label is None:
+                return extra
+            if (len(extra.phones) == len(label.phones) and
+                    all(a.text == b.text and abs(a.start - b.start) < .002 and abs(a.end - b.end) < .002
+                        for a, b in zip(label.phones, extra.phones))):
+                for tier in ("notes", "words"):
+                    if extra.tiers.get(tier) and not label.tiers.get(tier):
+                        label.tiers[tier] = extra.tiers[tier]
+        except (OSError, ValueError, TypeError):
+            pass
+    return label
+
+
+def _base_label_for(audio: Path, csv_rows: dict[str, Label], index: dict[str, list[Path]] | None = None) -> Label | None:
     if audio.stem in csv_rows:
         return csv_rows[audio.stem]
     candidates = [audio.with_suffix(ext) for ext in LABELS]
@@ -203,7 +230,7 @@ def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[s
         if len(speaker_languages[speaker]) > 1:
             raw_dir /= language
         entry = speakers.setdefault((speaker, language), {"speaker": speaker, "language": language, "names": [], "seconds": 0.0,
-                                                        "role": source.role, "raw_data_dir": str(raw_dir), "note_files": 0})
+                                                        "role": source.role, "raw_data_dir": str(raw_dir), "note_files": 0, "group_files": 0})
         name = audio.stem
         names = seen_names.setdefault((speaker, language), set())
         if name in names:
@@ -221,10 +248,29 @@ def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[s
                 unchanged = hashlib.file_digest(stream, "sha256").hexdigest() == digest
         if not unchanged:
             shutil.copy2(audio, target)
+        ds = _ds_for(audio, label_index[root])
+        if ds is not None:
+            try:
+                ds_label = formats.read(ds)
+                if len(ds_label.phones) != len(label.phones) or any(
+                        RENAMES.get(a.text, a.text) != b.text or abs(a.duration - b.duration) > .002
+                        for a, b in zip(ds_label.phones, label.phones)):
+                    raise ValueError("phonemes or timing differ from the selected labels")
+                contents = json.loads(ds.read_text(encoding="utf-8-sig"))
+                if not isinstance(contents, list) or len(contents) != 1:
+                    raise ValueError("training requires one segment per recording")
+                contents[0]["ph_seq"] = " ".join(p.text for p in label.phones)
+                destination = raw_dir / "ds" / (name + ".ds")
+                destination.parent.mkdir(exist_ok=True)
+                destination.write_text(json.dumps(contents, ensure_ascii=False, indent=1), encoding="utf-8")
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                result.problems.append({"file": str(ds), "problem": f".ds not copied: {exc}",
+                                        "code": "ds_mismatch", "severity": "warning"})
         row = ds_csv.row_from_label(name, label, with_words="words" in label.tiers, with_notes="notes" in label.tiers)
         entry.setdefault("rows", []).append(row)
         entry["names"].append(name)
-        entry["note_files"] += bool(label.tiers.get("notes"))
+        entry["note_files"] += bool(label.tiers.get("notes")) and any(n.text.lower() not in {"rest", "r", "sp", "ap"} for n in label.tiers["notes"])
+        entry["group_files"] += bool(row.get("ph_num"))
         seconds = _audio_seconds(audio) or label.end_time()
         entry["seconds"] += seconds
         result.seconds += seconds
@@ -290,7 +336,7 @@ def read_dictionary_phonemes(path: Path) -> set[str]:
     return {phoneme for _, phones in read_entries(path) for phoneme in phones}
 
 
-def validate_report(path: str, needs_notes: bool = False) -> None:
+def validate_report(path: str, needs_notes: bool = False, needs_groups: bool = False) -> None:
     """Apply the same preflight gate for CLI/API clients as for the desktop wizard."""
     if not path:
         return  # Older and hand-written specs may not carry a doctor report.
@@ -303,6 +349,8 @@ def validate_report(path: str, needs_notes: bool = False) -> None:
         blockers.append("no usable labelled recordings")
     if needs_notes and any(s.get("note_files", 0) < s.get("files", 0) for s in report.get("speakers", [])):
         blockers.append("pitch training needs notes in every recording")
+    if needs_groups and any(s.get("group_files", s.get("files", 0)) < s.get("files", 0) for s in report.get("speakers", [])):
+        blockers.append("duration training needs ph_num groups in every recording; prepare recordings first")
     if blockers:
         raise ValueError("Dataset check blocks training: " + "; ".join(dict.fromkeys(blockers)))
 

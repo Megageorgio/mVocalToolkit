@@ -68,8 +68,21 @@ def loads_rows(text: str) -> list[dict[str, Any]]:
 def label_from_row(row: dict[str, Any]) -> Label:
     label = Label()
     label.tiers["phones"] = _intervals(row.get("ph_seq", ""), row.get("ph_dur", ""))
+    counts = None
+    if row.get("ph_num"):
+        counts = [int(n) for n in str(row["ph_num"]).split()]
+        if any(n <= 0 for n in counts) or sum(counts) != len(label.phones):
+            raise ValueError("ph_num must group every phoneme exactly once")
     if row.get("word_seq") and row.get("word_dur"):
         label.tiers["words"] = _intervals(row["word_seq"], row["word_dur"])
+        if counts is not None and len(counts) != len(label.words):
+            raise ValueError("ph_num and word_seq have different lengths")
+    elif counts is not None:
+        offset = 0
+        for count in counts:
+            group = label.phones[offset:offset + count]
+            label.words.append(Interval(start=group[0].start, end=group[-1].end, text="_"))
+            offset += count
     if row.get("note_seq") and row.get("note_dur"):
         label.tiers["notes"] = _intervals(row["note_seq"], row["note_dur"])
         if row.get("note_slur"):

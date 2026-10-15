@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 import json
+import hashlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from ..api_models import (
     CatalogAddRequest,
     ConvertRequest,
     DatasetBuildRequest,
+    RecordingPreparationRequest,
     DatasetDownloadRequest,
     FixLabelsRequest,
     MidiRequest,
@@ -38,6 +40,7 @@ from ..api_models import (
     TrainingExportRequest,
     TrainingQueueRequest,
     CheckpointRetentionRequest,
+    CheckpointCopyRequest,
     VoicebankRequest,
     TrainingRenderRequest,
     TranscribeRequest,
@@ -487,6 +490,13 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         review step. The engine merges it over openvpi's defaults when the run starts."""
         from ..training.diffsinger import build_overlay, resolve_assets  # noqa: PLC0415
 
+        if spec.kind == "g2p_rnnt":
+            from ..training.g2p import report
+            try:
+                return {"overlay": report(spec.config), "assets": {}}
+            except (OSError, ValueError, TypeError) as exc:
+                raise HTTPException(400, str(exc)) from exc
+
         if spec.kind == "singingvocoders_vocoder":
             from ..training.vocoder import build_overlay as vocoder_overlay, resolve_assets as vocoder_assets
 
@@ -507,6 +517,13 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         """Queues a training run. One run trains at a time; the trainer is a process of its own that keeps running
         when the server stops. Progress: GET /training/runs/{id} (numbers), /events (everything), WS /events."""
         _engine(tk, spec.engine_name())
+        if spec.kind == "g2p_rnnt":
+            from ..training.g2p import snapshot
+            try:
+                data = await asyncio.to_thread(snapshot, spec.config, tk.home.dir("training") / "g2p-data")
+            except (OSError, ValueError, TypeError) as exc:
+                raise HTTPException(400, str(exc)) from exc
+            spec = spec.model_copy(update={"config": {**{k: v for k, v in spec.config.items() if k != "prepared"}, **data}})
         if spec.kind == "singingvocoders_vocoder":
             from ..training.vocoder import build_overlay as vocoder_overlay, resolve_assets as vocoder_assets, scan_sources
 
@@ -525,7 +542,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
 
             try:
                 overlay = build_overlay(spec.kind, {**spec.config, "device": spec.device})
-                validate_report(str(spec.config.get("data_report") or ""), bool(overlay.get("predict_pitch")))
+                validate_report(str(spec.config.get("data_report") or ""), bool(overlay.get("predict_pitch")), bool(overlay.get("predict_dur")))
             except ValueError as e:
                 raise HTTPException(400, str(e)) from e
             spec = spec.model_copy(update={"config": {**spec.config, "overlay": overlay, "assets": resolve_assets(spec.config)}})
@@ -550,6 +567,44 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
             return await asyncio.to_thread(scan_sources, config)
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/training/g2p/check", tags=["training"], dependencies=[Depends(auth)])
+    async def g2p_check(config: dict[str, Any]):
+        from ..training.g2p import report
+        try:
+            return await asyncio.to_thread(report, config)
+        except (OSError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/training/config/read", tags=["training"], dependencies=[Depends(auth)])
+    async def training_config_read(request: dict[str, str]):
+        import yaml
+        content = request.get("content", "")
+        if len(content) > 1_048_576:
+            raise HTTPException(400, "Configuration must be smaller than 1 MB")
+        try:
+            result = yaml.safe_load(content)
+            if not isinstance(result, dict) or not all(isinstance(k, str) for k in result):
+                raise ValueError("Configuration must be an object with string keys")
+            # Return JSON-compatible values only; YAML timestamps/custom values are not settings.
+            json.dumps(result, allow_nan=False)
+            return result
+        except (yaml.YAMLError, ValueError, TypeError, RecursionError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/training/runs/{run_id}/predict", tags=["training"], dependencies=[Depends(auth)])
+    async def g2p_predict(run_id: str, request: dict[str, Any], tk: Toolkit = Depends(get_tk)):
+        run = _run(tk, run_id)
+        words = request.get("words", [])
+        if run.info.spec.kind != "g2p_rnnt" or not isinstance(words, list) or not 1 <= len(words) <= 100 or any(not isinstance(w, str) or not 1 <= len(w) <= 128 for w in words):
+            raise HTTPException(400, "Provide 1–100 words of 1–128 characters for a G2P run")
+        step = request.get("step")
+        if step is not None and (isinstance(step, bool) or not isinstance(step, int) or step < 0):
+            raise HTTPException(400, "Checkpoint step must be a non-negative integer")
+        if tk.training._busy():
+            raise HTTPException(409, "Wait for active training or rendering to finish before predicting pronunciations")
+        async with tk.training.inference_slot():
+            return await _guard(tk.engines.call("g2p", "predict", {"run_dir": str(run.dir), "words": words, "step": step}))
 
     @app.post("/training/dictionary/read", tags=["training"], dependencies=[Depends(auth)])
     async def dictionary_read(request: dict[str, Any]):
@@ -631,8 +686,8 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
     @app.get("/training/runs/{run_id}/log", tags=["training"], dependencies=[Depends(auth)])
     async def training_log(run_id: str, lines: int = 200, name: str = "train.log", tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
         run = _run(tk, run_id)
-        if name not in ("train.log", "prepare.log", "export.log", "render.log"):
-            raise HTTPException(400, "name: train.log, prepare.log, export.log or render.log")
+        if name not in ("train.log", "prepare.log", "export.log", "render.log", "tensorboard.log"):
+            raise HTTPException(400, "name: train.log, prepare.log, export.log, render.log or tensorboard.log")
         return {"lines": run.log_tail(lines, name), "path": str(run.dir / name)}
 
     @app.post("/training/runs/{run_id}/stop", tags=["training"], dependencies=[Depends(auth)])
@@ -640,6 +695,26 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         """Asks the trainer to save a checkpoint and end (killed after a few minutes if it doesn't)."""
         _run(tk, run_id)
         return await tk.training.stop(run_id)
+
+    @app.post("/training/runs/{run_id}/tensorboard", tags=["training"], dependencies=[Depends(auth)])
+    async def training_tensorboard(run_id: str, tk: Toolkit = Depends(get_tk)):
+        from ..engines.manager import process_environment
+        run = _run(tk, run_id)
+        if run.info.spec.engine_name() not in {"diffsinger", "singingvocoders"}:
+            raise HTTPException(400, "This trainer has no TensorBoard logs; use its built-in metrics")
+        spec = tk.engines.spec(run.info.spec.engine_name())
+        python, cwd, env = process_environment(spec, tk.engines.envs, tk.settings)
+        try:
+            return await tk.tensorboard.start(run_id, run.dir, python, cwd, env)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.delete("/training/runs/{run_id}/tensorboard", tags=["training"], dependencies=[Depends(auth)])
+    async def training_tensorboard_stop(run_id: str, tk: Toolkit = Depends(get_tk)):
+        _run(tk, run_id)
+        if tk.tensorboard.run_id == run_id:
+            await tk.tensorboard.stop()
+        return {"ok": True}
 
     @app.post("/training/runs/{run_id}/resume", tags=["training"], dependencies=[Depends(auth)])
     async def training_resume(run_id: str, tk: Toolkit = Depends(get_tk)):
@@ -654,6 +729,8 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
     async def training_delete(run_id: str, files: bool = False, tk: Toolkit = Depends(get_tk)) -> dict[str, Any]:
         """Forgets the run (stopping it first); files=true also removes its folder."""
         _run(tk, run_id)
+        if tk.tensorboard.run_id == run_id:
+            await tk.tensorboard.stop()
         await tk.training.delete(run_id, files=files)
         return {"ok": True}
 
@@ -680,6 +757,8 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
     async def training_export(run_id: str, req: TrainingExportRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
         """ONNX export of a checkpoint with the engine's exporter (a job)."""
         run = _run(tk, run_id)
+        if req.freeze_spk and req.export_spk:
+            raise HTTPException(400, "Choose exported speakers or a frozen speaker, not both")
         if tk.training._busy():
             raise HTTPException(409, "Wait for active training or rendering to finish before exporting")
         out_dir = req.out_dir or str(run.dir / "export" / (str(req.step) if req.step else "latest"))
@@ -695,7 +774,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
                 if report_path.is_file():
                     data_report = json.loads(report_path.read_text(encoding="utf-8"))
             export_speakers = req.export_spk
-            if not export_speakers and data_report and run.info.spec.engine_name() != "singingvocoders":
+            if not export_speakers and not req.freeze_spk and data_report and run.info.spec.engine_name() not in {"singingvocoders", "g2p"}:
                 data_speakers = data_report.get("speakers") or []
                 if any(s.get("role") == "donor" for s in data_speakers):
                     export_speakers = sorted({s["speaker"] for s in data_speakers if s.get("role") != "donor"})
@@ -723,10 +802,24 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
 
         return submit(tk, "training_export", work, {"run": run_id, **req.model_dump()})
 
+    @app.post("/training/runs/{run_id}/checkpoint-copy", tags=["training"], dependencies=[Depends(auth)])
+    async def training_checkpoint_copy(run_id: str, req: CheckpointCopyRequest, tk: Toolkit = Depends(get_tk)):
+        run = _run(tk, run_id)
+        if not run.info.spec.kind.startswith("diffsinger"):
+            raise HTTPException(400, "Speaker filtering requires a DiffSinger checkpoint")
+        async def work(job: Job):
+            async with tk.training.inference_slot():
+                return await training_call(tk, job, "diffsinger", "copy_checkpoint", {
+                    "run_dir": str(run.dir), "step": req.step, "retain": req.retain, "fill": req.fill})
+        return submit(tk, "checkpoint_copy", work, {"run": run_id, **req.model_dump()})
+
     @app.post("/training/runs/{run_id}/render", tags=["training"], dependencies=[Depends(auth)])
     async def training_render(run_id: str, req: TrainingRenderRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
         """Sings a .ds file with a checkpoint (a job); the result lists the files made."""
         run = _run(tk, run_id)
+        variance_run = _run(tk, req.variance_run) if req.variance_run else None
+        if variance_run is not None and (run.info.spec.kind != "diffsinger_acoustic" or variance_run.info.spec.kind != "diffsinger_variance"):
+            raise HTTPException(400, "A render chain requires a DiffSinger variance run and an acoustic run")
         if tk.training._busy():
             raise HTTPException(409, "Wait for active training or rendering to finish before rendering a test phrase")
         source = Path(req.ds).expanduser().resolve()
@@ -749,13 +842,26 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
                 folder.mkdir(parents=True, exist_ok=True)
                 snapshot = folder / ("input-" + uuid.uuid4().hex[:8] + ".ds")
                 snapshot.write_text(contents, encoding="utf-8")
+                render_input = snapshot
+                if variance_run is not None:
+                    predicted = await training_call(tk, job, "diffsinger", "render", {
+                        "run_dir": str(variance_run.dir), "kind": "diffsinger_variance", "ds": str(snapshot),
+                        "out_dir": str(folder / "variance"), "step": req.variance_step,
+                        "spk": req.spk, "lang": req.lang, "title": "predicted", "predict": req.predict,
+                        "seed": req.seed, "device": req.device})
+                    ds_files = [Path(p) for p in predicted.get("files", []) if Path(p).suffix.lower() == ".ds"]
+                    if len(ds_files) != 1:
+                        raise ValueError("Variance inference did not produce exactly one .ds file")
+                    render_input = ds_files[0]
                 result = await training_call(tk, job, run.info.spec.engine_name(), "render", {
-                    "run_dir": str(run.dir), "kind": run.info.spec.kind, "ds": str(snapshot), "out_dir": out_dir, "step": req.step,
+                    "run_dir": str(run.dir), "kind": run.info.spec.kind, "ds": str(render_input), "out_dir": out_dir, "step": req.step,
                     "spk": req.spk, "lang": req.lang, "title": req.title or source.stem, "steps": req.steps, "depth": req.depth,
-                    "predict": req.predict, "seed": req.seed,
+                    "predict": req.predict, "seed": req.seed, "device": req.device,
                 })
                 record = {"time": time.time(), "step": req.step, "source": str(source), "input": str(snapshot),
-                          "spk": req.spk, "lang": req.lang, "seed": req.seed, **result}
+                          "phrase_sha256": hashlib.sha256(json.dumps(segments, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest(),
+                          "spk": req.spk, "lang": req.lang, "seed": req.seed, "variance_run": req.variance_run,
+                          "variance_step": req.variance_step, "predicted_input": str(render_input), **result}
                 run.info.renders.append(record)
                 run.save(force=True)
                 return record
@@ -781,6 +887,16 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
                     "spec": spec_from_result(result)}
 
         return submit(tk, "dataset_build", work, req.model_dump())
+
+    @app.post("/training/dataset/prepare", tags=["training"], dependencies=[Depends(auth)])
+    async def training_dataset_prepare(req: RecordingPreparationRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
+        from ..training.preparation import prepare_recordings
+
+        async def work(job: Job):
+            async with tk.training.inference_slot():
+                return await prepare_recordings(tk, job, req, training_call)
+
+        return submit(tk, "dataset_prepare", work, req.model_dump())
 
     @app.post("/training/voicebank", tags=["training"], dependencies=[Depends(auth)])
     async def training_voicebank(req: VoicebankRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:

@@ -51,7 +51,7 @@ class RunSpec(BaseModel):
     engine: str = Field("", description="Engine that trains it (default: the part of kind before the underscore)")
     name: str = ""
     dir: str = Field("", description="Run folder (default: <home>/training/<id>)")
-    device: str = Field("auto", description="auto, cuda, cuda:1, cpu")
+    device: str = Field("auto", pattern=r"^(auto|cpu|cuda(:[0-9]+)?|mps)$", description="auto, cuda, cuda:1, cpu")
     config: dict[str, Any] = Field(default_factory=dict)
 
     def engine_name(self) -> str:

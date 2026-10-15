@@ -339,10 +339,10 @@ class CatalogAddRequest(BaseModel):
 
 class TrainingExportRequest(BaseModel):
     out_dir: str = Field("", description="Folder for the ONNX files (default: <run dir>/export/<step>)")
-    step: int | None = Field(None, description="Checkpoint step (default: the latest)")
+    step: int | None = Field(None, ge=0, description="Checkpoint step (default: the latest)")
     export_spk: list[str] = Field(default_factory=list, description="Speakers or mixes to export (multi-speaker models)")
     freeze_spk: str | None = None
-    freeze_gender: float | None = None
+    freeze_gender: float | None = Field(None, ge=-1, le=1)
     freeze_velocity: bool = False
     freeze_glide: bool = False
     freeze_expr: bool = False
@@ -357,12 +357,21 @@ class TrainingRenderRequest(BaseModel):
     title: str | None = None
     steps: int | None = Field(None, ge=1, le=1000, description="Acoustic: sampling steps")
     depth: float | None = Field(None, ge=0, le=1, description="Acoustic: shallow diffusion depth")
-    predict: list[str] = Field(default_factory=list, description="Variance: dur, pitch, energy, breathiness, voicing, tension")
+    predict: list[Literal["dur", "pitch", "energy", "breathiness", "voicing", "tension"]] = Field(default_factory=list)
     seed: int | None = None
+    variance_run: str | None = None
+    variance_step: int | None = Field(None, ge=0)
+    device: str = Field("auto", pattern=r"^(auto|cpu|cuda(:[0-9]+)?|mps)$")
 
 
 class CheckpointRetentionRequest(BaseModel):
     starred: bool = True
+
+
+class CheckpointCopyRequest(BaseModel):
+    step: int | None = Field(None, ge=0)
+    retain: list[str] = Field(min_length=1)
+    fill: Literal["zeros", "random", "mean", "cyclic"] = "zeros"
 
 
 class VoicebankRequest(BaseModel):
@@ -370,6 +379,8 @@ class VoicebankRequest(BaseModel):
     out_dir: str = Field(..., description="Where the bank folder is made")
     acoustic: str = Field(..., description="Export folder of the acoustic model (dsconfig.yaml, acoustic.onnx…)")
     variance: list[str] = Field(default_factory=list, description="Export folders with dur / pitch / variance models")
+    components: dict[str, str] = Field(default_factory=dict, description="Explicit dur, pitch, variance -> export folder")
+    include_dictionary: bool = True
     vocoder: str = Field("", description="Folder with a custom vocoder (ONNX + vocoder.yaml); empty: the standard one")
     phoneme_types: dict[str, str] = Field(default_factory=dict, description="phoneme -> vowel | stop | affricate | fricative | liquid | nasal | semivowel")
     vowels: dict[str, list[str]] = Field(default_factory=dict, description="language -> vowels (for the dsdict types)")
@@ -394,6 +405,21 @@ class DatasetBuildRequest(BaseModel):
     dictionaries: dict[str, str] = Field(default_factory=dict, description="language -> dictionary file; missing ones are made from the labels")
     validation_files: int = Field(3, ge=1, description="Validation files per speaker (chosen by name, the same every time)")
     extra_phonemes: list[str] = Field(default_factory=list)
+
+
+class RecordingPreparationRequest(BaseModel):
+    folder: str
+    out_dir: str
+    segment: bool = True
+    max_length: float = Field(20.0, ge=2, le=600)
+    min_silence: float = Field(.25, ge=.01, le=10)
+    estimate_notes: bool = False
+    note_model: str = "game-small"
+    language: str = ""
+    write_ds: bool = True
+    f0_method: Literal["none", "rmvpe", "parselmouth", "harvest"] = "rmvpe"
+    vowels: list[str] = Field(default_factory=list)
+    liquids: list[str] = Field(default_factory=list)
 
 
 class TrainingQueueRequest(BaseModel):

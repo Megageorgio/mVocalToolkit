@@ -238,6 +238,11 @@ class TrainingManager:
             raise ValueError("The run is active")
         if not run.dir.exists():
             raise ValueError("The run folder is gone")
+        # Prepare-only and never-launched runs have no follower to consume their end event.
+        # Drain that history before setting the new queued state.
+        for event in run.read_new_events():
+            self._apply(run, event)
+            info.events += 1
         info.status = RunStatus.queued
         info.queue_order = max((r.info.queue_order for r in self.runs.values()), default=0) + 1
         info.error, info.error_kind = None, None
@@ -280,7 +285,7 @@ class TrainingManager:
 
     async def checkpoints(self, run_id: str) -> list[Checkpoint]:
         run = self._require(run_id)
-        if run.info.spec.engine_name() in {"diffsinger", "singingvocoders"}:
+        if run.info.spec.engine_name() in {"diffsinger", "singingvocoders", "g2p"}:
             from ..engines.diffsinger.checkpoint_store import listing
 
             divisor = 2 if run.info.spec.engine_name() == "singingvocoders" else 1
@@ -298,7 +303,7 @@ class TrainingManager:
 
     def retain_checkpoint(self, run_id: str, step: int, keep: bool) -> RunInfo:
         run = self._require(run_id)
-        if run.info.spec.engine_name() not in {"diffsinger", "singingvocoders"}:
+        if run.info.spec.engine_name() not in {"diffsinger", "singingvocoders", "g2p"}:
             raise ValueError("Checkpoint retention is supported for DiffSinger and SingingVocoders runs")
         from ..engines.diffsinger.checkpoint_store import listing, retain
 
@@ -369,7 +374,7 @@ class TrainingManager:
             if info.status != RunStatus.preparing:
                 self._interrupted(run, "Stopped while preparing")
                 return
-            resumed = bool(info.checkpoints) and (run.dir / "config.yaml").exists()
+            resumed = (bool(info.checkpoints) or (run.dir / "PREPARED").is_file()) and (run.dir / "config.yaml").exists()
             if resumed:
                 # a resume: the config and the binary data are there
                 result = await self.tk.engines.call(engine, "resume_command", {
@@ -392,6 +397,15 @@ class TrainingManager:
             if info.status != RunStatus.preparing:
                 # stopped while preparing
                 self._interrupted(run, "Stopped while preparing")
+                return
+            if info.spec.config.get("prepare_only") and not resumed:
+                (run.dir / "PREPARED").write_text("ready", encoding="utf-8")
+                info.status = RunStatus.done
+                info.finished_at = time.time()
+                info.message = "Data prepared; resume this run to start training"
+                info.stage, info.progress = "prepared", 1.0
+                run.save(force=True)
+                run.publish(run.emit("end", status="done"))
                 return
             launch = result.get("launch") or {}
             self._launch(run, spec, launch.get("args") or [], resumed)
@@ -604,7 +618,7 @@ class TrainingManager:
         elif kind == "checkpoint":
             ckpt = Checkpoint(step=int(event.get("step") or 0), path=str(event.get("path") or ""),
                               size=int(event.get("size") or 0), time=now)
-            if info.spec.engine_name() in {"diffsinger", "singingvocoders"}:
+            if info.spec.engine_name() in {"diffsinger", "singingvocoders", "g2p"}:
                 from ..engines.diffsinger.checkpoint_store import retained_path
 
                 divisor = 2 if info.spec.engine_name() == "singingvocoders" else 1
@@ -613,7 +627,7 @@ class TrainingManager:
             info.checkpoints.sort(key=lambda c: c.step)
         elif kind == "checkpoint_removed":
             step = int(event.get("step") or -1)
-            if info.spec.engine_name() in {"diffsinger", "singingvocoders"}:
+            if info.spec.engine_name() in {"diffsinger", "singingvocoders", "g2p"}:
                 from ..engines.diffsinger.checkpoint_store import retained_path
 
                 divisor = 2 if info.spec.engine_name() == "singingvocoders" else 1
@@ -647,7 +661,7 @@ class TrainingManager:
             info.error = event.get("error")
             info.error_kind = event.get("error_kind")
             info.speed, info.eta = None, None
-            if info.status == RunStatus.done:
+            if info.status == RunStatus.done and info.stage != "prepared":
                 info.message = "Finished"
             run.stop_file.unlink(missing_ok=True)
 

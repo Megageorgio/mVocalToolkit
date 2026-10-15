@@ -15,6 +15,7 @@ requirements = [
     "soundfile",
     "torchfcpe",
     "praat-parselmouth",
+    "pyworld>=0.3.4",
 ]
 
 [source]

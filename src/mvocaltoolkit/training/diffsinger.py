@@ -255,8 +255,9 @@ def build_overlay(kind: str, config: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("Fine-tuning needs finetune.ckpt (the checkpoint to start from)")
         overlay["finetune_enabled"] = True
         overlay["finetune_ckpt_path"] = str(ft["ckpt"])
-        overlay["finetune_ignored_params"] = list(ft.get("ignored_params") or [
+        overlay["finetune_ignored_params"] = list(ft.get("ignored_params", [
             "model.fs2.encoder.embed_tokens", "model.fs2.txt_embed", "model.fs2.spk_embed"])
+        )
         overlay["finetune_strict_shapes"] = bool(ft.get("strict_shapes", False))
         if goal == "finetune":
             overlay["max_updates"] = min(overlay["max_updates"], 40000 if acoustic else 30000)
@@ -272,9 +273,55 @@ def build_overlay(kind: str, config: dict[str, Any]) -> dict[str, Any]:
         overlay["pl_trainer_accelerator"] = "cpu"
         overlay["pl_trainer_precision"] = "32"
 
+    options = config.get("options") or {}
+    backbone = options.get("backbone", "lynxnet2")
+    if backbone not in ("lynxnet2", "lynxnet", "wavenet"):
+        raise ValueError("backbone must be lynxnet2, lynxnet or wavenet")
+    targets = [(overlay, 1024, 20, 4)] if acoustic else [
+        (overlay["pitch_prediction_args"], 512, 20, 5),
+        (overlay["variances_prediction_args"], 384, 10, 4)]
+    for target, channels, layers, cycle in targets:
+        args = {"num_channels": channels, "num_layers": 6, "dropout_rate": 0.0}
+        if acoustic:
+            args["kernel_size"] = 31
+        if backbone == "wavenet":
+            args = {"num_channels": channels // 2, "num_layers": layers, "dilation_cycle_length": cycle}
+        elif backbone == "lynxnet":
+            args["strong_cond"] = True
+        else:
+            args.update(use_conditioner_cache=True, glu_type="atanglu")
+        target.update(backbone_type=backbone, backbone_args=args)
+    for name, key in (("dual_timestep", "use_dual_timestep"), ("stretch", "use_stretch_embed"),
+                      ("melody_encoder", "use_melody_encoder"), ("mix_layer_norm", "use_mix_ln")):
+        if name in options:
+            overlay[key] = bool(options[name])
+    if acoustic and "mix_layer_norm" not in options:
+        overlay["use_mix_ln"] = num_spk > 1
+    if options.get("hnsep", "vr") not in ("vr", "world"):
+        raise ValueError("hnsep must be vr or world")
+    overlay["hnsep"] = options.get("hnsep", "vr")
+    overlay["matmul_precision"] = "medium" if options.get("tensor_acceleration", True) else "highest"
+    overlay["binarization_args"]["prefer_ds"] = bool(options.get("prefer_ds", False))
+    if acoustic:
+        for name, aug, embed in (("pitch_augmentation", "random_pitch_shifting", "use_key_shift_embed"),
+                                 ("time_augmentation", "random_time_stretching", "use_speed_embed")):
+            if name in options:
+                enabled = bool(options[name])
+                overlay[embed] = enabled
+                overlay["augmentation_args"][aug]["enabled"] = enabled
     overrides = config.get("overrides") or {}
     if overrides:
         _deep_update(overlay, overrides)
+    for key in ("max_updates", "val_check_interval", "max_batch_frames", "max_batch_size"):
+        if isinstance(overlay.get(key), bool) or not isinstance(overlay.get(key), int) or overlay[key] < 1:
+            raise ValueError(f"{key} must be a positive integer")
+    if overlay["val_check_interval"] > overlay["max_updates"]:
+        raise ValueError("Validation interval must not exceed total training steps")
+    if not acoustic:
+        if not any(overlay.get(k) for k in VARIANCE_KEYS.values()):
+            raise ValueError("Enable at least one variance prediction")
+        if all(overlay.get("predict_" + k) for k in ("energy", "breathiness", "voicing")):
+            raise ValueError("energy, breathiness and voicing cannot all be enabled")
     return overlay
 
 
@@ -292,4 +339,9 @@ def resolve_assets(config: dict[str, Any]) -> dict[str, str]:
     for key, value in (config.get("assets") or {}).items():
         if value:
             assets[key] = str(value)
+    options, overrides = config.get("options") or {}, config.get("overrides") or {}
+    if overrides.get("hnsep", options.get("hnsep")) == "world":
+        assets.pop("hnsep", None)
+    if overrides.get("pe") in {"parselmouth", "harvest"}:
+        assets.pop("pe", None)
     return assets

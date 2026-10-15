@@ -254,7 +254,7 @@ async def run_separate(tk: Toolkit, job: Job, req: SeparateRequest) -> dict[str,
 
 async def _pitch_model(tk: Toolkit, job: Job, model_id: str) -> tuple[str, str | None, str]:
     """-> (method, RMVPE model path, id)"""
-    if model_id in ("fcpe", "parselmouth") and tk.catalog.get(model_id) is None:
+    if model_id in ("fcpe", "parselmouth", "harvest") and tk.catalog.get(model_id) is None:
         return model_id, None, model_id
     model = await tk.models.require("pitch", model_id, _sub_progress(job, 0.0, 0.05, "download"))
     method = str(model.params.get("method") or "rmvpe")
