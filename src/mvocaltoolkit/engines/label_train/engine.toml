@@ -1,0 +1,14 @@
+name = "label_train"
+title = "WFL-ASR and MCFL training"
+description = "WFL-ASR and MCFL training with frozen input snapshots, optimizer resume and native inference export."
+capabilities = ["train", "export"]
+python = "3.11"
+torch = true
+size_hint = "Several GB of optional dependencies; base models are downloaded only when training starts."
+homepage = "https://github.com/Megageorgio/MCFL"
+license = "See source code, selected base model and recording licenses"
+requirements = ["torch>=2.7,<2.9", "torchaudio>=2.7,<2.9", "numpy<2", "soundfile", "soxr", "PyYAML", "tqdm", "safetensors", "transformers==4.51.3", "librosa==0.11.0", "scipy", "matplotlib", "onnx", "onnxruntime", "tensorboard"]
+
+[source]
+repo = "Megageorgio/MCFL"
+commit = "117bf9da293d0b19231a1ed9674494628eab3d35"

@@ -1,0 +1,14 @@
+name = "qwen_tts"
+title = "Qwen3-TTS single speaker training"
+description = "Qwen3-TTS single speaker training with frozen input snapshots, optimizer resume and native inference export."
+capabilities = ["train", "export"]
+python = "3.11"
+torch = true
+size_hint = "Several GB of optional dependencies; base models are downloaded only when training starts."
+homepage = "https://github.com/QwenLM/Qwen3-TTS"
+license = "See source code, selected base model and recording licenses"
+requirements = ["torch>=2.7,<2.9", "torchaudio>=2.7,<2.9", "numpy<2", "soundfile", "soxr", "PyYAML", "tqdm", "safetensors", "transformers==4.57.3", "accelerate==1.12.0", "librosa", "sox", "onnxruntime", "einops", "huggingface-hub", "tensorboard"]
+
+[source]
+repo = "QwenLM/Qwen3-TTS"
+commit = "022e286b98fbec7e1e916cb940cdf532cd9f488e"

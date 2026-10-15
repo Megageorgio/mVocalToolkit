@@ -348,7 +348,7 @@ Source types: `url`, `github_release` (`asset` is a file name pattern or a list 
 
 ## Training
 
-Model training (DiffSinger today) runs as **training runs**: not ordinary jobs but trainer processes of their own,
+Model training runs as **training runs**: not ordinary jobs but trainer processes of their own,
 started by the toolkit, which keep running when the server stops and are followed again when it starts. One run
 trains at a time; the others wait in a queue. Everything about a run is in its folder (`run.json`, `events.jsonl`,
 `train.log`, `config.yaml`, checkpoints, `samples/<step>/`), by default `<home>/training/<id>`, or the folder the
@@ -681,3 +681,63 @@ The standard export job creates `voice.pth` (RVC v2, f0, HiFi-GAN, ContentVec, s
 prepared, README.txt and provenance.json. The exported generator omits optimizer/discriminator and posterior
 encoder weights and uses legacy RVC weight-norm names. It loads strictly in the pinned native Synthesizer.
 Use the result in a compatible RVC client; it is not an OpenUtau DiffSinger voicebank.
+
+### Additional model trainers
+
+`GET /training/recipes` lists optional training families. `POST /training/recipes/{kind}/check` accepts the
+configuration below and returns counts/findings without installing an engine or downloading model weights.
+The normal `POST /training/runs` freezes the checked inputs again and derives the matching engine:
+
+| kind | engine | Required data / export |
+|---|---|---|
+| `tifa_aligner` | `tifa_train` | Timed phonemes; native TIFA weights, vocabulary and dictionaries |
+| `sofa_aligner` | `sofa_train` | Timed phonemes; SOFA inference checkpoint/vocabulary |
+| `wfl_asr_teacher` | `label_train` | Timed phonemes; WFL-ASR v2 package with frozen Whisper encoder |
+| `mcfl_student` | `label_train` | Timed phonemes and WFL v2 teacher; native fp32/int8 ONNX package |
+| `refiner_boundary` | `refiner_train` | Corrected internal phoneme boundaries; native boundary refiner |
+| `game_notes` | `game_train` | Timed notes in CSV/DS; native GAME weights and five ONNX graphs |
+| `qwen_tts_voice` | `qwen_tts` | One speaker, audio + matching `.txt`; Qwen custom_voice package |
+| `voxcpm_voice` | `voxcpm` | One speaker, audio + matching `.txt`; VoxCPM2 full weights or LoRA |
+
+```json
+{
+  "kind": "tifa_aligner",
+  "device": "cuda:0",
+  "config": {
+    "sources": [{"folder": "D:/recordings", "speaker": "voice", "language": "ru", "license": "CC0"}],
+    "steps": 100, "epochs": 20, "batch_size": 1, "accumulate": 1,
+    "save_interval": 50, "validation_fraction": 0.1, "patience": 5, "seed": 42,
+    "base_model": "", "prepare_only": false, "overrides": {}
+  }
+}
+```
+
+Use WAV/FLAC, mono/stereo, at least 8 kHz and 0.2–120 seconds per file. Timed labels use the existing lab,
+TextGrid, CSV and DS readers. GAME notes use C4/F#4/Bb3/rest names within MIDI 0–127. Exact duplicate audio files
+are deduplicated globally; whole recordings are split deterministically per language. Every language needs
+two distinct recordings. Source audio hashes are checked again when copying/resampling into the run folder.
+
+`learning_rate` defaults by family. `base_model` accepts a compatible local training/inference base. TIFA can
+use project `dictionaries: {"ru":"D:/dict.txt"}`; SOFA supports checkpoint/safetensors bases and transfers phone
+rows by name. WFL accepts `encoder` (local Whisper folder or Hub ID). MCFL needs `teacher` (WFL v2 folder with
+config/maps/weights); `size` is small/medium/large. Its training base must use native unfused training weights,
+rather than the folded `mcfl-v1` release format. Refiner validation uses synthetic timing shifts.
+
+Qwen defaults to `Qwen/Qwen3-TTS-12Hz-0.6B-Base` (compatible 1.7B Base supported), `speaker_name: "voice"`
+and an optional `tokenizer` folder/Hub ID. Vox defaults to `openbmb/VoxCPM2`, `lora: true`, `lora_rank: 16`.
+Speech configuration uses named fields; arbitrary native overrides are rejected. Automatic base downloads
+follow the server's `auto_download_models` setting. Offline speech preparation requires a local base; WFL
+also needs a local/cached encoder. Full precision TTS training needs substantially more memory than inference.
+
+Prepare-only runs resume into training. Optimizer state, schedulers and checkpoints survive stop/resume;
+augmentation order is not promised to be bitwise identical after restart. The normal export/checkpoint-star/
+TensorBoard endpoints work for these engines. Exported labelling/note/refiner packages can be copied into
+`POST /models/import` using engines tifa/sofa/wfl_asr/mcfl/refiner/game. TTS packages use their native inference
+programs; a VoxCPM LoRA package requires its original base model. Validation/audio preview generation for Vox
+follows the native ten-batch evaluation limit and is not a full-corpus quality measurement.
+
+Native small CPU training, validation, export and inference loading passed for the six labelling/note/refiner
+families. Reduced native Qwen/VoxCPM networks passed forward/backward checks. VoxCPM's native optimizer loop
+also passed stop/resume with prepared-feature fixtures and a substituted audio decoder. Full pretrained TTS
+preprocessing/training, GPU convergence and generated voice quality remain unverified. Large weights and new
+training environments were not downloaded for validation.

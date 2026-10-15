@@ -1,0 +1,14 @@
+name = "game_train"
+title = "GAME note model training"
+description = "GAME note model training with frozen input snapshots, optimizer resume and native inference export."
+capabilities = ["train", "export"]
+python = "3.11"
+torch = true
+size_hint = "Several GB of optional dependencies; base models are downloaded only when training starts."
+homepage = "https://github.com/openvpi/GAME"
+license = "See source code, selected base model and recording licenses"
+requirements = ["torch>=2.7,<2.9", "torchaudio>=2.7,<2.9", "numpy<2", "soundfile", "soxr", "PyYAML", "tqdm", "safetensors", "lightning", "torchmetrics", "einops>=0.7", "librosa", "omegaconf", "pydantic>=2.11", "colorednoise", "h5py", "loguru", "matplotlib", "mido", "resampy", "sympy", "tensorboard", "tensorboardX", "onnx", "onnxscript", "onnxslim", "click"]
+
+[source]
+repo = "openvpi/GAME"
+commit = "f4239345f0fed21890d362c74a35fd857724aa82"

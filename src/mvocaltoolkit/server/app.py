@@ -516,6 +516,17 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
     async def training_start(spec: RunSpec, tk: Toolkit = Depends(get_tk)):
         """Queues a training run. One run trains at a time; the trainer is a process of its own that keeps running
         when the server stops. Progress: GET /training/runs/{id} (numbers), /events (everything), WS /events."""
+        from ..training.recipes import FAMILIES, snapshot as recipe_snapshot
+        if spec.kind in FAMILIES:
+            engine = FAMILIES[spec.kind]["engine"]
+            if spec.device == "mps" or spec.engine and spec.engine != engine:
+                raise HTTPException(400, "Choose the matching training engine and CPU or CUDA")
+            config = {**spec.config, "allow_download": tk.settings.auto_download_models}
+            try:
+                prepared = await asyncio.to_thread(recipe_snapshot, spec.kind, config, tk.home.dir("training") / "recipe-data")
+            except (OSError, ValueError, TypeError) as exc:
+                raise HTTPException(400, str(exc)) from exc
+            spec = spec.model_copy(update={"engine":engine,"config":{**config,**prepared}})
         _engine(tk, spec.engine_name())
         if spec.kind == "rvc_voice":
             if spec.engine_name() != "rvc" or spec.device == "mps":
@@ -591,6 +602,19 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         try:
             data = await asyncio.to_thread(check, config)
             return {k: v for k, v in data.items() if k != "recordings"}
+        except (OSError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/training/recipes", tags=["training"], dependencies=[Depends(auth)])
+    async def training_recipes():
+        from ..training.recipes import FAMILIES
+        return FAMILIES
+
+    @app.post("/training/recipes/{kind}/check", tags=["training"], dependencies=[Depends(auth)])
+    async def recipe_check(kind: str, config: dict[str, Any], tk: Toolkit = Depends(get_tk)):
+        from ..training.recipes import check
+        try:
+            return await asyncio.to_thread(check, kind, {**config,"allow_download":tk.settings.auto_download_models})
         except (OSError, ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -718,7 +742,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
     async def training_tensorboard(run_id: str, tk: Toolkit = Depends(get_tk)):
         from ..engines.manager import process_environment
         run = _run(tk, run_id)
-        if run.info.spec.engine_name() not in {"diffsinger", "singingvocoders", "rvc"}:
+        if run.info.spec.engine_name() not in {"diffsinger", "singingvocoders", "rvc", "tifa_train", "sofa_train", "game_train", "label_train", "refiner_train", "qwen_tts", "voxcpm"}:
             raise HTTPException(400, "This trainer has no TensorBoard logs; use its built-in metrics")
         spec = tk.engines.spec(run.info.spec.engine_name())
         python, cwd, env = process_environment(spec, tk.engines.envs, tk.settings)

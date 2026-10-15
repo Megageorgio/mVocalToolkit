@@ -187,3 +187,9 @@ ContentVec, Harvest and HiFi-GAN. It supports catalog/local training bases, boun
 prepare-only mode, cooperative batch stop, optimizer/position resume, protected checkpoints and PTH/FAISS export.
 Native CPU preparation, training, stop/resume and strict loading of the exported generator have been checked.
 Full GPU convergence and production voice quality remain unverified.
+
+Optional trainers also cover TIFA, SOFA, WFL-ASR v2, MCFL distillation, mRefinerModel, GAME, Qwen3-TTS and
+VoxCPM2 (full or LoRA). They use frozen recording manifests, recording-disjoint validation, native model
+networks, checkpoint/optimizer resume, cooperative stop and inference export. No training environment or base
+weight is installed by preflight. See [the training API](docs/API.md#additional-model-trainers) for kinds,
+input formats and current verification limits.

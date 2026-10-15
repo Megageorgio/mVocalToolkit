@@ -77,6 +77,14 @@ ENGINE_TASKS: dict[str, list[str]] = {
     "singingvocoders": ["train"],
     "g2p": ["train"],
     "rvc": ["train"],
+    "tifa_train": ["train"],
+    "sofa_train": ["train"],
+    "game_train": ["train"],
+    "label_train": ["train"],
+    "refiner_train": ["train"],
+    "qwen_tts": ["train"],
+    "voxcpm": ["train"],
+
 }
 # ids models had in earlier catalogs: installed folders are renamed on start
 LEGACY_IDS: dict[str, str] = {

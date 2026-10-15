@@ -234,6 +234,14 @@ def cmd_train(args) -> None:
             spec.dir = args.dir
         if args.device:
             spec.device = args.device
+        from .training.recipes import FAMILIES, snapshot as recipe_snapshot
+        if spec.kind in FAMILIES:
+            expected = FAMILIES[spec.kind]["engine"]
+            if spec.engine and spec.engine != expected or spec.device == "mps":
+                raise ValueError("Choose the matching engine and CPU or CUDA")
+            spec.engine = expected
+            config = {**spec.config, "allow_download": tk.settings.auto_download_models}
+            spec.config = {**config, **recipe_snapshot(spec.kind, config, tk.home.dir("training") / "recipe-data")}
         if spec.kind == "g2p_rnnt":
             from .training.g2p import snapshot
             prepared = snapshot(spec.config, tk.home.dir("training") / "g2p-data")

@@ -1,0 +1,14 @@
+name = "sofa_train"
+title = "SOFA forced aligner training"
+description = "Singing-oriented forced alignment: text/phonemes + audio -> phoneme and word timings. Supports .ckpt and .safetensors models, dictionaries and OpenUtau G2P models for unknown words."
+capabilities = ["train", "export"]
+python = "3.11"
+torch = true
+size_hint = "~2.5 GB with CUDA, ~700 MB CPU-only (torch is shared with other engines through the uv cache)"
+homepage = "https://github.com/qiuqiao/SOFA"
+license = "MIT"
+requirements = ["torch", "torchaudio", "lightning>=2.0", "einops==0.6.1", "librosa>=0.9,<0.10", "setuptools<81", "numpy~=1.24.1", "numba", "pandas~=2.0.3", "pyyaml", "textgrid", "h5py", "matplotlib~=3.7.3", "click", "chardet", "safetensors", "soundfile", "soxr", "tensorboard"]
+
+[source]
+repo = "qiuqiao/SOFA"
+commit = "9549c6a86d16019c817eefe4bb8183405da524cc"
