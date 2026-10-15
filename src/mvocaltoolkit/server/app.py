@@ -979,6 +979,15 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
 
+    @app.post("/training/project/storage", tags=["training"], dependencies=[Depends(auth)])
+    async def project_storage(req: dict):
+        from ..training.project_storage import StorageRequest, inventory
+        try:
+            request = StorageRequest.model_validate(req)
+            return await asyncio.to_thread(inventory, request)
+        except (ValueError, OSError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.get("/training/preparation/cache", tags=["training"], dependencies=[Depends(auth)])
     async def preparation_cache(tk: Toolkit = Depends(get_tk)):
         from ..training.preparation_cache import inventory
@@ -1057,6 +1066,27 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
             async with tk.training.inference_slot():
                 return await training_call(tk, job, "bank_render", "render", params)
         return submit(tk, "bank_onnx_render", work, req)
+
+    @app.post("/training/voicebank/audition/{action}", tags=["training"], dependencies=[Depends(auth)])
+    async def bank_audition(action: str, req: dict, tk: Toolkit = Depends(get_tk)):
+        import yaml
+        from ..training.bank_audition import AuditionRequest, bank_inventory, plan_audition, run_audition
+        try:
+            if action == "inventory":
+                if set(req) != {"bank"} or not isinstance(req["bank"], str):
+                    raise ValueError("Inventory requires only a bank path")
+                return await asyncio.to_thread(bank_inventory, req["bank"])
+            if action not in {"plan", "start"}: raise ValueError("Choose inventory, plan or start")
+            request = AuditionRequest.model_validate(req)
+            plan = await asyncio.to_thread(plan_audition, request)
+        except (ValueError, OSError, TypeError, KeyError, yaml.YAMLError) as error:
+            raise HTTPException(400, str(error)) from error
+        if action == "plan": return plan
+        async def work(job):
+            async with tk.training.inference_slot():
+                return await run_audition(request, plan, tk.home.outputs / job.id, job,
+                    lambda params: training_call(tk, job, "bank_render", "render", params))
+        return submit(tk, "bank_audition", work, request.model_dump())
 
     @app.post("/training/test-phrase/{action}", tags=["training"], dependencies=[Depends(auth)])
     async def test_phrase(action: str, req: dict, tk: Toolkit = Depends(get_tk)):

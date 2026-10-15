@@ -24,6 +24,14 @@ Everything heavy is downloaded **only when needed**: each engine lives in its ow
 environment (created with [uv](https://docs.astral.sh/uv/) on first use), and models are downloaded from
 catalogs on first use. If you never use GAME, nothing of it is ever downloaded.
 
+Project tooling includes a bounded metadata-only `POST /training/project/storage` inventory (logical/unique
+file sizes, categories, bank components, largest files and partial-scan reporting). It does not remove files.
+`POST /training/voicebank/audition/{inventory,plan,start}` supports up to 16 singer/language pairs, bank-derived
+metadata and checked automatic syllables or manual phonemes. Plans do not load models or queue work; execution
+uses the shared inference slot sequentially and retains completed rows/report on cancellation or failure.
+Each render owns its graph cache. ONNX results include measured per-graph load/call timings and total time/RTF;
+queue/install time and peak memory are not measured. These endpoints require the same local/token access as training.
+
 Training is also available through `/training` and `mvt train`: DiffSinger acoustic/variance and experimental
 PC-NSF-HiFiGAN fine-tuning with the pinned `singingvocoders` engine. Training runs share a queue, survive the window
 closing, and support stop/resume, protected checkpoints, validation samples and exports. Vocoder fine-tuning needs

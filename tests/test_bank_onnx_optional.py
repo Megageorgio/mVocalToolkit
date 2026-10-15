@@ -80,6 +80,22 @@ def test_actual_onnx_sessions_render_a_synthetic_bank_and_reject_unknown_phones(
     generated=worker.render(str(bank),phrase["path"],str(tmp_path/"generated-render"))
     samples,rate=sf.read(generated["files"][0])
     assert abs(len(samples)/rate-phrase["seconds"])<.011
+    from mvocaltoolkit.training.bank_audition import AuditionRequest, plan_audition, run_audition
+    import asyncio
+    request = AuditionRequest.model_validate(dict(bank=str(bank), selections=[dict(language="ru"), dict(language="en")],
+        phrase=dict(mode="manual", phonemes="a | a", notes="C4 E4"), cpu_threads=1))
+    plan = plan_audition(request)
+    class AuditionJob:
+        info = SimpleNamespace(result=None)
+        def check_cancelled(self): pass
+        def progress(self, *args, **kwargs): pass
+    async def render_row(params): return worker.render(**params)
+    series = asyncio.run(run_audition(request, plan, tmp_path / "auditions", AuditionJob(), render_row))
+    assert series["completed"] == 2 and series["status"] == "done"
+    assert [row["language"] for row in series["rows"]] == ["ru", "en"]
+    for file in series["files"]:
+        wave, rate = sf.read(file)
+        assert rate == 16000 and np.isfinite(wave).all() and abs(len(wave) / rate - phrase["seconds"]) < .011
     ds.write_text(json.dumps([dict(ph_seq="a a", ph_dur=".05 .05", ph_num="2", note_seq="C4", note_dur=".1")] * 2))
     original_session = worker.session
     session_calls = []
@@ -93,6 +109,14 @@ def test_actual_onnx_sessions_render_a_synthetic_bank_and_reject_unknown_phones(
     assert cached_calls == (8 if heads else 2)
     assert all(threads == 1 for _, threads in session_calls)
     assert cached["resources"]["session_reuses"] == (6 if heads else 0)
+    profile = cached["profile"]
+    assert profile["audio_seconds"] == pytest.approx(.2)
+    assert profile["wall_seconds"] >= profile["load_seconds"] + profile["graph_seconds"]
+    assert profile["real_time_factor"] == pytest.approx(profile["wall_seconds"] / .2)
+    assert sum(row["loads"] for row in profile["graphs"]) == cached_calls
+    assert sum(row["calls"] for row in profile["graphs"]) == (16 if heads else 4)
+    assert all(row["load_seconds"] >= 0 and row["run_seconds"] >= 0 for row in profile["graphs"])
+    assert json.loads((tmp_path / "cached/render-report.json").read_text())["profile"] == profile
     session_calls.clear()
     uncached = worker.render(str(bank), str(ds), str(tmp_path / "uncached"), cache_models=False,
                              predict=["dur", "pitch", "variance"] if heads else None)

@@ -1,5 +1,6 @@
 """Render the actual exported graphs, with strict input contracts and no mock audio."""
 from pathlib import Path
+from time import perf_counter
 import json
 import math
 import re
@@ -124,20 +125,36 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
            language: str = "ru", steps: int = 20, depth: float = 1, predict: list[str] | None = None,
            gender: float = 0, velocity: float = 1, expression: float = 1, inputs: dict | None = None,
            cpu_threads: int = 2, cache_models: bool = True) -> dict:
+    render_started = perf_counter()
     if type(cpu_threads) is not int or not 1 <= cpu_threads <= 32 or type(cache_models) is not bool:
         raise ValueError("cpu_threads must be an integer from 1 to 32 and cache_models a boolean")
     graphs = {}
+    graph_names, timings = {}, {}
     loads = hits = 0
     def load_graph(path):
         nonlocal loads, hits
+        key = str(path)
+        timing = timings.setdefault(key, dict(path=key, loads=0, reuses=0, calls=0, load_seconds=0.0, run_seconds=0.0))
         if cache_models and path in graphs:
             hits += 1
+            timing["reuses"] += 1
             return graphs[path]
+        started = perf_counter()
         loaded = session(path, cpu_threads)
+        timing["load_seconds"] += perf_counter() - started
+        timing["loads"] += 1
+        graph_names[id(loaded)] = key
         loads += 1
         if cache_models:
             graphs[path] = loaded
         return loaded
+    def invoke(graph, values):
+        started = perf_counter()
+        result = run_graph(graph, values)
+        timing = timings[graph_names[id(graph)]]
+        timing["calls"] += 1
+        timing["run_seconds"] += perf_counter() - started
+        return result
     root, out = Path(bank).resolve(), Path(out_dir).resolve()
     if root == out or root in out.parents or out in root.parents:
         raise ValueError("Render output and bank must not overlap")
@@ -211,12 +228,12 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
             values["word_dur"] = np.array([[durations[a:b].sum() for a, b in zip(positions, positions[1:])]], np.int64)
             starts = np.r_[0, np.cumsum(durations)]
             values["ph_midi"] = np.array([[round(float(base_pitch[min(count - 1, int((a + b) / 2))])) for a, b in zip(starts, starts[1:])]], np.int64)
-            values.update(run_graph(load_graph(local(duration_folder, sub["linguistic"])), values))
+            values.update(invoke(load_graph(local(duration_folder, sub["linguistic"])), values))
             spk = embedding(duration_folder, sub, speaker, len(phones))
             if spk is not None:
                 values["spk_embed"] = spk
             values.update(inputs or {})
-            raw = next(iter(run_graph(load_graph(local(duration_folder, sub["dur"])), values).values())).reshape(-1)
+            raw = next(iter(invoke(load_graph(local(duration_folder, sub["dur"])), values).values())).reshape(-1)
             if len(raw) != len(phones) or np.any(raw < 0):
                 raise ValueError("Invalid predicted durations")
             # Keep word/note anchors while distributing each word across phones.
@@ -248,7 +265,7 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
             positions = np.r_[0, np.cumsum(groups)]
             values["word_div"] = np.array([groups], np.int64)
             values["word_dur"] = np.array([[durations[a:b].sum() for a, b in zip(positions, positions[1:])]], np.int64)
-            linguistic = run_graph(load_graph(local(folder, sub["linguistic"])), values)
+            linguistic = invoke(load_graph(local(folder, sub["linguistic"])), values)
             values.update(linguistic)
             spk = embedding(folder, sub, speaker, count)
             if spk is not None:
@@ -262,7 +279,7 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
                 output_keys = [key for key in ("energy", "breathiness", "voicing", "tension") if sub.get("predict_" + key)]
                 values["retake"] = np.ones((1, count, len(output_keys)), bool)
             values.update(inputs or {})
-            output = run_graph(load_graph(local(folder, sub[component])), values)
+            output = invoke(load_graph(local(folder, sub[component])), values)
             if component == "pitch":
                 pitch = next(iter(output.values()))
                 values["pitch"] = pitch
@@ -282,14 +299,14 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
             if cfg.get("use_" + key + "_embed") and key not in values:
                 values[key] = curve(segment, key, count, timestep)
         values.update(inputs or {})
-        mel = next(iter(run_graph(acoustic, values).values()))
+        mel = next(iter(invoke(acoustic, values).values()))
         mel_base = str(cfg.get("mel_base", "e"))
         vocoder_base = str(vcfg.get("mel_base", mel_base))
         if mel_base != vocoder_base:
             if {mel_base, vocoder_base} != {"e", "10"}:
                 raise ValueError("Unsupported mel logarithm base conversion")
             mel = mel / math.log(10) if mel_base == "e" else mel * math.log(10)
-        waveform = next(iter(run_graph(voc, dict(mel=mel, f0=values["f0"])).values())).reshape(-1)
+        waveform = next(iter(invoke(voc, dict(mel=mel, f0=values["f0"])).values())).reshape(-1)
         if not len(waveform):
             raise ValueError("Vocoder returned empty audio")
         offset = float(segment.get("offset", max((c[0] + len(c[1]) for c in chunks), default=0) / rate))
@@ -307,8 +324,12 @@ def render(bank: str, ds: str, out_dir: str, vocoder: str | None = None, speaker
     path = out / "bank-preview.wav"
     sf.write(path, audio, rate, subtype="FLOAT")
     resources = dict(cpu_threads=cpu_threads, cache_models=cache_models, session_loads=loads, session_reuses=hits)
-    (out / "render-report.json").write_text(json.dumps(dict(bank=str(root), ds=ds, sample_rate=rate, segments=report, resources=resources), indent=1), encoding="utf-8")
-    return dict(files=[str(path)], out_dir=str(out), sample_rate=rate, seconds=len(audio) / rate, resources=resources)
+    elapsed = perf_counter() - render_started
+    profile = dict(wall_seconds=elapsed, audio_seconds=len(audio) / rate, real_time_factor=elapsed / (len(audio) / rate),
+                   load_seconds=sum(row["load_seconds"] for row in timings.values()),
+                   graph_seconds=sum(row["run_seconds"] for row in timings.values()), graphs=sorted(timings.values(), key=lambda row: row["path"]))
+    (out / "render-report.json").write_text(json.dumps(dict(bank=str(root), ds=ds, sample_rate=rate, segments=report, resources=resources, profile=profile), indent=1), encoding="utf-8")
+    return dict(files=[str(path)], out_dir=str(out), sample_rate=rate, seconds=len(audio) / rate, resources=resources, profile=profile)
 
 
 if __name__ == "__main__":

@@ -11,12 +11,8 @@ from pydantic import BaseModel, Field
 from .phonemizers import PROFILES, default_profile
 
 
-class PhraseRequest(BaseModel):
+class PhraseOptions(BaseModel):
     model_config = {"extra": "forbid"}
-    model_dir: str = ""
-    run_id: str = ""
-    config: str = ""
-    language: str = "ru"
     mode: str = "cv"
     phonemes: str = ""
     vowels: list[str] | None = None
@@ -26,6 +22,13 @@ class PhraseRequest(BaseModel):
     consonant_seconds: float = Field(.08, ge=.01, le=1)
     pause_seconds: float = Field(.12, ge=0, le=2)
     limit: int = Field(16, ge=1, le=64)
+
+
+class PhraseRequest(PhraseOptions):
+    model_dir: str = ""
+    run_id: str = ""
+    config: str = ""
+    language: str = "ru"
 
 
 def _object_file(path: Path, *, yaml_file=False) -> dict:
@@ -135,7 +138,7 @@ def note_midi(note):
     return number
 
 
-def build_phrase(req: PhraseRequest, out: Path) -> dict:
+def plan_phrase(req: PhraseRequest) -> dict:
     if req.mode not in {"cv", "vc", "v", "cvc", "manual"}:
         raise ValueError("Phrase mode must be cv, vc, v, cvc or manual")
     info = inventory(Path(req.model_dir), req.language, req.config)
@@ -193,9 +196,17 @@ def build_phrase(req: PhraseRequest, out: Path) -> dict:
         f0.extend([round(hz, 4)] * (end - previous)); previous = end
     fmt = lambda values: " ".join(str(round(v, 6)) if isinstance(v, float) else str(v) for v in values)
     segment = dict(offset=0, ph_seq=" ".join(phones), ph_dur=fmt(durations), ph_num=fmt(counts), note_seq=" ".join(note_seq), note_dur=fmt(note_dur), note_slur=fmt([0] * len(counts)), f0_seq=fmt(f0), f0_timestep=.01)
+    return dict(seconds=total, syllables=[" ".join(group) for group in groups], segment=segment, inventory=info)
+
+
+def write_phrase(plan: dict, out: Path) -> dict:
     out.mkdir(parents=True, exist_ok=False)
     path = out / "test-phrase.ds"
-    path.write_text(json.dumps([segment], ensure_ascii=False, indent=1), encoding="utf-8")
-    result = dict(path=str(path), seconds=total, syllables=[" ".join(group) for group in groups], segment=segment, inventory=info)
+    path.write_text(json.dumps([plan["segment"]], ensure_ascii=False, indent=1), encoding="utf-8")
+    result = dict(path=str(path), **plan)
     (out / "phrase-report.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     return result
+
+
+def build_phrase(req: PhraseRequest, out: Path) -> dict:
+    return write_phrase(plan_phrase(req), out)
