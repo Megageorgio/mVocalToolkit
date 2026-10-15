@@ -419,7 +419,9 @@ remaining in the data prevent new report-backed runs from starting; pitch runs a
 
 Basic signal inspection streams PCM WAV blocks without loading ML libraries or using the GPU. FLAC and non-PCM
 WAV signal checks are explicitly marked unavailable. This is a screening report, not a denoiser or repair tool.
-Custom dictionaries are copied into the prepared-data folder. Same-speaker sources in several languages have
+Custom text dictionaries (tab/whitespace separated) and OpenUtau dsdict YAML entries are converted into canonical
+text dictionaries in the prepared-data folder. A multilingual YAML dictionary is filtered to the selected
+language and that language's phoneme prefix is removed. Same-speaker sources in several languages have
 separate raw-data folders but share a speaker ID. The validation selection always leaves a training recording.
 
 ## Datasets

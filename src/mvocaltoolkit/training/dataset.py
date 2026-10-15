@@ -26,6 +26,7 @@ from .. import formats
 from ..formats import ds_csv
 from ..labels import Label
 from .doctor import inspect_recording
+from .dictionaries import read_entries
 
 AUDIO = (".wav", ".flac")
 LABELS = (".lab", ".TextGrid", ".textgrid", ".txt", ".json")
@@ -254,8 +255,8 @@ def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[s
         if dictionaries and dictionaries.get(language):
             source_dictionary = Path(dictionaries[language])
             snapshot = out_dir / f"dictionary-{language}.txt"
-            if snapshot.resolve() != source_dictionary.resolve():
-                shutil.copy2(source_dictionary, snapshot)
+            entries = read_entries(source_dictionary, language)
+            snapshot.write_text("".join(word + "\t" + " ".join(phones) + "\n" for word, phones in entries), encoding="utf-8")
             result.dictionaries[language] = str(snapshot)
             known = read_dictionary_phonemes(snapshot)
             missing = sorted(found - known - set(extra_phonemes or []))
@@ -286,12 +287,7 @@ def build_dataset(sources: list[SourceSpec], out_dir: Path, dictionaries: dict[s
 
 
 def read_dictionary_phonemes(path: Path) -> set[str]:
-    found: set[str] = set()
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        parts = line.strip().split("\t")
-        if len(parts) >= 2:
-            found.update(parts[1].split())
-    return found
+    return {phoneme for _, phones in read_entries(path) for phoneme in phones}
 
 
 def validate_report(path: str, needs_notes: bool = False) -> None:
