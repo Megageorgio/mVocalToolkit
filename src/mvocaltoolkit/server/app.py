@@ -936,6 +936,14 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
 
         return submit(tk, "dataset_build", work, req.model_dump())
 
+    @app.post("/training/dataset/recording-plan", tags=["training"], dependencies=[Depends(auth)])
+    async def dataset_recording_plan(req: dict, tk: Toolkit = Depends(get_tk)):
+        from ..training.recording_plan import RecordingPlanRequest, recording_plan
+        try:
+            return await asyncio.to_thread(recording_plan, RecordingPlanRequest.model_validate(req))
+        except (ValueError, OSError, TypeError) as error:
+            raise HTTPException(400, str(error)) from error
+
     @app.get("/training/workflows", tags=["training"], dependencies=[Depends(auth)])
     async def bank_workflows(tk: Toolkit = Depends(get_tk)):
         return sorted(tk.workflows.states.values(), key=lambda s: s["created"], reverse=True)

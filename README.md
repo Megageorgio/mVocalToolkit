@@ -219,3 +219,8 @@ can cap edge silence and fade only within labelled silence; existing DS f0 can b
 starts no workers and downloads no weights. OpenUtau assembly writes expanded/stock phonemizer remappers with
 coverage reports, including preferred hhskt-ru and approximate stock Russian compatibility. See
 [recording preparation](docs/API.md#recording-preparation-and-diffsinger-settings) for requests and limits.
+
+Dataset coverage can generate configurable per-singer/language phoneme recording exercises (CV/VC/V/CVC), with
+repetition accounting, manual alphabets and remaining-deficit reports. This is read-only planning, without model
+training or text phonemizers. G2P/labeller training remains independent of ordinary DiffSinger bank training;
+explicit legacy auxiliary G2P workflow stages remain supported. See [recording plans](docs/API.md#recording-plans-from-dataset-coverage).

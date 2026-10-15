@@ -59,6 +59,8 @@ manual review, vocoder/G2P training and exports, acoustic/variance training and 
 and rendering. Training rows contain their effective step caps (G2P `null` means epoch-limited); preparation rows
 contain source/speaker/language and enabled `actions`. Assembly lists reused local exports in `components`.
 `notices` contains stable codes for contextual GUI explanations, including review pauses and disabled bank export.
+`legacy_g2p_stage` identifies an old auxiliary G2P stage: new desktop clients train G2P separately, while existing
+persisted workflows and explicit older API recipes remain supported.
 This is a configuration/path preflight: it does not enumerate/decode/hash audio, probe GPU memory, load checkpoint
 objects, create outputs, install engines or download weights. Timing, actual VRAM use, phoneme coverage and graph
 compatibility are not established by this check.
@@ -130,6 +132,36 @@ five model components and a vocoder. Real pretrained GPU chains, arbitrary upstr
 plugins and listening quality require separate validation. Detailed audio metrics are advisory noise/bandwidth/tail
 heuristics rather than a reliable reverb diagnosis.
 
+## Recording plans from dataset coverage
+
+`POST /training/dataset/recording-plan` accepts an existing `dataset.json` report and returns phoneme exercises:
+
+```json
+{
+  "report": "D:/voice/workflows/example/dataset/dataset.json",
+  "language": "ru", "speaker": "Singer", "min_count": 5,
+  "patterns": ["cv", "vc", "v"], "repetitions": 3, "limit": 32,
+  "include_profile": true
+}
+```
+
+`speaker:""` uses combined language counts; selecting a singer requires that singer/language's measured counts,
+with no fallback to donors or other singers. Targets include observed/dictionary symbols and, when enabled, the
+recorded or explicitly selected alphabet. Optional `targets` replaces the target set; known symbols may still
+anchor syllables. `profile` selects a bundled alphabet (empty disables it); explicit `vowels`/`consonants` support
+custom types, including empty lists. Silence/control symbols are excluded. There is no word input or G2P inference.
+
+The result includes deterministic `rows` with phone arrays/pattern/repetition counts, observed `counts`, `needed`
+deficits, `planned_occurrences`, `remaining`, `unclassified`, selected `profile`, `profile_inferred` and plain `text`.
+CV/VC/V/CVC exercises prioritise missing/rare sounds. Unknown types can appear as individual-phone exercises.
+Old reports without alphabet snapshots may infer types by vocabulary fit, but never silently add inferred alphabet
+symbols. Remaining deficits are reported if rows or repetitions are insufficient. Counts are planning arithmetic,
+not a claim that new audio was recorded or that the exercises are valid words/natural syllables.
+
+The endpoint reads only the report/dictionary, writes nothing, queues no job and starts no engine. Rebuild the
+dataset after recording/labelling to measure real coverage. Limits: 1–128 rows, 1–20 repetitions, target count 1–100,
+at most 2048 target symbols. The desktop can copy the result or save separate TXT/JSON files without overwriting.
+
 ## Inputs and outputs
 
 ### Phoneme audition and optional training automation
@@ -154,6 +186,8 @@ acoustic's vocoder asset, and ONNX supplies bank assembly/preview. `g2p_training
 missing dictionary uses the checked project's dictionary for that entry's language. Outputs and run IDs persist.
 These stages use the normal queue, checkpoints and stage retry; prototype caps their steps too. G2P `max_steps:0`
 uses the epoch limit. No speech/phonemizer runtime is installed by optional G2P export.
+The `g2p_training` workflow field is retained for persisted chains and explicit legacy API clients. New desktop
+bank recipes omit it: standalone `g2p_rnnt` runs under preparation-tool training are the preferred workflow.
 
 DiffSinger configuration supports `resources: {auto_batch:false, oom_retries:0, memory_fraction:0.7,
 min_batch_frames:1000, min_batch_size:1}`. Opt-in auto_batch measures selected free CUDA memory and caps preset

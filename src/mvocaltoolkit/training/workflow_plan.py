@@ -55,5 +55,5 @@ def describe_workflow(req, overlays):
     if not req.prepare: notices.append("prepared_inputs")
     if req.device == "cpu" and (overlays or req.vocoder_training is not None or req.g2p_training):
         notices.append("cpu_training")
-    if req.g2p_training: notices.append("g2p_dictionary")
+    if req.g2p_training: notices.extend(["g2p_dictionary", "legacy_g2p_stage"])
     return dict(plan=plan, notices=notices, device=req.device, source=req.source)
