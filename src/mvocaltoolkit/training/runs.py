@@ -63,6 +63,7 @@ class Checkpoint(BaseModel):
     path: str
     size: int = 0
     time: float = 0.0
+    starred: bool = False
 
 
 class RunInfo(BaseModel):
@@ -98,6 +99,7 @@ class RunInfo(BaseModel):
     checkpoints: list[Checkpoint] = Field(default_factory=list)
     # step -> audio files of that checkpoint's validation (relative to the run folder)
     samples: dict[str, list[str]] = Field(default_factory=dict)
+    renders: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
     error_kind: str | None = None  # oom, crash, hang...

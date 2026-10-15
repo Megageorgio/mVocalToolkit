@@ -1,0 +1,14 @@
+name = "singingvocoders"
+title = "PC-NSF-HiFiGAN fine-tuning (OpenVPI)"
+description = "Fine-tunes the PC-NSF-HiFiGAN 2025.02 singing vocoder on clean 44.1 kHz recordings. The queue, real training steps, validation audio, stop and resume are shared with SingForge."
+capabilities = ["train", "export"]
+python = "3.11"
+torch = true
+size_hint = "~3 GB engine dependencies; base fine-tuning weights ~377 MB, downloaded on first use"
+homepage = "https://github.com/openvpi/SingingVocoders"
+license = "MIT (code); CC BY-NC-SA 4.0 (pretrained weights and fine-tuned derivatives)"
+requirements = ["torch>=2.7,<2.9", "torchaudio>=2.7,<2.9", "lightning~=2.3.0", "numpy<2", "librosa<0.10", "setuptools<81", "click", "PyYAML", "soundfile", "matplotlib", "praat-parselmouth==0.4.3", "pyworld==0.3.4", "tensorboard", "torchmetrics", "tqdm"]
+
+[source]
+repo = "openvpi/SingingVocoders"
+commit = "4d0889c4c180c75ad3000cc565864656344f8190"

@@ -65,6 +65,23 @@ def test_single_language_bank(tmp_path):
     assert lint(bank) == []
 
 
+def test_custom_vocoder_keeps_its_data_and_weights_license(tmp_path):
+    _export(tmp_path / "aco", "acoustic", "acoustic", ["AP", "SP", "a"], {"ja": 0}, dictionaries={"ja": [("a", "a")]})
+    vocoder = tmp_path / "voc"
+    vocoder.mkdir()
+    (vocoder / "vocoder.onnx").write_bytes(b"onnx")
+    (vocoder / "vocoder.yaml").write_text("name: vocoder\nmodel: vocoder.onnx\n", encoding="utf-8")
+    (vocoder / "dataset-report.json").write_text(json.dumps({"license": "CC BY-NC-SA 4.0", "files": 5,
+        "recordings": [{"speaker": "source", "license": "CC BY"}]}), encoding="utf-8")
+    result = assemble(VoicebankSpec(name="Custom", out_dir=str(tmp_path / "out"), acoustic=str(tmp_path / "aco"), vocoder=str(vocoder)))
+    assert result.problems == []
+    bank = tmp_path / "out/Custom"
+    assert (bank / "dsvocoder/vocoder.onnx").exists()
+    report = json.loads((bank / "report.json").read_text(encoding="utf-8"))
+    assert "CC BY-NC-SA 4.0" in report["licenses"] and "source: CC BY" in report["licenses"]
+    assert any(item["files"] == 5 for item in report["training_data"])
+
+
 def test_multilingual_speakers_and_linter(tmp_path):
     phonemes = ["AP", "SP", "en/a", "en/k", "xx/a", "xx/k", "xx/n"]
     langs = {"en": 0, "xx": 1}

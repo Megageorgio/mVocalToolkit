@@ -234,6 +234,15 @@ def cmd_train(args) -> None:
             spec.dir = args.dir
         if args.device:
             spec.device = args.device
+        if spec.kind == "singingvocoders_vocoder":
+            from .training.vocoder import build_overlay as vocoder_overlay, resolve_assets as vocoder_assets, scan_sources
+
+            overlay = vocoder_overlay({**spec.config, "device": spec.device})
+            report = scan_sources(spec.config)
+            errors = [p["problem"] for p in report["problems"] if p["severity"] == "error"]
+            if errors:
+                raise ValueError("; ".join(errors[:5]))
+            spec.config = {**spec.config, "overlay": overlay, "data_report": report, "assets": vocoder_assets(spec.config)}
         if spec.kind.startswith("diffsinger"):
             from .training.diffsinger import build_overlay, resolve_assets  # noqa: PLC0415
             from .training.dataset import validate_report  # noqa: PLC0415

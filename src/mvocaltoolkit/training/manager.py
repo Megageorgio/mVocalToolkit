@@ -23,6 +23,7 @@ import subprocess
 import time
 import uuid
 import math
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +97,7 @@ class TrainingManager:
         self._queue_task: asyncio.Task[None] | None = None
         self._wake = asyncio.Event()
         self._loaded = False
+        self._inference = False
 
     # ---------- index ----------
 
@@ -207,7 +209,7 @@ class TrainingManager:
             # binarizing runs inside the engine worker: the worker is stopped, which ends it
             info.status = RunStatus.stopping
             run.save(force=True)
-            await self.tk.engines.stop(info.spec.engine_name())
+            await self.tk.engines.abort(info.spec.engine_name())
             return info
         if info.status == RunStatus.training:
             info.status = RunStatus.stopping
@@ -278,6 +280,13 @@ class TrainingManager:
 
     async def checkpoints(self, run_id: str) -> list[Checkpoint]:
         run = self._require(run_id)
+        if run.info.spec.engine_name() in {"diffsinger", "singingvocoders"}:
+            from ..engines.diffsinger.checkpoint_store import listing
+
+            divisor = 2 if run.info.spec.engine_name() == "singingvocoders" else 1
+            run.info.checkpoints = [Checkpoint.model_validate({**c, "step": c["step"] // divisor}) for c in listing(run.dir)]
+            run.save(force=True)
+            return run.info.checkpoints
         try:
             found = await self.tk.engines.call(run.info.spec.engine_name(), "checkpoints", {"run_dir": str(run.dir)})
         except EngineError:
@@ -286,6 +295,18 @@ class TrainingManager:
             run.info.checkpoints = [Checkpoint.model_validate(c) for c in found]
             run.save()
         return run.info.checkpoints
+
+    def retain_checkpoint(self, run_id: str, step: int, keep: bool) -> RunInfo:
+        run = self._require(run_id)
+        if run.info.spec.engine_name() not in {"diffsinger", "singingvocoders"}:
+            raise ValueError("Checkpoint retention is supported for DiffSinger and SingingVocoders runs")
+        from ..engines.diffsinger.checkpoint_store import listing, retain
+
+        divisor = 2 if run.info.spec.engine_name() == "singingvocoders" else 1
+        retain(run.dir, step * divisor, keep)
+        run.info.checkpoints = [Checkpoint.model_validate({**c, "step": c["step"] // divisor}) for c in listing(run.dir)]
+        run.save(force=True)
+        return run.info
 
     def _require(self, run_id: str) -> Run:
         run = self.get(run_id)
@@ -305,7 +326,18 @@ class TrainingManager:
         self._wake.set()
 
     def _busy(self) -> bool:
-        return any(r.info.status in (RunStatus.preparing, RunStatus.training, RunStatus.stopping) for r in self.runs.values())
+        return self._inference or any(r.info.status in (RunStatus.preparing, RunStatus.training, RunStatus.stopping) for r in self.runs.values())
+
+    @asynccontextmanager
+    async def inference_slot(self):
+        if self._busy():
+            raise ValueError("Wait for active training or rendering to finish before rendering a test phrase")
+        self._inference = True
+        try:
+            yield
+        finally:
+            self._inference = False
+            self._wake.set()
 
     async def _queue_loop(self) -> None:
         while True:
@@ -572,10 +604,28 @@ class TrainingManager:
         elif kind == "checkpoint":
             ckpt = Checkpoint(step=int(event.get("step") or 0), path=str(event.get("path") or ""),
                               size=int(event.get("size") or 0), time=now)
+            if info.spec.engine_name() in {"diffsinger", "singingvocoders"}:
+                from ..engines.diffsinger.checkpoint_store import retained_path
+
+                divisor = 2 if info.spec.engine_name() == "singingvocoders" else 1
+                ckpt.starred = retained_path(run.dir, ckpt.step * divisor).is_file()
             info.checkpoints = [c for c in info.checkpoints if c.step != ckpt.step] + [ckpt]
             info.checkpoints.sort(key=lambda c: c.step)
         elif kind == "checkpoint_removed":
             step = int(event.get("step") or -1)
+            if info.spec.engine_name() in {"diffsinger", "singingvocoders"}:
+                from ..engines.diffsinger.checkpoint_store import retained_path
+
+                divisor = 2 if info.spec.engine_name() == "singingvocoders" else 1
+                backup = retained_path(run.dir, step * divisor) if step >= 0 else None
+                if backup is not None and not backup.is_file():
+                    backup = run.dir / "best" / backup.name
+                if backup is not None and backup.is_file():
+                    for ckpt in info.checkpoints:
+                        if ckpt.step == step:
+                            ckpt.path = str(backup)
+                            ckpt.starred = retained_path(run.dir, step * divisor).is_file()
+                    return
             info.checkpoints = [c for c in info.checkpoints if c.step != step]
         elif kind == "samples":
             step = str(event.get("step"))

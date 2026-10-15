@@ -350,15 +350,19 @@ class TrainingExportRequest(BaseModel):
 
 class TrainingRenderRequest(BaseModel):
     ds: str = Field(..., description="A .ds file to sing")
-    out_dir: str = Field("", description="Folder for the result (default: <run dir>/renders)")
-    step: int | None = None
+    out_dir: str = Field("", description="Folder for the result (default: a new <run dir>/renders/<id> folder)")
+    step: int | None = Field(None, ge=0)
     spk: str | None = None
     lang: str | None = None
     title: str | None = None
-    steps: int | None = Field(None, description="Acoustic: sampling steps")
-    depth: float | None = Field(None, description="Acoustic: shallow diffusion depth")
+    steps: int | None = Field(None, ge=1, le=1000, description="Acoustic: sampling steps")
+    depth: float | None = Field(None, ge=0, le=1, description="Acoustic: shallow diffusion depth")
     predict: list[str] = Field(default_factory=list, description="Variance: dur, pitch, energy, breathiness, voicing, tension")
     seed: int | None = None
+
+
+class CheckpointRetentionRequest(BaseModel):
+    starred: bool = True
 
 
 class VoicebankRequest(BaseModel):

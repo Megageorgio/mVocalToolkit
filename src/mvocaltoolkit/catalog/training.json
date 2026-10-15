@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "name": "bundled training assets",
+  "models": [{
+    "id": "singingvocoders-pc-nsf-hifigan-2025.02",
+    "engine": "singingvocoders",
+    "name": "PC-NSF-HiFiGAN 2025.02 — fine-tuning base",
+    "author": "OpenVPI",
+    "license": "CC BY-NC-SA 4.0",
+    "description": "Full SingingVocoders fine-tuning checkpoint, including discriminators. Different from the smaller inference checkpoint used by DiffSinger.",
+    "homepage": "https://github.com/openvpi/SingingVocoders/releases/tag/v1.0.0",
+    "size_hint": "377 MB",
+    "tags": ["asset", "vocoder", "finetune"],
+    "source": {"type": "github_release", "repo": "openvpi/SingingVocoders", "tag": "v1.0.0", "asset": "pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.zip"}
+  }]
+}

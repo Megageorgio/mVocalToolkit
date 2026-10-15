@@ -265,6 +265,27 @@ class WorkerProcess:
             if task is not None:
                 task.cancel()
 
+    async def abort(self) -> None:
+        """Cancel a worker operation, including scripts it spawned (never a detached trainer)."""
+        process = self.process
+        if process is not None and process.returncode is None:
+            def kill():
+                import psutil
+
+                try:
+                    root = psutil.Process(process.pid)
+                    for child in reversed(root.children(recursive=True)):
+                        try:
+                            child.kill()
+                        except psutil.NoSuchProcess:
+                            pass
+                    root.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            await asyncio.to_thread(kill)
+            await process.wait()
+        await self.stop()
+
 
 class EngineManager:
     def __init__(self, home: Home, settings: Settings, extra_dirs: list[Path] | None = None):
@@ -334,6 +355,11 @@ class EngineManager:
         worker = self.workers.pop(engine, None)
         if worker is not None:
             await worker.stop()
+
+    async def abort(self, engine: str) -> None:
+        worker = self.workers.pop(engine, None)
+        if worker is not None:
+            await worker.abort()
 
     async def stop_idle(self) -> list[str]:
         """Stops the engines that aren't working on something (they start again with the current settings)."""

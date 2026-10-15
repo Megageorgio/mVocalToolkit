@@ -37,6 +37,7 @@ from ..api_models import (
     TextRequest,
     TrainingExportRequest,
     TrainingQueueRequest,
+    CheckpointRetentionRequest,
     VoicebankRequest,
     TrainingRenderRequest,
     TranscribeRequest,
@@ -486,6 +487,14 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         review step. The engine merges it over openvpi's defaults when the run starts."""
         from ..training.diffsinger import build_overlay, resolve_assets  # noqa: PLC0415
 
+        if spec.kind == "singingvocoders_vocoder":
+            from ..training.vocoder import build_overlay as vocoder_overlay, resolve_assets as vocoder_assets
+
+            try:
+                overlay = vocoder_overlay({**spec.config, "device": spec.device})
+                return {"overlay": overlay, "assets": vocoder_assets(spec.config), "real_steps": overlay["max_updates"] // 2}
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(400, str(exc)) from exc
         if not spec.kind.startswith("diffsinger"):
             raise HTTPException(400, "Only DiffSinger runs have an overlay")
         try:
@@ -498,6 +507,18 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         """Queues a training run. One run trains at a time; the trainer is a process of its own that keeps running
         when the server stops. Progress: GET /training/runs/{id} (numbers), /events (everything), WS /events."""
         _engine(tk, spec.engine_name())
+        if spec.kind == "singingvocoders_vocoder":
+            from ..training.vocoder import build_overlay as vocoder_overlay, resolve_assets as vocoder_assets, scan_sources
+
+            try:
+                overlay = vocoder_overlay({**spec.config, "device": spec.device})
+                report = await asyncio.to_thread(scan_sources, spec.config)
+                errors = [p["problem"] for p in report["problems"] if p["severity"] == "error"]
+                if errors:
+                    raise ValueError("; ".join(errors[:5]))
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(400, str(exc)) from exc
+            spec = spec.model_copy(update={"config": {**spec.config, "overlay": overlay, "data_report": report, "assets": vocoder_assets(spec.config)}})
         if spec.kind.startswith("diffsinger"):
             from ..training.diffsinger import build_overlay, resolve_assets  # noqa: PLC0415
             from ..training.dataset import validate_report  # noqa: PLC0415
@@ -521,6 +542,39 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
             infos = [i for i in infos if i.status not in RUN_FINISHED]
         return infos
 
+    @app.post("/training/vocoder/check", tags=["training"], dependencies=[Depends(auth)])
+    async def vocoder_check(config: dict[str, Any]):
+        from ..training.vocoder import scan_sources
+
+        try:
+            return await asyncio.to_thread(scan_sources, config)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/training/dictionary/read", tags=["training"], dependencies=[Depends(auth)])
+    async def dictionary_read(request: dict[str, Any]):
+        from ..training.dictionaries import describe_entries, read_entries
+
+        try:
+            path = Path(str(request.get("path") or "")).expanduser().resolve()
+            if not path.is_file() or path.stat().st_size > 20 * 1024 * 1024:
+                raise ValueError("Choose a dictionary smaller than 20 MB on the toolkit computer")
+            entries = await asyncio.to_thread(read_entries, path, request.get("language"))
+            return describe_entries(entries)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/training/dictionary/save", tags=["training"], dependencies=[Depends(auth)])
+    async def dictionary_save(request: dict[str, Any]):
+        from ..training.dictionaries import save_copy
+
+        try:
+            if not request.get("out_dir"):
+                raise ValueError("Choose a project folder for the dictionary copy")
+            return await asyncio.to_thread(save_copy, request.get("entries"), Path(request["out_dir"]).expanduser().resolve())
+        except (OSError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.post("/training/queue", tags=["training"], dependencies=[Depends(auth)])
     async def training_queue(req: TrainingQueueRequest, tk: Toolkit = Depends(get_tk)):
         try:
@@ -534,6 +588,25 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         if run is None:
             raise HTTPException(404, f"Unknown run {run_id}")
         return run
+
+    async def training_call(tk: Toolkit, job: Job, engine: str, method: str, params: dict):
+        task = asyncio.create_task(tk.engines.call(engine, method, params,
+            on_progress=lambda d: job.progress(d.get("progress"), stage=d.get("stage") or method, message=d.get("message")), log=job.log))
+        try:
+            while not task.done():
+                await asyncio.wait([task], timeout=0.2)
+                if job.cancelled:
+                    await tk.engines.abort(engine)
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                    job.check_cancelled()
+            job.check_cancelled()
+            return await task
+        except asyncio.CancelledError:
+            await tk.engines.abort(engine)
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            raise
 
     @app.get("/training/runs/{run_id}", tags=["training"], dependencies=[Depends(auth)])
     async def training_run(run_id: str, tk: Toolkit = Depends(get_tk)):
@@ -595,30 +668,48 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         run = _run(tk, run_id)
         return {step: [str(run.dir / f) for f in files] for step, files in sorted(run.info.samples.items(), key=lambda kv: int(kv[0]))}
 
+    @app.post("/training/runs/{run_id}/checkpoints/{step}/retain", tags=["training"], dependencies=[Depends(auth)])
+    async def training_retain(run_id: str, step: int, req: CheckpointRetentionRequest, tk: Toolkit = Depends(get_tk)):
+        _run(tk, run_id)
+        try:
+            return tk.training.retain_checkpoint(run_id, step, req.starred)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
     @app.post("/training/runs/{run_id}/export", tags=["training"], dependencies=[Depends(auth)])
     async def training_export(run_id: str, req: TrainingExportRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
         """ONNX export of a checkpoint with the engine's exporter (a job)."""
         run = _run(tk, run_id)
+        if tk.training._busy():
+            raise HTTPException(409, "Wait for active training or rendering to finish before exporting")
         out_dir = req.out_dir or str(run.dir / "export" / (str(req.step) if req.step else "latest"))
 
-        async def work(job: Job):
+        async def perform(job: Job):
             data_report = None
-            report_path = Path(str(run.info.spec.config.get("data_report") or ""))
-            if report_path.is_file():
-                data_report = json.loads(report_path.read_text(encoding="utf-8"))
+            report_value = run.info.spec.config.get("data_report")
+            if isinstance(report_value, dict):
+                snapshot = run.dir / "dataset-report.json"
+                data_report = json.loads(snapshot.read_text(encoding="utf-8")) if snapshot.is_file() else report_value
+            else:
+                report_path = Path(str(report_value or ""))
+                if report_path.is_file():
+                    data_report = json.loads(report_path.read_text(encoding="utf-8"))
             export_speakers = req.export_spk
-            if not export_speakers and data_report:
+            if not export_speakers and data_report and run.info.spec.engine_name() != "singingvocoders":
                 data_speakers = data_report.get("speakers") or []
                 if any(s.get("role") == "donor" for s in data_speakers):
                     export_speakers = sorted({s["speaker"] for s in data_speakers if s.get("role") != "donor"})
                     if not export_speakers:
                         raise ValueError("The run contains only donors; select a main speaker before export")
-            result = await tk.engines.call(run.info.spec.engine_name(), "export", {
+            result = await training_call(tk, job, run.info.spec.engine_name(), "export", {
                 "run_dir": str(run.dir), "kind": run.info.spec.kind, "out_dir": out_dir, "step": req.step,
                 "export_spk": export_speakers, "freeze_spk": req.freeze_spk, "freeze_gender": req.freeze_gender,
                 "freeze_velocity": req.freeze_velocity, "freeze_glide": req.freeze_glide, "freeze_expr": req.freeze_expr,
-            }, on_progress=lambda d: job.progress(d.get("progress"), stage=d.get("stage") or "export", message=d.get("message")),
-                log=job.log)
+            })
+            if run.info.spec.engine_name() == "singingvocoders":
+                result = await training_call(tk, job, "diffsinger", "export_vocoder", {
+                    "checkpoint": result["checkpoint"], "out_dir": out_dir,
+                })
             if data_report:
                 snapshot = Path(out_dir) / "dataset-report.json"
                 snapshot.write_text(json.dumps(data_report, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -626,21 +717,48 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
                     result.setdefault("files", []).append(str(snapshot))
             return result
 
+        async def work(job: Job):
+            async with tk.training.inference_slot():
+                return await perform(job)
+
         return submit(tk, "training_export", work, {"run": run_id, **req.model_dump()})
 
     @app.post("/training/runs/{run_id}/render", tags=["training"], dependencies=[Depends(auth)])
     async def training_render(run_id: str, req: TrainingRenderRequest, tk: Toolkit = Depends(get_tk)) -> JobInfo:
         """Sings a .ds file with a checkpoint (a job); the result lists the files made."""
         run = _run(tk, run_id)
-        out_dir = req.out_dir or str(run.dir / "renders")
+        if tk.training._busy():
+            raise HTTPException(409, "Wait for active training or rendering to finish before rendering a test phrase")
+        source = Path(req.ds).expanduser().resolve()
+        try:
+            if not source.is_file() or source.suffix.lower() != ".ds" or source.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("Choose a .ds file smaller than 16 MB on the toolkit computer")
+            contents = source.read_text(encoding="utf-8-sig")
+            segments = json.loads(contents)
+            if not isinstance(segments, list) or not segments or any(not isinstance(s, dict) for s in segments):
+                raise ValueError("A .ds phrase must contain a non-empty list of segments")
+            if req.title and (Path(req.title).name != req.title or any(c in req.title for c in '/\\:*?\"<>|') or req.title in {".", ".."}):
+                raise ValueError("The render title must be a file name without path separators")
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        out_dir = req.out_dir or str(run.dir / "renders" / uuid.uuid4().hex[:12])
 
         async def work(job: Job):
-            return await tk.engines.call(run.info.spec.engine_name(), "render", {
-                "run_dir": str(run.dir), "kind": run.info.spec.kind, "ds": req.ds, "out_dir": out_dir, "step": req.step,
-                "spk": req.spk, "lang": req.lang, "title": req.title, "steps": req.steps, "depth": req.depth,
-                "predict": req.predict, "seed": req.seed,
-            }, on_progress=lambda d: job.progress(d.get("progress"), stage=d.get("stage") or "render", message=d.get("message")),
-                log=job.log)
+            async with tk.training.inference_slot():
+                folder = Path(out_dir)
+                folder.mkdir(parents=True, exist_ok=True)
+                snapshot = folder / ("input-" + uuid.uuid4().hex[:8] + ".ds")
+                snapshot.write_text(contents, encoding="utf-8")
+                result = await training_call(tk, job, run.info.spec.engine_name(), "render", {
+                    "run_dir": str(run.dir), "kind": run.info.spec.kind, "ds": str(snapshot), "out_dir": out_dir, "step": req.step,
+                    "spk": req.spk, "lang": req.lang, "title": req.title or source.stem, "steps": req.steps, "depth": req.depth,
+                    "predict": req.predict, "seed": req.seed,
+                })
+                record = {"time": time.time(), "step": req.step, "source": str(source), "input": str(snapshot),
+                          "spk": req.spk, "lang": req.lang, "seed": req.seed, **result}
+                run.info.renders.append(record)
+                run.save(force=True)
+                return record
 
         return submit(tk, "training_render", work, {"run": run_id, **req.model_dump()})
 

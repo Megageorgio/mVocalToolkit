@@ -218,11 +218,13 @@ def assemble(spec: VoicebankSpec) -> VoicebankResult:
     variances = [_detect_export(Path(v)) for v in spec.variance]
     data_reports = []
     licenses = list(spec.licenses)
-    for model in [acoustic, *variances]:
-        source_report = model.dir / "dataset-report.json"
+    for model_dir in [acoustic.dir, *(v.dir for v in variances), *([Path(spec.vocoder)] if spec.vocoder else [])]:
+        source_report = model_dir / "dataset-report.json"
         if source_report.is_file():
             report = json.loads(source_report.read_text(encoding="utf-8"))
-            data_reports.append({"export": str(model.dir), "speakers": report.get("speakers", []), "files": report.get("files", 0), "seconds": report.get("seconds", 0)})
+            data_reports.append({"export": str(model_dir), "speakers": report.get("speakers", []), "files": report.get("files", 0), "seconds": report.get("seconds", 0)})
+            if report.get("license"):
+                licenses.append(str(report["license"]))
             licenses += [f"{r.get('speaker', '')}: {r['license']}" for r in report.get("recordings", []) if r.get("license")]
     licenses = list(dict.fromkeys(licenses))
     bank = Path(spec.out_dir) / name

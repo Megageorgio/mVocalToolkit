@@ -200,14 +200,9 @@ def resume_command(run_dir: str, kind: str, spec: dict[str, Any] | None = None) 
 
 @rt.method()
 def checkpoints(run_dir: str) -> list[dict[str, Any]]:
-    out = []
-    for path in Path(run_dir).glob("model_ckpt_steps_*.ckpt"):
-        m = CKPT_RE.search(path.name)
-        if not m:
-            continue
-        st = path.stat()
-        out.append({"step": int(m.group(1)), "path": str(path), "size": st.st_size, "time": st.st_mtime})
-    return sorted(out, key=lambda c: c["step"])
+    from checkpoint_store import listing
+
+    return listing(Path(run_dir))
 
 
 @rt.method()
@@ -219,6 +214,9 @@ def export(run_dir: str, kind: str, out_dir: str, step: int | None = None, expor
     run_path = Path(run_dir).resolve()
     out = Path(out_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
+    from checkpoint_store import restore
+
+    restore(run_path, step)
     model_name = re.sub(r"[^0-9A-Za-z_-]+", "_", (name or ("acoustic" if _is_acoustic(kind) else "variance")).strip()) or "model"
     # export.py through a wrapper that keeps onnxsim's metadata from breaking the graph merge (see mvt_ds_export.py)
     args = [str(ENGINE_DIR / "mvt_ds_export.py"), "acoustic" if _is_acoustic(kind) else "variance", "--exp", str(run_path), "--out", str(out)]
@@ -254,6 +252,9 @@ def render(run_dir: str, kind: str, ds: str, out_dir: str, step: int | None = No
     out = Path(out_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
     ds_path = Path(ds).resolve()
+    from checkpoint_store import restore
+
+    restore(run_path, step)
     name = title or ds_path.stem
     args = ["scripts/infer.py", "acoustic" if _is_acoustic(kind) else "variance", str(ds_path), "--exp", str(run_path),
             "--out", str(out), "--title", name]
@@ -277,6 +278,19 @@ def render(run_dir: str, kind: str, ds: str, out_dir: str, step: int | None = No
     _run(args, run_path / "render.log")
     produced = sorted(str(p) for p in out.glob(f"{name}*") if p.is_file())
     return {"out_dir": str(out), "files": produced}
+
+
+@rt.method()
+def export_vocoder(checkpoint: str, out_dir: str) -> dict[str, Any]:
+    """Convert a SingingVocoders generator export into OpenUtau's ONNX vocoder format."""
+    out = Path(out_dir).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    config = out / "export-config.yaml"
+    config.write_text(_yaml().safe_dump({"mel_base": "e", "audio_sample_rate": 44100, "hop_size": 512,
+        "win_size": 2048, "fft_size": 2048, "audio_num_mel_bins": 128, "fmin": 40, "fmax": 16000}), encoding="utf-8")
+    _run([str(ENGINE_DIR / "mvt_ds_export.py"), "nsf-hifigan", "--config", str(config), "--ckpt", checkpoint,
+          "--out", str(out), "--name", "vocoder"], out / "export.log")
+    return {"out_dir": str(out), "files": sorted(str(p) for p in out.iterdir() if p.is_file())}
 
 
 @rt.method()

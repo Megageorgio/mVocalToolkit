@@ -7,6 +7,7 @@ license = { text = "MIT" }
 authors = [{ name = "Megageorgio" }]
 requires-python = ">=3.11"
 dependencies = [
+    "psutil>=6",
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "websockets>=12",

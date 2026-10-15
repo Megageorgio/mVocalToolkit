@@ -488,3 +488,70 @@ the same audio). `manual_download`: a page where the user downloads the files by
 | `github_token`, `hf_token` | | optional |
 | `max_parallel_jobs` | 2 | |
 | `keep_files_days` | 14 | uploads, results in `<home>/outputs` and job history older than this are removed at start; 0 = kept |
+
+## Checkpoint retention and own phrases
+
+`POST /training/runs/{id}/checkpoints/{step}/retain` with `{"starred": true}` protects a saved checkpoint;
+`false` removes its manual retention mark without deleting the trainer's file. Supported by DiffSinger and
+SingingVocoders. Protected links/copies survive rotation and server restart. New detached trainers also skip
+upstream deletion of manually retained checkpoints and keep a rotating backup of the best validation checkpoint.
+Retention cannot recover a file already removed before the mark was set. Whole-run deletion still removes all
+run files when explicitly requested with `files=true`.
+
+`POST /training/runs/{id}/render` accepts `ds`, optional `step`, `spk`, `lang`, `seed`, `steps` (1–1000 sampling
+steps for acoustic inference), and `depth` (0–1). The `.ds` must exist on the toolkit computer and contain a JSON
+list of segments. The default output is a unique `<run>/renders/<id>` folder. The input is copied there for
+reproducibility; the result is appended to `RunInfo.renders`. Acoustic inference returns audio; variance inference
+returns a `.ds` for a subsequent acoustic render. This uses checkpoint inference, which can differ from OpenUtau.
+
+Render and export jobs wait for an idle training resource; a request made during active training returns 409.
+While such a job runs, queued training stays queued. Cancelling the job terminates the engine worker and its
+subprocesses before releasing that resource. Results already completed stay in the run; no audio starts itself.
+
+## Experimental vocoder fine-tuning
+
+`POST /training/vocoder/check` receives `{"sources": [{"folder": "...", "speaker": "...", "license": "..."}]}`
+and returns `files`, `seconds`, `recordings` with SHA-256 hashes, and coded `problems` with severity. Input is clean
+44.1 kHz PCM WAV/FLAC; phoneme labels are not needed. Exact duplicate files are excluded. Separate training and
+validation audio is required. Bandwidth/noise/reverb analysis is not implemented by this check.
+
+Use `/training/overlay`, then `/training/runs` with:
+
+```json
+{
+  "kind": "singingvocoders_vocoder",
+  "dir": "D:/voices/myvoice/runs/vocoder-1",
+  "config": {
+    "sources": [{"folder": "D:/voices/myvoice/recordings", "speaker": "singer", "license": "own recordings"}],
+    "preset": {"goal": "check", "gpu_gb": 8},
+    "accept_license": true
+  }
+}
+```
+
+The user must review the OpenVPI base-weight terms before setting `accept_license`; the weights and derived model
+use CC BY-NC-SA 4.0. Defaults: 100 real steps for `check`, 2000 for `full`. Optional positive integer settings:
+`steps`, `validation_interval` (not longer than the run), `batch_size`, `crop_frames`; `learning_rate` defaults to
+1e-5 and must not exceed 1e-3. `base_model` accepts a full SingingVocoders Lightning checkpoint or catalog ID;
+the smaller DiffSinger inference asset is not a fine-tuning base.
+
+The source is pinned in the engine manifest. Preprocessing copies mono audio, computes mel/f0 sequentially and
+records a deterministic held-out split. Source hashes must still match. GAN generator+discriminator updates count
+as one real step in events and the API; upstream checkpoint filenames contain twice that number. New checkpoints
+and validation samples use the same queue/events/stop/resume controls as DiffSinger.
+
+Export produces generator weights and config, then uses the `diffsinger` engine to export `vocoder.onnx` and
+`vocoder.yaml`. A new export may therefore install the DiffSinger environment when it is absent. The folder can
+be passed as `vocoder` to `/training/voicebank`. Recording provenance and the base-weight license are carried into
+the bank report. Source imports and real preparation have been checked; full GPU fine-tuning and real conversion
+of a newly trained vocoder remain to be validated.
+
+## Project dictionary copies
+
+`POST /training/dictionary/read` accepts `path`, optional `language`, and returns pronunciation `entries` as
+`{"word": "...", "phones": ["..."]}`, unique-word count, duplicate words and phoneme counts. It reads text
+dictionaries and OpenUtau dsdict YAML, with language-prefix filtering as used by dataset preparation.
+
+`POST /training/dictionary/save` accepts `entries` and `out_dir`. Words/phonemes are normalized to Unicode NFC,
+validated and written to a new UTF-8 text file. The returned `path` can be selected for that language in a voice.
+Existing files and training snapshots are never overwritten. Editing/mapping is done by the client before save.

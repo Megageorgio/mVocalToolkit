@@ -1,6 +1,6 @@
 import pytest
 
-from mvocaltoolkit.training.dictionaries import read_entries
+from mvocaltoolkit.training.dictionaries import read_entries, save_copy, describe_entries
 from mvocaltoolkit.training.dataset import SourceSpec, build_dataset
 from conftest import make_wav
 
@@ -36,3 +36,19 @@ def test_malformed_dictionary_has_an_actionable_error(tmp_path, content):
     path.write_text(content, encoding="utf-8")
     with pytest.raises(ValueError):
         read_entries(path, "ja")
+
+
+def test_editor_saves_normalized_separate_copies_and_reports_ambiguity(tmp_path):
+    values = [{"word": "е\u0308лка", "phones": "j o l k a"}, {"word": "ёлка", "phones": ["j", "o", "l", "k", "a"]}]
+    first = save_copy(values, tmp_path)
+    second = save_copy(values, tmp_path)
+    assert first["path"] != second["path"]
+    from pathlib import Path
+    entries = read_entries(Path(first["path"]))
+    result = describe_entries(entries)
+    assert result["words"] == 1 and result["duplicates"] == ["ёлка"]
+    assert result["phonemes"]["j"] == 2
+    with pytest.raises(ValueError):
+        save_copy([{"word": "bad\nword", "phones": "a"}], tmp_path)
+    with pytest.raises(ValueError):
+        save_copy(["bad"], tmp_path)

@@ -18,6 +18,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import math
 import sys
 import time
 import traceback
@@ -45,10 +47,11 @@ def _ckpt_step(path: Path) -> int:
 class SampleExtractor:
     """Reads TensorBoard event files of the run and writes the audio summaries as WAV files."""
 
-    def __init__(self, log_dir: Path, out_dir: Path):
+    def __init__(self, log_dir: Path, out_dir: Path, step_divisor: int = 1):
         self.log_dir = log_dir
         self.out_dir = out_dir
         self.loaders: dict[str, Any] = {}
+        self.step_divisor = step_divisor
 
     def pull(self) -> dict[int, list[str]]:
         try:
@@ -77,10 +80,14 @@ class SampleExtractor:
                             data = value.audio.encoded_audio_string
                         if not data:
                             continue
-                        step = int(event.step)
+                        step = int(event.step) // self.step_divisor
                         folder = self.out_dir / str(step)
                         folder.mkdir(parents=True, exist_ok=True)
                         name = value.tag.replace("/", "_") + ".wav"
+                        if self.step_divisor == 2:
+                            match = re.fullmatch(r"(HIFI|gt)_(\d+)_", value.tag)
+                            if match:
+                                name = ("diff" if match[1] == "HIFI" else "gt") + "_" + match[2] + ".wav"
                         (folder / name).write_bytes(data)
                         written.setdefault(step, []).append(f"samples/{step}/{name}")
             except Exception:  # noqa: BLE001  (a file being written: read again next time)
@@ -88,7 +95,7 @@ class SampleExtractor:
         return written
 
 
-def make_callback(run_dir: Path, log_interval: int):
+def make_callback(run_dir: Path, log_interval: int, step_divisor: int = 1, sample_log_dir: Path | None = None):
     import lightning.pytorch as pl  # noqa: PLC0415
     import torch  # noqa: PLC0415
 
@@ -98,11 +105,13 @@ def make_callback(run_dir: Path, log_interval: int):
     class MvtEvents(pl.Callback):
         def __init__(self) -> None:
             self.known: dict[int, Path] = {}
-            self.samples = SampleExtractor(run_dir / "lightning_logs" / "latest", run_dir / "samples")
+            self.samples = SampleExtractor(sample_log_dir or run_dir / "lightning_logs" / "latest", run_dir / "samples", step_divisor)
             self.stopping = False
             self.ended = False
             self.last_step_event = -1
             self.pending_scan = False
+            self.best_step: int | None = None
+            self.best_loss = float("inf")
 
         # ---- helpers ----
         def _losses(self, trainer: Any) -> dict[str, float]:
@@ -124,7 +133,11 @@ def make_callback(run_dir: Path, log_interval: int):
             return None
 
         def _scan_checkpoints(self) -> None:
-            current = {_ckpt_step(p): p for p in run_dir.glob(CKPT_GLOB)}
+            if self.best_step is not None:
+                from checkpoint_store import retain_best
+
+                retain_best(run_dir, self.best_step * step_divisor)
+            current = {_ckpt_step(p) // step_divisor: p for p in run_dir.glob(CKPT_GLOB)}
             for step, path in current.items():
                 if step >= 0 and step not in self.known:
                     try:
@@ -156,11 +169,17 @@ def make_callback(run_dir: Path, log_interval: int):
 
         # ---- hooks ----
         def on_fit_start(self, trainer: Any, pl_module: Any) -> None:
-            self.known = {_ckpt_step(p): p for p in run_dir.glob(CKPT_GLOB)}
-            _write_event(events, "start", step=int(trainer.global_step), max_steps=int(trainer.max_steps or 0))
+            try:
+                previous = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+                self.best_step = previous.get("best_val_step")
+                self.best_loss = float(previous["best_val_loss"]) if previous.get("best_val_loss") is not None else float("inf")
+            except (OSError, ValueError, TypeError):
+                pass
+            self.known = {_ckpt_step(p) // step_divisor: p for p in run_dir.glob(CKPT_GLOB)}
+            _write_event(events, "start", step=int(trainer.global_step) // step_divisor, max_steps=int(trainer.max_steps or 0) // step_divisor)
 
         def on_train_batch_end(self, trainer: Any, pl_module: Any, outputs: Any, batch: Any, batch_idx: int) -> None:
-            step = int(trainer.global_step)
+            step = int(trainer.global_step) // step_divisor
             if self.pending_scan:
                 # Lightning runs checkpoint callbacks after every other callback, so the checkpoint of the last
                 # validation is only on disk now, at the next batch
@@ -176,11 +195,11 @@ def make_callback(run_dir: Path, log_interval: int):
                     pass
                 losses = self._losses(trainer)
                 losses.pop("lr", None)
-                _write_event(events, "step", step=step, max_steps=int(trainer.max_steps or 0),
+                _write_event(events, "step", step=step, max_steps=int(trainer.max_steps or 0) // step_divisor,
                              epoch=int(trainer.current_epoch), losses=losses, lr=lr, gpu_mb=self._gpu_mb())
             if not self.stopping and stop_file.exists():
                 self.stopping = True
-                path = run_dir / f"model_ckpt_steps_{step}.ckpt"
+                path = run_dir / f"model_ckpt_steps_{int(trainer.global_step)}.ckpt"
                 try:
                     trainer.save_checkpoint(str(path))
                     _write_event(events, "checkpoint", step=step, path=str(path), size=path.stat().st_size)
@@ -192,7 +211,7 @@ def make_callback(run_dir: Path, log_interval: int):
         def on_validation_end(self, trainer: Any, pl_module: Any) -> None:
             if trainer.sanity_checking:
                 return
-            step = int(trainer.global_step)
+            step = int(trainer.global_step) // step_divisor
             metrics: dict[str, float] = {}
             val_loss = None
             for key, value in (trainer.callback_metrics or {}).items():
@@ -205,6 +224,8 @@ def make_callback(run_dir: Path, log_interval: int):
                 elif str(key).startswith(("val", "metrics")):
                     metrics[str(key)] = f
             _write_event(events, "validation", step=step, val_loss=val_loss, metrics=metrics)
+            if val_loss is not None and math.isfinite(val_loss) and val_loss < self.best_loss:
+                self.best_loss, self.best_step = val_loss, step
             self.pending_scan = True
 
         def on_train_end(self, trainer: Any, pl_module: Any) -> None:
@@ -244,6 +265,10 @@ def main() -> int:
         from utils.hparams import hparams, set_hparams  # noqa: PLC0415
 
         set_hparams()
+        from checkpoint_store import protect_removal
+        from utils.training_utils import DsModelCheckpoint
+
+        protect_removal(DsModelCheckpoint, run_dir)
         if not hparams.get("nccl_p2p", True):
             os.environ["NCCL_P2P_DISABLE"] = "1"
         interval = args.log_interval or max(10, int(hparams.get("log_interval") or 100) // 10)

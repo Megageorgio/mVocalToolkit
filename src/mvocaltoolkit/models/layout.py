@@ -233,6 +233,7 @@ def detect_diffsinger(root: Path) -> dict[str, Any] | None:
 
 DETECTORS = {
     "diffsinger": detect_diffsinger,
+    "singingvocoders": detect_diffsinger,
     "refiner": detect_refiner,
     "vocoder": detect_vocoder,
     "sofa": detect_sofa,

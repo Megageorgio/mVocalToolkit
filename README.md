@@ -24,6 +24,12 @@ Everything heavy is downloaded **only when needed**: each engine lives in its ow
 environment (created with [uv](https://docs.astral.sh/uv/) on first use), and models are downloaded from
 catalogs on first use. If you never use GAME, nothing of it is ever downloaded.
 
+Training is also available through `/training` and `mvt train`: DiffSinger acoustic/variance and experimental
+PC-NSF-HiFiGAN fine-tuning with the pinned `singingvocoders` engine. Training runs share a queue, survive the window
+closing, and support stop/resume, protected checkpoints, validation samples and exports. Vocoder fine-tuning needs
+clean original 44.1 kHz audio and the full OpenVPI training base (CC BY-NC-SA 4.0). Its source imports and real data
+preparation are checked; a full GPU training/export cycle still needs validation. See [training API](docs/API.md).
+
 ## Install
 
 ```
