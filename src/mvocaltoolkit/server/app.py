@@ -517,6 +517,15 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         """Queues a training run. One run trains at a time; the trainer is a process of its own that keeps running
         when the server stops. Progress: GET /training/runs/{id} (numbers), /events (everything), WS /events."""
         _engine(tk, spec.engine_name())
+        if spec.kind == "rvc_voice":
+            if spec.engine_name() != "rvc" or spec.device == "mps":
+                raise HTTPException(400, "RVC training requires the rvc engine and CPU or CUDA")
+            from ..training.rvc import snapshot
+            try:
+                data = await asyncio.to_thread(snapshot, spec.config, tk.home.dir("training") / "rvc-data")
+            except (OSError, ValueError, TypeError) as exc:
+                raise HTTPException(400, str(exc)) from exc
+            spec = spec.model_copy(update={"config": {**spec.config, **data}})
         if spec.kind == "g2p_rnnt":
             from ..training.g2p import snapshot
             try:
@@ -573,6 +582,15 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         from ..training.g2p import report
         try:
             return await asyncio.to_thread(report, config)
+        except (OSError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/training/rvc/check", tags=["training"], dependencies=[Depends(auth)])
+    async def rvc_check(config: dict[str, Any]):
+        from ..training.rvc import check
+        try:
+            data = await asyncio.to_thread(check, config)
+            return {k: v for k, v in data.items() if k != "recordings"}
         except (OSError, ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -700,7 +718,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
     async def training_tensorboard(run_id: str, tk: Toolkit = Depends(get_tk)):
         from ..engines.manager import process_environment
         run = _run(tk, run_id)
-        if run.info.spec.engine_name() not in {"diffsinger", "singingvocoders"}:
+        if run.info.spec.engine_name() not in {"diffsinger", "singingvocoders", "rvc"}:
             raise HTTPException(400, "This trainer has no TensorBoard logs; use its built-in metrics")
         spec = tk.engines.spec(run.info.spec.engine_name())
         python, cwd, env = process_environment(spec, tk.engines.envs, tk.settings)
@@ -774,7 +792,7 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
                 if report_path.is_file():
                     data_report = json.loads(report_path.read_text(encoding="utf-8"))
             export_speakers = req.export_spk
-            if not export_speakers and not req.freeze_spk and data_report and run.info.spec.engine_name() not in {"singingvocoders", "g2p"}:
+            if not export_speakers and not req.freeze_spk and data_report and run.info.spec.engine_name() not in {"singingvocoders", "g2p", "rvc"}:
                 data_speakers = data_report.get("speakers") or []
                 if any(s.get("role") == "donor" for s in data_speakers):
                     export_speakers = sorted({s["speaker"] for s in data_speakers if s.get("role") != "donor"})

@@ -1,16 +1,143 @@
 {
   "format": 1,
   "name": "bundled training assets",
-  "models": [{
-    "id": "singingvocoders-pc-nsf-hifigan-2025.02",
-    "engine": "singingvocoders",
-    "name": "PC-NSF-HiFiGAN 2025.02 — fine-tuning base",
-    "author": "OpenVPI",
-    "license": "CC BY-NC-SA 4.0",
-    "description": "Full SingingVocoders fine-tuning checkpoint, including discriminators. Different from the smaller inference checkpoint used by DiffSinger.",
-    "homepage": "https://github.com/openvpi/SingingVocoders/releases/tag/v1.0.0",
-    "size_hint": "377 MB",
-    "tags": ["asset", "vocoder", "finetune"],
-    "source": {"type": "github_release", "repo": "openvpi/SingingVocoders", "tag": "v1.0.0", "asset": "pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.zip"}
-  }]
+  "models": [
+    {
+      "id": "singingvocoders-pc-nsf-hifigan-2025.02",
+      "engine": "singingvocoders",
+      "name": "PC-NSF-HiFiGAN 2025.02 вЂ” fine-tuning base",
+      "author": "OpenVPI",
+      "license": "CC BY-NC-SA 4.0",
+      "description": "Full SingingVocoders fine-tuning checkpoint, including discriminators. Different from the smaller inference checkpoint used by DiffSinger.",
+      "homepage": "https://github.com/openvpi/SingingVocoders/releases/tag/v1.0.0",
+      "size_hint": "377 MB",
+      "tags": [
+        "asset",
+        "vocoder",
+        "finetune"
+      ],
+      "source": {
+        "type": "github_release",
+        "repo": "openvpi/SingingVocoders",
+        "tag": "v1.0.0",
+        "asset": "pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.zip"
+      }
+    },
+    {
+      "id": "rvc-contentvec",
+      "engine": "rvc",
+      "name": "RVC ContentVec encoder",
+      "author": "ContentVec contributors",
+      "description": "768-channel ContentVec encoder used for RVC v2 training and inference.",
+      "size_hint": "378 MB",
+      "tags": [
+        "asset",
+        "train"
+      ],
+      "source": {
+        "type": "huggingface",
+        "repo": "IAHispano/Applio",
+        "files": [
+          "Resources/embedders/contentvec/pytorch_model.bin",
+          "Resources/embedders/contentvec/config.json"
+        ]
+      }
+    },
+    {
+      "id": "rvc-hifigan-g-32k",
+      "engine": "rvc",
+      "name": "RVC HiFi-GAN G 32 kHz training base",
+      "author": "RVC contributors",
+      "description": "Original RVC v2 training weights; check source model terms before distribution.",
+      "tags": [
+        "asset",
+        "train"
+      ],
+      "source": {
+        "type": "url",
+        "url": "https://huggingface.co/IAHispano/Applio/resolve/main/Resources/pretrained_v2/f0G32k.pth",
+        "extract": false
+      }
+    },
+    {
+      "id": "rvc-hifigan-d-32k",
+      "engine": "rvc",
+      "name": "RVC HiFi-GAN D 32 kHz training base",
+      "author": "RVC contributors",
+      "description": "Original RVC v2 training weights; check source model terms before distribution.",
+      "tags": [
+        "asset",
+        "train"
+      ],
+      "source": {
+        "type": "url",
+        "url": "https://huggingface.co/IAHispano/Applio/resolve/main/Resources/pretrained_v2/f0D32k.pth",
+        "extract": false
+      }
+    },
+    {
+      "id": "rvc-hifigan-g-40k",
+      "engine": "rvc",
+      "name": "RVC HiFi-GAN G 40 kHz training base",
+      "author": "RVC contributors",
+      "description": "Original RVC v2 training weights; check source model terms before distribution.",
+      "tags": [
+        "asset",
+        "train"
+      ],
+      "source": {
+        "type": "url",
+        "url": "https://huggingface.co/IAHispano/Applio/resolve/main/Resources/pretrained_v2/f0G40k.pth",
+        "extract": false
+      }
+    },
+    {
+      "id": "rvc-hifigan-d-40k",
+      "engine": "rvc",
+      "name": "RVC HiFi-GAN D 40 kHz training base",
+      "author": "RVC contributors",
+      "description": "Original RVC v2 training weights; check source model terms before distribution.",
+      "tags": [
+        "asset",
+        "train"
+      ],
+      "source": {
+        "type": "url",
+        "url": "https://huggingface.co/IAHispano/Applio/resolve/main/Resources/pretrained_v2/f0D40k.pth",
+        "extract": false
+      }
+    },
+    {
+      "id": "rvc-hifigan-g-48k",
+      "engine": "rvc",
+      "name": "RVC HiFi-GAN G 48 kHz training base",
+      "author": "RVC contributors",
+      "description": "Original RVC v2 training weights; check source model terms before distribution.",
+      "tags": [
+        "asset",
+        "train"
+      ],
+      "source": {
+        "type": "url",
+        "url": "https://huggingface.co/IAHispano/Applio/resolve/main/Resources/pretrained_v2/f0G48k.pth",
+        "extract": false
+      }
+    },
+    {
+      "id": "rvc-hifigan-d-48k",
+      "engine": "rvc",
+      "name": "RVC HiFi-GAN D 48 kHz training base",
+      "author": "RVC contributors",
+      "description": "Original RVC v2 training weights; check source model terms before distribution.",
+      "tags": [
+        "asset",
+        "train"
+      ],
+      "source": {
+        "type": "url",
+        "url": "https://huggingface.co/IAHispano/Applio/resolve/main/Resources/pretrained_v2/f0D48k.pth",
+        "extract": false
+      }
+    }
+  ]
 }

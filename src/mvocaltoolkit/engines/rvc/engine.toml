@@ -1,0 +1,14 @@
+name = "rvc"
+title = "RVC voice conversion (Applio)"
+description = "Single-voice RVC v2 training with ContentVec, Harvest, HiFi-GAN, checkpoint resume and portable PTH/index export."
+capabilities = ["train", "export"]
+python = "3.11"
+torch = true
+size_hint = "~3 GB dependencies; ContentVec ~378 MB and optional G/D base weights downloaded on first training"
+homepage = "https://github.com/IAHispano/Applio"
+license = "MIT (code); see the selected base weights and recording licenses"
+requirements = ["torch>=2.7,<2.9", "torchaudio>=2.7,<2.9", "numpy<2", "librosa==0.11.0", "setuptools<81", "transformers==4.44.2", "soundfile", "soxr", "scipy", "pyworld", "faiss-cpu", "einops", "matplotlib", "tensorboard", "tqdm", "PyYAML", "wget", "requests"]
+
+[source]
+repo = "IAHispano/Applio"
+commit = "d36bde17aede51e0379cfb46d13e75e380b3a0be"

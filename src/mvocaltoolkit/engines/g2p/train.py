@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import random
 import sys
 import time
@@ -167,7 +168,7 @@ def train(run: Path, device: str, resume: bool):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--device", default="auto")
+    parser.add_argument("--device", default=os.environ.get("MVT_DEVICE", "auto"))
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     folder = Path(args.run_dir)

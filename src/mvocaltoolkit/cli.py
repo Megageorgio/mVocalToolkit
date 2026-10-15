@@ -238,6 +238,12 @@ def cmd_train(args) -> None:
             from .training.g2p import snapshot
             prepared = snapshot(spec.config, tk.home.dir("training") / "g2p-data")
             spec.config = {**{k: v for k, v in spec.config.items() if k != "prepared"}, **prepared}
+        if spec.kind == "rvc_voice":
+            if spec.engine_name() != "rvc" or spec.device == "mps":
+                raise ValueError("RVC training requires the rvc engine and CPU or CUDA")
+            from .training.rvc import snapshot
+            prepared = snapshot(spec.config, tk.home.dir("training") / "rvc-data")
+            spec.config = {**spec.config, **prepared}
         if spec.kind == "singingvocoders_vocoder":
             from .training.vocoder import build_overlay as vocoder_overlay, resolve_assets as vocoder_assets, scan_sources
 

@@ -42,8 +42,7 @@ def prepare(run_dir: str, kind: str, spec: dict, assets=None, device="auto"):
 
 @rt.method()
 def resume_command(run_dir: str, kind: str, spec: dict):
-    import os
-    return {"launch": {"args": [str(HERE / "train.py"), "--run-dir", run_dir, "--device", os.environ.get("MVT_DEVICE", "auto"), "--resume"]}}
+    return {"launch": {"args": [str(HERE / "train.py"), "--run-dir", run_dir, "--resume"]}}
 
 
 @rt.method()

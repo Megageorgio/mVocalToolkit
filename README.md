@@ -181,3 +181,9 @@ requirements, pinned upstream source) and a `worker.py` that talks JSON lines ov
 ## License
 
 MIT. Engines and models have their own licenses (see `engine.toml` and the model pages).
+
+The `rvc_voice` trainer learns RVC v2 voice conversion from one speaker of unlabelled WAV/FLAC audio, using
+ContentVec, Harvest and HiFi-GAN. It supports catalog/local training bases, bounded sequential preparation,
+prepare-only mode, cooperative batch stop, optimizer/position resume, protected checkpoints and PTH/FAISS export.
+Native CPU preparation, training, stop/resume and strict loading of the exported generator have been checked.
+Full GPU convergence and production voice quality remain unverified.

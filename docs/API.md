@@ -639,3 +639,45 @@ without dictionary lookup. Export writes cfg.yaml, model.ptsd, dict.txt, g2p.onn
 reports. The ONNX graph is checked and compared to PyTorch at dynamic input lengths. SOFA's compatible G2P loader
 can use the weights/config. An arbitrary vocabulary is not a drop-in OpenUtau language pack: its phonemizer must
 use those exact grapheme/phoneme IDs and language-specific symbol types.
+
+
+## RVC voice conversion training
+
+`POST /training/rvc/check` accepts the config below, checks it without installing an engine, and returns
+settings, file count/duration and coded findings. Start with `POST /training/runs` or `mvt train start`:
+
+```json
+{"kind":"rvc_voice","device":"auto","config":{
+ "sources":[{"folder":"D:/voice/recordings","speaker":"voice","license":"CC0"}],
+ "sample_rate":40000,"epochs":100,"batch_size":2,"save_every_epoch":5,
+ "max_steps":20,"learning_rate":0.0001,"chunk_seconds":3.7,"overlap_seconds":0.3,
+ "index_vectors":20000,"pretrained":true,"prepare_only":false}}
+```
+
+Only one speaker is supported; source labels are unused. 32/40/48 kHz output rates are supported, with separate
+resampled copies. Exact duplicates are excluded; manifests hash the recordings and any local base weights.
+Changed recordings are rejected during preparation. No engine or base weight is downloaded by preflight.
+Preparation streams recordings into bounded chunks, filters/normalizes them, extracts Harvest pitch and
+768-channel ContentVec features sequentially, and optionally builds an exact FAISS L2 index from a uniform,
+seeded sample. `index_vectors=0` disables the index; 20,000 vectors use about 60 MB. No external mute/reference
+corpus is required. At least three usable batches must survive preparation.
+
+`max_steps=20` is a setup check, not a finished voice. Set `max_steps=0` to train all epochs. `prepare_only=true`
+prepares data and finishes; resume starts the trainer. Training uses one CPU or CUDA device and float32;
+explicit unavailable CUDA devices fail. ContentVec and the matching HiFi-GAN G/D base weights come from the
+catalog only on start. Set `pretrained=false` for random initialization, or supply both `base_generator` and
+`base_discriminator` paths to matching full training checkpoints. Compact exported inference weights cannot
+replace the training pair. `embedder` may point to a local standard ContentVec folder containing config.json
+and pytorch_model.bin. Base weights and recording licenses must be checked before distributing derivatives.
+
+Stop finishes the current batch and atomically saves both networks, both optimizers, scaler, random states,
+epoch and batch position. Resume restores that state and skips completed batches; it does not promise bitwise
+identity across devices. Checkpoints use the shared retain/star API; the latest three unstarred checkpoints
+are rotated. Each full checkpoint can use about 1.3 GB. Training-example original/generated audio is saved at
+checkpoints. These are **not held-out validation samples**; no validation loss or automatic best-checkpoint
+claim is reported. Full GPU quality validation is still pending.
+
+The standard export job creates `voice.pth` (RVC v2, f0, HiFi-GAN, ContentVec, speaker ID 0), `voice.index` when
+prepared, README.txt and provenance.json. The exported generator omits optimizer/discriminator and posterior
+encoder weights and uses legacy RVC weight-norm names. It loads strictly in the pinned native Synthesizer.
+Use the result in a compatible RVC client; it is not an OpenUtau DiffSinger voicebank.

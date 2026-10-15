@@ -225,3 +225,10 @@ Better avoided: "mDiffTrainer" (confused with DiffTrainer), "mForge" (associated
 - Fragile wrapper: https://github.com/agentasteriski/DiffTrainer/issues/45
 - Hardware requirements: https://github.com/openvpi/MakeDiffSinger/wiki/System-Requirements
 - ACE Studio: https://docs.acestudio.ai/voice-cloning/cloning-a-voice-for-vocal-synth
+
+
+RVC follow-up: pinned Applio d36bde1, one-speaker ContentVec/Harvest/HiFi-GAN training, immutable recording
+manifests, sequential bounded preparation, prepare-only mode, batch-boundary checkpoints with both optimizers,
+resume, original/generated training previews, protected checkpoints and native PTH/index export are implemented.
+Actual CPU feature preparation and full-size network stop/resume/export passed with existing environments.
+Full GPU training and useful conversion quality remain unverified.
