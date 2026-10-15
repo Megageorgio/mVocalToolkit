@@ -1,6 +1,6 @@
 name = "qwen_tts"
-title = "Qwen3-TTS single speaker training"
-description = "Qwen3-TTS single speaker training with frozen input snapshots, optimizer resume and native inference export."
+title = "Qwen3-TTS speaker-conditioned training"
+description = "Qwen3-TTS speaker-conditioned training with frozen input snapshots, optimizer resume and native inference export."
 capabilities = ["train", "export"]
 python = "3.11"
 torch = true

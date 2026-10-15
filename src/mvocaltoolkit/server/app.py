@@ -1043,6 +1043,37 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
                 return await training_call(tk, job, "bank_render", "render", params)
         return submit(tk, "bank_onnx_render", work, req)
 
+    @app.post("/training/test-phrase/{action}", tags=["training"], dependencies=[Depends(auth)])
+    async def test_phrase(action: str, req: dict, tk: Toolkit = Depends(get_tk)):
+        from ..training.test_phrases import PhraseRequest, inventory, build_phrase
+        try:
+            request = PhraseRequest.model_validate(req)
+            if request.run_id:
+                request.model_dir = str(_run(tk, request.run_id).dir)
+            if not request.model_dir:
+                raise ValueError("Select a prepared run or an exported bank")
+            if action == "inventory":
+                return await asyncio.to_thread(inventory, Path(request.model_dir), request.language, request.config)
+            if action == "create":
+                return await asyncio.to_thread(build_phrase, request, tk.home.outputs / ("phrase-" + uuid.uuid4().hex[:12]))
+            raise ValueError("Choose inventory or create")
+        except (ValueError, OSError, KeyError, TypeError) as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/training/speech/render", tags=["training"], dependencies=[Depends(auth)])
+    async def speech_render(req: dict, tk: Toolkit = Depends(get_tk)):
+        kind = req.get("kind")
+        if kind not in {"qwen_tts_voice", "voxcpm_voice"}:
+            raise HTTPException(400, "Choose Qwen3-TTS or VoxCPM2")
+        async def work(job):
+            allowed = {"model_dir", "text", "speaker", "language", "reference", "base_model", "device", "seed", "steps", "guidance", "temperature", "max_tokens"}
+            params = {key: value for key, value in req.items() if key in allowed}
+            async with tk.training.inference_slot():
+                result = await training_call(tk, job, "qwen_tts" if kind == "qwen_tts_voice" else "voxcpm", "render_speech",
+                    dict(**params, kind=kind, out_dir=str(tk.home.outputs / job.id / "speech")))
+            return result
+        return submit(tk, "speech_preview", work, req)
+
     @app.get("/training/phonemizers", tags=["training"], dependencies=[Depends(auth)])
     async def training_phonemizers() -> list[dict]:
         from ..training.phonemizers import PROFILES
@@ -1061,6 +1092,14 @@ def create_app(toolkit: Toolkit | None = None, exit_when_unused: float = 0.0) ->
         from ..training.phoneme_preview import suggest_merges
         try:
             return suggest_merges(req.get("entries", []))
+        except (ValueError, TypeError) as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/training/phonemizers/mapping-suggestions", tags=["training"], dependencies=[Depends(auth)])
+    async def phoneme_mappings(req: dict):
+        from ..training.phoneme_preview import suggest_mappings
+        try:
+            return suggest_mappings(req.get("entries", []), req.get("targets", []))
         except (ValueError, TypeError) as error:
             raise HTTPException(400, str(error)) from error
 

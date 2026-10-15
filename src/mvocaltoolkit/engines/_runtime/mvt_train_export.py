@@ -94,10 +94,23 @@ def export(run, source, kind, out, step):
             if cfg.get("tokenizer"):
                 shutil.copytree(cfg["tokenizer"],out/"speech_tokenizer",dirs_exist_ok=True,ignore=shutil.ignore_patterns(".*"))
             config["tts_model_type"]="custom_voice"
-            config["talker_config"].update(spk_id={cfg["speaker_name"]:3000},spk_is_dialect={cfg["speaker_name"]:False})
-            (out/"config.json").write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding="utf-8")
             weights={k:v.contiguous().cpu() for k,v in state["model"].items() if not k.startswith("speaker_encoder")}
-            weights["talker.model.codec_embedding.weight"][3000]=state["metadata"]["speaker_embedding"]
+            embeddings=state["metadata"].get("speaker_embeddings") or {cfg["speaker_name"]:state["metadata"]["speaker_embedding"]}
+            table=weights["talker.model.codec_embedding.weight"]
+            reserved=set()
+            def reserve(value):
+                if isinstance(value,int): reserved.add(value)
+                elif isinstance(value,dict):
+                    for entry in value.values():reserve(entry)
+                elif isinstance(value,list):
+                    for entry in value:reserve(entry)
+            reserve({k:v for k,v in config["talker_config"].items() if k not in {"spk_id","spk_is_dialect"}})
+            slots=[i for i in range(3000,len(table)) if i not in reserved]
+            if len(slots)<len(embeddings): raise ValueError("Not enough unused codec speaker IDs for this model")
+            speaker_ids={name:slots[i] for i,name in enumerate(sorted(embeddings))}
+            for name,number in speaker_ids.items():table[number]=embeddings[name]
+            config["talker_config"].update(spk_id=speaker_ids,spk_is_dialect={name:False for name in embeddings})
+            (out/"config.json").write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding="utf-8")
             save_file(weights,str(out/"model.safetensors"))
         elif kind=="voxcpm_voice":
             from safetensors.torch import save_file
@@ -114,6 +127,14 @@ def export(run, source, kind, out, step):
                 for directory in ("audiovae","audio_vae"):
                     if (base/directory).is_dir():shutil.copytree(base/directory,out/directory,dirs_exist_ok=True)
         else:raise ValueError("Unsupported inference export")
+        if kind=="voxcpm_voice" and cfg.get("speaker_references"):
+            import hashlib
+            references={}
+            for name,record in cfg["speaker_references"].items():
+                relative="references/"+hashlib.sha256(name.encode()).hexdigest()[:16]+".wav"
+                (out/"references").mkdir(exist_ok=True);shutil.copy2(record["audio"],out/relative)
+                references[name]={"audio":relative,"text":record["text"]}
+            (out/"speaker-references.json").write_text(json.dumps(references,ensure_ascii=False,indent=1),encoding="utf-8")
     if (run/"validation.json").is_file():shutil.copy2(run/"validation.json",out/"validation.json")
     manifest=json.loads((run/"input-manifest.json").read_text(encoding="utf-8"))
     (out/"training-provenance.json").write_text(json.dumps({"kind":kind,"step":step,"base_model":cfg["base_model"],

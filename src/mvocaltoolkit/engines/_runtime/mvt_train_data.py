@@ -171,6 +171,12 @@ def prepare(run, source, kind, requested):
         binarize.load_wav = load_wave
         binarize.ForcedAlignmentBinarizer(**native).process()
     elif kind in {"qwen_tts_voice", "voxcpm_voice"}:
+        references = {}
+        for record in records:
+            if not record["validation"] and record["speaker"] not in references:
+                references[record["speaker"]] = dict(audio=record["prepared_audio"], text=record["text"])
+        cfg["speaker_references"] = references
+        for record in records: record["ref_audio"] = references[record["speaker"]]["audio"]
         cfg["base_model_origin"] = cfg["base_model"]
         cfg["base_model"] = str(resolve_model(cfg["base_model"], cfg["allow_download"]))
         if kind == "qwen_tts_voice":
@@ -180,10 +186,8 @@ def prepare(run, source, kind, requested):
             tokenizer_path = resolve_model(tokenizer_path, cfg["allow_download"])
             cfg["tokenizer"] = str(tokenizer_path)
             tokenizer = Qwen3TTSTokenizer.from_pretrained(str(tokenizer_path), device_map=device(requested))
-            reference = next(r["prepared_audio"] for r in records if not r["validation"])
             for i, r in enumerate(records):
                 r["audio_codes"] = tokenizer.encode(r["prepared_audio"]).audio_codes[0].cpu().tolist()
-                r["ref_audio"] = reference
                 progress(.5 + .5 * (i+1)/len(records), f"Audio tokens {i+1}/{len(records)}")
         for validation, name in ((False, "train.jsonl"), (True, "validation.jsonl")):
             with (run / name).open("w", encoding="utf-8") as stream:

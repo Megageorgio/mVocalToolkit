@@ -53,6 +53,13 @@ engine executes actual exported ONNX graphs on CPU with a compatible local vocod
 OpenUtau text plugins. Conversion examples support interval listening and optional exact user-supplied IPA/feature
 merge suggestions. Synthetic execution checks do not establish real bank compatibility or voice quality.
 
+Phoneme audition tools generate deterministic CV/VC/V/CVC or manually entered syllables from an actual model
+vocabulary, with aligned notes/durations/f0. Workflows can include their preview, vocoder fine-tuning and G2P
+training/export. DiffSinger offers opt-in free-VRAM batch caps, bounded batch reduction/retry after OOM, and
+persisted validation-check early stopping. Speech training splits per speaker/language and preserves separate
+speaker references; local exported speech previews use the matching native engine. RVC can hold out entire
+recordings and exclude their features from the training/index, reporting spectral comparisons and listening pairs.
+
 ## Install
 
 ```

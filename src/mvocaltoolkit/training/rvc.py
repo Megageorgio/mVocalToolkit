@@ -38,6 +38,9 @@ def settings(config: dict) -> dict:
     if not isinstance(config.get("prepare_only", False), bool):
         raise ValueError("prepare_only must be true or false")
     result.update(pitch_method="harvest", prepare_only=config.get("prepare_only", False))
+    fraction = float(config.get("validation_fraction", .1))
+    if not math.isfinite(fraction) or not 0 <= fraction <= .5: raise ValueError("validation_fraction must be 0–0.5")
+    result["validation_fraction"] = fraction
     result["pretrained"] = config.get("pretrained", True)
     if not isinstance(result["pretrained"], bool):
         raise ValueError("pretrained must be true or false")
@@ -94,7 +97,12 @@ def scan_sources(config: dict) -> dict:
         problems.append({"code": "no_audio", "severity": "error"})
     if seconds < 600:
         problems.append({"code": "little_audio", "severity": "warning"})
-    problems.append({"code": "training_preview", "severity": "note"})
+    fraction = float(config.get("validation_fraction", .1))
+    ranked = sorted(recordings, key=lambda r: hashlib.sha256(f"{config.get('seed',1234)}:{r['sha256']}".encode()).digest())
+    count = min(len(ranked)-1, max(1, round(len(ranked)*fraction))) if fraction and len(ranked)>1 else 0
+    validation = {r["sha256"] for r in ranked[:count]}
+    for record in recordings: record["validation"] = record["sha256"] in validation
+    problems.append({"code": "heldout_preview" if validation else "training_preview", "severity": "note"})
     return {"files": len(recordings), "seconds": seconds, "speaker": next(iter(speakers), ""),
             "recordings": recordings, "problems": problems}
 

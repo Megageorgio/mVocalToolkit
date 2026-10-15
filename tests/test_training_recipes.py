@@ -46,6 +46,22 @@ def test_every_recipe_checks_and_snapshots_without_torch_or_install(tmp_path,kin
     assert not train&validation and len(train|validation)==4
 
 
+@pytest.mark.parametrize("kind",["qwen_tts_voice","voxcpm_voice"])
+def test_speech_multi_speaker_split_keeps_each_voice_out_of_its_own_validation(tmp_path,kind):
+    values=sources(tmp_path)
+    folder=Path(values[0]["folder"])
+    # Partition the distinct existing recordings between two speaker folders.
+    second=tmp_path/"second";second.mkdir()
+    for name in ("sample2","sample3"):
+        for suffix in (".wav",".txt",".lab"):(folder/(name+suffix)).rename(second/(name+suffix))
+    values.append(dict(folder=str(second),speaker="second",language="ru"))
+    data=scan(kind,dict(sources=values))
+    assert not any(f["severity"]=="error" for f in data["findings"])
+    for speaker in ("singer","second"):
+        rows=[r for r in data["records"] if r["speaker"]==speaker]
+        assert len(rows)==2 and sum(r["validation"] for r in rows)==1
+
+
 @pytest.mark.parametrize("change",[{"learning_rate":float("nan")},{"steps":0},{"save_interval":101},
     {"validation_fraction":.9},{"prepare_only":"false"},{"overrides":[]},{"batch_size":True},{"seed":-1}])
 def test_bad_recipe_knobs_fail_before_install(change):

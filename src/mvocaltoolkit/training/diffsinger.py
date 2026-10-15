@@ -160,6 +160,8 @@ def is_acoustic(kind: str) -> bool:
 def build_overlay(kind: str, config: dict[str, Any]) -> dict[str, Any]:
     """The config overlay for a run; raises ValueError for a spec that can't work."""
     acoustic = is_acoustic(kind)
+    from .resources import resource_options
+    resource_options(config)
     datasets = list(config.get("datasets") or [])
     if not datasets:
         raise ValueError("The spec has no datasets")
@@ -322,6 +324,11 @@ def build_overlay(kind: str, config: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("Enable at least one variance prediction")
         if all(overlay.get("predict_" + k) for k in ("energy", "breathiness", "voicing")):
             raise ValueError("energy, breathiness and voicing cannot all be enabled")
+    early = config.get("early_stopping") or {}
+    patience, delta, warmup = int(early.get("patience", 0)), float(early.get("min_delta", 0)), int(early.get("min_steps", 0))
+    if not 0 <= patience <= 10000 or not 0 <= delta < float("inf") or warmup < 0:
+        raise ValueError("Invalid early-stopping patience, minimum improvement or warmup")
+    overlay["mvt_early_stopping"] = dict(patience=patience, min_delta=delta, min_steps=warmup)
     return overlay
 
 

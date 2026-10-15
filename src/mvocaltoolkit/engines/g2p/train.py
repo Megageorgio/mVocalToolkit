@@ -105,12 +105,12 @@ def train(run: Path, device: str, resume: bool):
     emit("start", max_steps=data["max_updates"], resumed=resume)
     for warning in data["warnings"]:
         emit("warning", kind="dictionary", text=warning)
-    while epoch < data["epochs"]:
+    while epoch < data["epochs"] and step < data["max_updates"]:
         if not order:
             order = list(range(len(data["train"])))
             rng.shuffle(order)
         model.train()
-        while offset < len(order):
+        while offset < len(order) and step < data["max_updates"]:
             if stopped():
                 save(); emit("end", status="stopped"); return
             items = [data["train"][n] for n in order[offset:offset + data["batch_size"]]]

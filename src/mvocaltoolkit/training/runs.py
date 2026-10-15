@@ -112,6 +112,7 @@ class RunInfo(BaseModel):
     # how many lines events.jsonl has (clients ask for events since a line number)
     events: int = 0
     engine_version: str = ""
+    resource_retries: int = 0
     config_written: dict[str, Any] = Field(default_factory=dict)
 
     @property

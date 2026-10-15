@@ -331,7 +331,7 @@ class TrainingManager:
         self._wake.set()
 
     def _busy(self) -> bool:
-        return self._inference or any(r.info.status in (RunStatus.preparing, RunStatus.training, RunStatus.stopping) for r in self.runs.values())
+        return self._inference or any(r.info.status in (RunStatus.preparing, RunStatus.training, RunStatus.stopping) or r.info.pid and self._alive(r) for r in self.runs.values())
 
     @asynccontextmanager
     async def inference_slot(self):
@@ -380,6 +380,15 @@ class TrainingManager:
                 result = await self.tk.engines.call(engine, "resume_command", {
                     "run_dir": str(run.dir), "kind": info.spec.kind, "spec": info.spec.config})
             else:
+                if info.spec.kind.startswith("diffsinger_"):
+                    from .resources import resource_options, measured_limits
+                    resources = resource_options(info.spec.config)
+                    if resources["auto_batch"]:
+                        environment = await self.tk.engines.call(engine, "environment", {})
+                        limits, measurement = measured_limits(info.spec.kind, info.spec.config, environment, info.spec.device)
+                        info.spec.config["overlay"] = {**info.spec.config.get("overlay", {}), **limits}
+                        (run.dir / "resource-report.json").write_text(json.dumps(measurement, indent=1), encoding="utf-8")
+                        run.publish(run.emit("resource", **measurement))
                 def on_progress(data: dict[str, Any]) -> None:
                     stage = data.get("stage") or "prepare"
                     info.stage = stage
@@ -398,8 +407,9 @@ class TrainingManager:
                 # stopped while preparing
                 self._interrupted(run, "Stopped while preparing")
                 return
-            if info.spec.config.get("prepare_only") and not resumed:
+            if not resumed:
                 (run.dir / "PREPARED").write_text("ready", encoding="utf-8")
+            if info.spec.config.get("prepare_only") and not resumed:
                 info.status = RunStatus.done
                 info.finished_at = time.time()
                 info.message = "Data prepared; resume this run to start training"
@@ -497,6 +507,7 @@ class TrainingManager:
     async def _follow_loop(self, run: Run) -> None:
         info = run.info
         ended = False
+        terminal_status = None
         hang_warned = False
         try:
             while True:
@@ -507,6 +518,8 @@ class TrainingManager:
                     run.publish(event)
                     if event.get("event") == "end":
                         ended = True
+                        terminal_status = info.status
+                        info.status = RunStatus.stopping if terminal_status == RunStatus.stopped else RunStatus.training
                 if events:
                     run.last_event_time = time.time()
                     run.save()
@@ -522,6 +535,8 @@ class TrainingManager:
                         run.publish(event)
                         if event.get("event") == "end":
                             ended = True
+                            terminal_status = info.status
+                            info.status = RunStatus.stopping if terminal_status == RunStatus.stopped else RunStatus.training
                     if not ended:
                         self._died(run)
                     break
@@ -532,12 +547,39 @@ class TrainingManager:
                 await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             # the server stops while the trainer keeps running: the pid stays in run.json for the next start
+            if terminal_status is not None: info.status = terminal_status
             run.save(force=True)
             raise
         # the trainer ended
+        # A terminal event may precede CUDA teardown. Do not retry on top of the old process.
+        for _ in range(100):
+            if not self._alive(run): break
+            await asyncio.sleep(.1)
+        if self._alive(run):
+            self._interrupted(run, "Trainer has not exited after its final event; resume after it exits")
+            return
+        for event in run.read_new_events():
+            info.events += 1
+            self._apply(run, event)
+            run.publish(event)
+            if event.get("event") == "end": terminal_status = info.status
+        if terminal_status is not None: info.status = terminal_status
         run.stop_file.unlink(missing_ok=True)
         info.pid = None
         run.process = None
+        from .resources import reduce_after_oom
+        try:
+            recovery = reduce_after_oom(run)
+        except (ValueError, OSError, TypeError) as error:
+            recovery = None
+            run.publish(run.emit("warning", kind="oom_retry", text=f"Cannot change batch limits: {error}"))
+        if recovery:
+            info.warnings = (info.warnings + [recovery])[-50:]
+            info.status, info.error, info.error_kind = RunStatus.queued, None, None
+            info.finished_at = None
+            info.message = recovery["text"]
+            run.publish(run.emit("warning", **recovery))
+            run.publish(run.emit("queued", run=run.id, resume=True))
         run.save(force=True)
         self._wake.set()
 

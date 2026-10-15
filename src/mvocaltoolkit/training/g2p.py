@@ -46,6 +46,8 @@ def prepare_dictionary(config: dict) -> dict:
     epochs, batch = int(config.get("epochs", 50)), int(config.get("batch_size", 16))
     hidden, layers = int(config.get("hidden_size", 128)), int(config.get("layers", 2))
     lr, patience = float(config.get("learning_rate", .001)), int(config.get("patience", 8))
+    max_steps = int(config.get("max_steps", 0))
+    if not 0 <= max_steps <= 10_000_000: raise ValueError("Invalid max_steps")
     if not 1 <= epochs <= 10000 or not 1 <= batch <= 256 or hidden not in (64, 128, 256, 512) or not 1 <= layers <= 4:
         raise ValueError("Invalid epochs, batch size, hidden size or layer count")
     if not math.isfinite(lr) or not 0 < lr <= .1 or not 0 <= patience <= 1000:
@@ -115,7 +117,7 @@ def prepare_dictionary(config: dict) -> dict:
             "epochs": epochs, "batch_size": batch, "learning_rate": lr, "patience": patience, "seed": seed,
             "lowercase": lowercase, "language": config.get("language", ""), "warnings": warnings,
             "words": len(grouped), "train_words": len(grouped) - val_count, "validation_words": val_count,
-            "max_updates": epochs * math.ceil(len(train) / batch),
+            "max_updates": min(max_steps or 10_000_000, epochs * math.ceil(len(train) / batch)),
             "base_weights": base_weights, "added_graphemes": added_chars, "added_phonemes": added_phones,
             "dictionary_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 

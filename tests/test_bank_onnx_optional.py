@@ -74,6 +74,11 @@ def test_actual_onnx_sessions_render_a_synthetic_bank_and_reject_unknown_phones(
     samples, rate = sf.read(result["files"][0])
     assert rate == 16000 and len(samples) == 1600 and np.isfinite(samples).all()
     assert (tmp_path / "render/render-report.json").is_file()
+    from mvocaltoolkit.training.test_phrases import PhraseRequest, build_phrase
+    phrase=build_phrase(PhraseRequest(model_dir=str(bank),mode="manual",phonemes="a | a",notes="C4 E4"),tmp_path/"generated-phrase")
+    generated=worker.render(str(bank),phrase["path"],str(tmp_path/"generated-render"))
+    samples,rate=sf.read(generated["files"][0])
+    assert abs(len(samples)/rate-phrase["seconds"])<.011
     ds.write_text(json.dumps([dict(ph_seq="not-trained", ph_dur=".1", note_seq="C4", note_dur=".1")]))
     with pytest.raises(ValueError, match="Untrained phoneme"):
         worker.render(str(bank), str(ds), str(tmp_path / "invalid"))

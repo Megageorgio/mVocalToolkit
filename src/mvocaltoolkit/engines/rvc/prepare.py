@@ -58,7 +58,7 @@ def slice_recordings(run: Path, config: dict, recordings: list) -> list[Path]:
     return output
 
 
-def features(run: Path, config: dict, paths: list[Path], device: str):
+def features(run: Path, config: dict, paths: list[Path], device: str, validation_indices=()):
     import numpy as np
     import pyworld
     import soundfile as sf
@@ -68,7 +68,7 @@ def features(run: Path, config: dict, paths: list[Path], device: str):
     model = load_embedding("custom", config["embedder"]).to(device).float().eval()
     for name in ("f0", "f0_voiced", "extracted"):
         (run / name).mkdir(exist_ok=True)
-    rows = []
+    rows, validation_rows = [], []
     for index, path in enumerate(paths):
         audio, _ = sf.read(run / "sliced_audios_16k" / path.name, dtype="float32")
         f0, time_axis = pyworld.harvest(audio.astype(np.float64), 16000, f0_floor=50, f0_ceil=1100, frame_period=10)
@@ -86,9 +86,13 @@ def features(run: Path, config: dict, paths: list[Path], device: str):
         np.save(pitch, coarse, allow_pickle=False)
         np.save(pitchf, f0.astype(np.float32), allow_pickle=False)
         np.save(feature, content, allow_pickle=False)
-        rows.append("|".join(map(str, (path, feature, pitch, pitchf, 0))))
+        row = "|".join(map(str, (path, feature, pitch, pitchf, 0)))
+        (validation_rows if int(path.stem.split("_")[1]) in validation_indices else rows).append(row)
         progress(.2 + .7 * (index + 1) / len(paths), f"Pitch and features {index + 1}/{len(paths)}")
     (run / "filelist.txt").write_text("\n".join(rows), encoding="utf-8")
+    (run / "validation-filelist.txt").write_text("\n".join(validation_rows), encoding="utf-8")
+    if len(rows) < 3 * config["batch_size"]:
+        raise ValueError("Not enough training chunks after holding out whole recordings; add audio, reduce batch or disable validation")
 
 
 def build_index(run: Path, limit: int, seed: int):
@@ -96,7 +100,7 @@ def build_index(run: Path, limit: int, seed: int):
         return
     import faiss
     import numpy as np
-    files = sorted((run / "extracted").glob("*.npy"))
+    files = sorted({Path(line.split("|")[1]) for line in (run / "filelist.txt").read_text(encoding="utf-8").splitlines() if line})
     lengths = [len(np.load(p, mmap_mode="r")) for p in files]
     total = sum(lengths)
     if not total:
@@ -134,7 +138,7 @@ def main():
     if device == "mps":
         raise ValueError("This RVC trainer supports CPU or CUDA")
     paths = slice_recordings(run, config, data["recordings"])
-    features(run, config, paths, device)
+    features(run, config, paths, device, {i for i,r in enumerate(data["recordings"]) if r.get("validation")})
     build_index(run, config["index_vectors"], config["seed"])
     source = Path(os.environ["MVT_SOURCE_DIR"])
     native = json.loads((source / "rvc" / "configs" / f"{config['sample_rate']}.json").read_text())

@@ -81,3 +81,13 @@ def test_rvc_adapter_rejects_a_changed_upstream_contract():
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     with pytest.raises(ValueError, match="Unsupported Applio"):
         module.adapt("print('unexpected trainer')", "C:/run")
+
+
+def test_rvc_holds_out_whole_distinct_recordings_and_can_disable_it(tmp_path):
+    folder=tmp_path/"audio"
+    for i in range(5):audio(folder,f"take{i}.wav",seconds=4+i*.01)
+    config=dict(sources=[dict(folder=str(folder),speaker="one")],validation_fraction=.2)
+    first=check(config);second=check(config)
+    assert [r["validation"] for r in first["recordings"]]==[r["validation"] for r in second["recordings"]]
+    assert sum(r["validation"] for r in first["recordings"])==1
+    assert not any(r["validation"] for r in check({**config,"validation_fraction":0})["recordings"])

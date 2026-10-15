@@ -62,3 +62,9 @@ def export(run_dir, kind, out_dir, step=None, **options):
 def environment():
     import torch
     return {"torch": torch.__version__, "cuda": torch.cuda.is_available()}
+
+
+@rt.method()
+def render_speech(**params):
+    from mvt_speech_preview import render
+    return render(**params)

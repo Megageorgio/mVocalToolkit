@@ -51,6 +51,11 @@ class BankWorkflowRequest(BaseModel):
     vocoder: str = ""
     review_before_training: bool = False
     render_options: dict = Field(default_factory=dict)
+    auto_test_phrase: bool = True
+    render_test_phrase: bool = False
+    test_phrase: dict = Field(default_factory=dict)
+    vocoder_training: dict | None = None
+    g2p_training: list[dict] = Field(default_factory=list)
 
 
 def training_config(req, kind, data):
@@ -99,6 +104,9 @@ def check_workflow(req: BankWorkflowRequest) -> dict:
         raise ValueError("Select an existing acoustic ONNX export when acoustic training is disabled")
     if req.render_ds and not Path(req.render_ds).is_file():
         raise ValueError("Test DS does not exist")
+    if req.vocoder_training is not None:
+        from .vocoder import build_overlay as vocoder_overlay
+        vocoder_overlay({**req.vocoder_training, "device": req.device})
     forbidden = {"datasets", "dictionaries", "data_report", "overlay", "binary_data_dir"}
     if any(forbidden & set(v) for v in (req.training, req.acoustic_settings, req.variance_settings)):
         raise ValueError("Workflow data paths are managed by its immutable dataset snapshot")
@@ -281,6 +289,57 @@ class BankWorkflows:
             if req.review_before_training and not state.get("approved"):
                 state.update(status="review", message="Data ready; review findings and continue when ready")
                 return
+            async def auxiliary(key, kind, config):
+                if key in state["runs"]:
+                    run = self.tk.training.get(state["runs"][key])
+                    if run is None: raise ValueError("A workflow run was removed; start a new chain")
+                    if run.info.status.value in {"stopped", "failed"}: await self.tk.training.resume(run.id)
+                else:
+                    run = self.tk.training.start(RunSpec(kind=kind, name=req.name + " · " + key,
+                        dir=str(folder / (key + "-" + uuid.uuid4().hex[:6])), config=config, device=req.device))
+                    state["runs"][key] = run.id; self.save(state)
+                while run.info.status in ACTIVE:
+                    job.check_cancelled(); job.progress(run.info.progress, message=run.info.message or f"{key}: {run.info.step}")
+                    await asyncio.sleep(2)
+                if run.info.status.value != "done": raise ValueError(run.info.error or f"{key} stopped")
+                return dict(run=run.id, step=run.info.step, dir=str(run.dir))
+            trained_vocoder = None
+            if req.vocoder_training is not None:
+                async def vocoder_train():
+                    from .vocoder import build_overlay as vocoder_overlay, scan_sources, resolve_assets as vocoder_assets
+                    config = {**req.vocoder_training, "sources": [s.__dict__ for s in prepared if s.role == "main"]}
+                    if req.prototype:
+                        config["steps"] = min(req.prototype_steps, int(config.get("steps", req.prototype_steps)))
+                        config["validation_interval"] = min(config["steps"], int(config.get("validation_interval", 100)))
+                    report = await asyncio.to_thread(scan_sources, config)
+                    errors = [p["problem"] for p in report["problems"] if p["severity"] == "error"]
+                    if errors: raise ValueError("Vocoder data: " + "; ".join(errors[:5]))
+                    config.update(overlay=vocoder_overlay({**config, "device": req.device}), data_report=report, assets=vocoder_assets(config))
+                    return await auxiliary("vocoder", "singingvocoders_vocoder", config)
+                trained_vocoder = await stage("vocoder", vocoder_train)
+                async def vocoder_export():
+                    run = self.tk.training.get(trained_vocoder["run"])
+                    out = folder / ("vocoder-export-" + uuid.uuid4().hex[:6])
+                    async with self.slot(job):
+                        native = await call(self.tk, job, "singingvocoders", "export", dict(run_dir=str(run.dir), kind=run.info.spec.kind, out_dir=str(out), step=trained_vocoder["step"]))
+                        onnx = await call(self.tk, job, "diffsinger", "export_vocoder", dict(checkpoint=native["checkpoint"], out_dir=str(out)))
+                    return dict(**onnx, checkpoint=native["checkpoint"])
+                trained_vocoder = await stage("export_vocoder", vocoder_export)
+                state["results"]["vocoder"] = trained_vocoder
+            for n, settings in enumerate(req.g2p_training):
+                async def g2p(n=n, settings=settings):
+                    from .g2p import snapshot
+                    language = settings.get("language", req.sources[0].language)
+                    config = {**settings, "dictionary": settings.get("dictionary") or built["spec"]["dictionaries"][language], "language": language}
+                    if req.prototype: config["max_steps"] = min(req.prototype_steps, int(config.get("max_steps") or req.prototype_steps))
+                    config.update(await asyncio.to_thread(snapshot, config, folder / "g2p-data"))
+                    return await auxiliary(f"g2p_{n}", "g2p_rnnt", config)
+                trained = await stage(f"g2p_{n}", g2p)
+                async def g2p_export(n=n, trained=trained):
+                    run = self.tk.training.get(trained["run"])
+                    async with self.slot(job):
+                        return await call(self.tk, job, "g2p", "export", dict(run_dir=str(run.dir), kind=run.info.spec.kind, out_dir=str(folder / (f"g2p-export-{n}-" + uuid.uuid4().hex[:6])), step=trained["step"]))
+                state["results"][f"g2p_{n}"] = await stage(f"export_g2p_{n}", g2p_export)
             async def train(kind, settings):
                 if kind in state["runs"]:
                     run = self.tk.training.get(state["runs"][kind])
@@ -290,13 +349,15 @@ class BankWorkflows:
                         await self.tk.training.resume(run.id)
                 else:
                     config = training_config(req, kind, {**built["spec"], "extra_phonemes": sorted(extra), "merged_phoneme_groups": req.merged_phoneme_groups})
+                    if trained_vocoder:
+                        config["assets"] = {**config.get("assets", {}), "vocoder": trained_vocoder["checkpoint"]}
                     config["overlay"] = build_overlay("diffsinger_" + kind, {**config, "device": req.device})
                     config["assets"] = resolve_assets(config)
                     run = self.tk.training.start(RunSpec(kind="diffsinger_" + kind, name=req.name + " · " + kind,
                         dir=str(folder / (kind + "-" + uuid.uuid4().hex[:6])), device=req.device, config=config))
                     state["runs"][kind] = run.id
                     self.save(state)
-                while run.info.status in ACTIVE:
+                while run.info.status in ACTIVE or (run.info.status.value == "failed" and run.info.error_kind == "oom" and run.task is not None and not run.task.done()):
                     job.check_cancelled()
                     job.progress(run.info.progress, message=run.info.message or f"{kind}: {run.info.step} steps")
                     await asyncio.sleep(2)
@@ -323,16 +384,27 @@ class BankWorkflows:
                     exports[kind] = value["out_dir"]
                 async def bank():
                     result = await asyncio.to_thread(assemble, VoicebankSpec(name=req.name + "-" + state["id"], out_dir=str(Path(req.project_dir) / "exports"),
-                        acoustic=exports["acoustic"], variance=[exports["variance"]] if exports["variance"] else [], vocoder=req.vocoder,
+                        acoustic=exports["acoustic"], variance=[exports["variance"]] if exports["variance"] else [], vocoder=trained_vocoder["out_dir"] if trained_vocoder else req.vocoder,
                         phonemizer_profiles=profiles, default_phonemizer_profile=profiles.get(req.sources[0].language, ""),
                         notes="Prototype: short training for pipeline verification." if req.prototype else ""))
                     return dict(dir=result.dir, files=result.files, problems=result.problems)
                 state["results"]["bank"] = await stage("bank", bank)
-                if req.render_ds:
+                phrase_path = req.render_ds
+                if req.auto_test_phrase and not phrase_path:
+                    async def phrase():
+                        from .test_phrases import PhraseRequest, inventory, build_phrase
+                        bank_dir = Path(state["results"]["bank"]["dir"])
+                        info = inventory(bank_dir, req.sources[0].language)
+                        params = {"mode": "cv" if info["consonants"] else "v", **req.test_phrase,
+                            "model_dir": str(bank_dir), "run_id": "", "config": "", "language": req.sources[0].language}
+                        return await asyncio.to_thread(build_phrase, PhraseRequest.model_validate(params), folder / ("phrase-" + uuid.uuid4().hex[:6]))
+                    state["results"]["phrase"] = await stage("test_phrase", phrase)
+                    phrase_path = state["results"]["phrase"]["path"]
+                if phrase_path and (req.render_ds or req.render_test_phrase):
                     async def render():
                         async with self.slot(job):
                             return await call(self.tk, job, "bank_render", "render", dict(**{k: v for k, v in req.render_options.items() if k not in {"bank", "ds", "out_dir", "vocoder"}}, bank=state["results"]["bank"]["dir"],
-                                ds=req.render_ds, out_dir=str(folder / ("bank-render-" + uuid.uuid4().hex[:6])), vocoder=req.vocoder or None))
+                                ds=phrase_path, out_dir=str(folder / ("bank-render-" + uuid.uuid4().hex[:6])), vocoder=trained_vocoder["out_dir"] if trained_vocoder else req.vocoder or None))
                     state["results"]["render"] = await stage("bank_render", render)
             state.update(status="done", progress=1.0, message="Bank workflow completed")
         except asyncio.CancelledError:

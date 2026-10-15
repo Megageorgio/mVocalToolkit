@@ -298,3 +298,32 @@ def test_expression_only_variance_does_not_require_notes_or_word_groups(tmp_path
         overlay = next(iter(tk.training.runs.values())).info.spec.config["overlay"]
         assert overlay["predict_energy"] and not overlay["predict_pitch"] and not overlay["predict_dur"]
     asyncio.run(run())
+
+
+def test_workflow_optional_vocoder_and_g2p_are_bounded_and_feed_acoustic(tmp_path):
+    tk=fake_toolkit(tmp_path); manager=BankWorkflows(tk)
+    source=tmp_path/"audio"
+    for i in range(2):
+        wav=make_wav(source/f"clip{i}.wav",seconds=1+i*.01,rate=44100)
+        wav.with_suffix(".lab").write_text("0 10000000 a\n")
+    dictionary=tmp_path/"dict.txt";dictionary.write_text("alpha\ta\nbeta\ta\n")
+    req=BankWorkflowRequest(project_dir=str(tmp_path/"project"),name="Voice",sources=[dict(folder=str(source),speaker="s",language="ru")],
+        prepare=False,variance=False,export=False,prototype_steps=5,vocoder_training={"accept_license":True,"steps":100},
+        g2p_training=[dict(dictionary=str(dictionary),language="ru",max_steps=100)])
+    calls=[]
+    async def call(tk,job,engine,method,params):
+        calls.append((engine,method));out=Path(params["out_dir"]);out.mkdir(exist_ok=True,parents=True)
+        if engine=="singingvocoders":
+            (out/"model.ckpt").write_bytes(b"fixture")
+            return dict(out_dir=str(out),checkpoint=str(out/"model.ckpt"))
+        return dict(out_dir=str(out),files=[])
+    async def execute():
+        state=manager.start(req,call);await manager.tasks[state["id"]]
+        assert state["status"]=="done",state["error"]
+        runs={run.info.spec.kind:run for run in tk.training.runs.values()}
+        assert len(runs)==3 and runs["singingvocoders_vocoder"].info.spec.config["steps"]==5
+        assert runs["g2p_rnnt"].info.spec.config["max_steps"]==5
+        acoustic=runs["diffsinger_acoustic"].info.spec.config
+        assert acoustic["assets"]["vocoder"].endswith("model.ckpt") and acoustic["overlay"]["max_updates"]==5
+        assert calls==[("singingvocoders","export"),("diffsinger","export_vocoder"),("g2p","export")]
+    asyncio.run(execute())

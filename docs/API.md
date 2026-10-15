@@ -116,6 +116,48 @@ heuristics rather than a reliable reverb diagnosis.
 
 ## Inputs and outputs
 
+### Phoneme audition and optional training automation
+
+`POST /training/test-phrase/inventory` and `/training/test-phrase/create` accept `model_dir` (bank/prepared run),
+or `run_id`; an optional `config` points to a matching native config. `language` selects language-qualified phones.
+Creation accepts `mode: cv|vc|v|cvc|manual`, `phonemes` (`p a | t a`, or lines per syllable), optional explicit
+`vowels`/`consonants` lists, `notes` (e.g. `C4 E4 G4` or MIDI 1–127), `limit` (1–64), `vowel_seconds`,
+`consonant_seconds`, `pause_seconds`. Uses actual trained vocabulary and dictionary/profile types; unknown symbols
+and missing custom classifications fail explicitly. Output contains a managed DS path, aligned phones/groups/notes/f0,
+syllables and inventory. A short phrase can render without variance because fixed f0 is supplied. No words or
+OpenUtau phonemizer runtime are involved. Phrases are limited to two minutes/512 manually entered phones.
+
+Workflow options: `auto_test_phrase` (default true), `render_test_phrase` (default false) and `test_phrase` settings.
+`render_ds` still selects an existing phrase. `vocoder_training` enables an optional SingingVocoders stage and
+native+ONNX export; requires `accept_license:true` and clean 44.1 kHz main-source data. The new checkpoint supplies
+acoustic's vocoder asset, and ONNX supplies bank assembly/preview. `g2p_training` lists dictionary-training settings;
+missing dictionary uses the checked project's dictionary for that entry's language. Outputs and run IDs persist.
+These stages use the normal queue, checkpoints and stage retry; prototype caps their steps too. G2P `max_steps:0`
+uses the epoch limit. No speech/phonemizer runtime is installed by optional G2P export.
+
+DiffSinger configuration supports `resources: {auto_batch:false, oom_retries:0, memory_fraction:0.7,
+min_batch_frames:1000, min_batch_size:1}`. Opt-in auto_batch measures selected free CUDA memory and caps preset
+limits; CPU/MPS retains existing limits. This is an estimate, not a dry-run fit guarantee. OOM retries wait for
+process exit, halve frame/recording and validation limits down to the minima, and queue resume using prepared
+binaries/checkpoints. `resource_retries` persists; 0 disables, at most 10 retries. Unsaved updates may be repeated.
+`early_stopping: {patience:0, min_delta:0, min_steps:0}` counts completed finite val_loss checks after warmup.
+Zero disables; otherwise the persisted counter and final/best checkpoints survive normal continuation.
+
+`POST /training/phonemizers/mapping-suggestions` accepts source `entries` and `targets`, each with phone, ipa,
+optional features. Returns unambiguous exact mappings, ambiguous alternatives and missing matches, without applying
+them or making approximate phonetic guesses. Existing project mappings take priority in the desktop workbench.
+
+`POST /training/speech/render` returns a job for a local native `model_dir`, `kind: qwen_tts_voice|voxcpm_voice`,
+`text` (1–4000 characters), optional speaker, language, device, seed, steps, max_tokens, temperature and guidance.
+VoxCPM accepts an explicit reference WAV or uses `speaker-references.json`; LoRA requires a compatible local
+`base_model`. No speech base is downloaded by this preview. Outputs are managed WAV/report paths; shared heavy
+processing slots and cancellation apply. This is a separate TTS feature, not singing text input.
+
+Speech training partitions each speaker/language separately and uses training-only references. Qwen exports distinct
+speaker embedding IDs excluding reserved codec IDs. VoxCPM packages named references; a single shared model is
+conditioned on the chosen voice reference. Full pretrained training/convergence and perceptual quality still need
+real-data validation. Small package tests and substituted native-call contracts do not establish voice quality.
+
 Every operation takes an `input`:
 
 ```json
@@ -810,9 +852,12 @@ and pytorch_model.bin. Base weights and recording licenses must be checked befor
 Stop finishes the current batch and atomically saves both networks, both optimizers, scaler, random states,
 epoch and batch position. Resume restores that state and skips completed batches; it does not promise bitwise
 identity across devices. Checkpoints use the shared retain/star API; the latest three unstarred checkpoints
-are rotated. Each full checkpoint can use about 1.3 GB. Training-example original/generated audio is saved at
-checkpoints. These are **not held-out validation samples**; no validation loss or automatic best-checkpoint
-claim is reported. Full GPU quality validation is still pending.
+are rotated. Each full checkpoint can use about 1.3 GB. `validation_fraction` (0–0.5, default 0.1) holds out whole
+recordings before slicing and excludes their features from training and the FAISS index. At least two distinct
+recordings are needed; otherwise previews use training examples. Set zero to disable. At checkpoints, up to eight
+held-out chunks produce mean log-magnitude spectral L1 (`val_loss`), length error and a `heldout-*` listening pair.
+The lowest spectral-error checkpoint is retained. This is a technical reconstruction metric, not perceptual voice
+quality. Training chunks must still fill at least three batches. Full GPU quality validation remains pending.
 
 The standard export job creates `voice.pth` (RVC v2, f0, HiFi-GAN, ContentVec, speaker ID 0), `voice.index` when
 prepared, README.txt and provenance.json. The exported generator omits optimizer/discriminator and posterior
@@ -833,8 +878,8 @@ The normal `POST /training/runs` freezes the checked inputs again and derives th
 | `mcfl_student` | `label_train` | Timed phonemes and WFL v2 teacher; native fp32/int8 ONNX package |
 | `refiner_boundary` | `refiner_train` | Corrected internal phoneme boundaries; native boundary refiner |
 | `game_notes` | `game_train` | Timed notes in CSV/DS; native GAME weights and five ONNX graphs |
-| `qwen_tts_voice` | `qwen_tts` | One speaker, audio + matching `.txt`; Qwen custom_voice package |
-| `voxcpm_voice` | `voxcpm` | One speaker, audio + matching `.txt`; VoxCPM2 full weights or LoRA |
+| `qwen_tts_voice` | `qwen_tts` | Audio + matching `.txt`, up to 32 speakers; Qwen custom_voice package |
+| `voxcpm_voice` | `voxcpm` | Audio + matching `.txt`, speaker references; VoxCPM2 full weights or LoRA |
 
 ```json
 {

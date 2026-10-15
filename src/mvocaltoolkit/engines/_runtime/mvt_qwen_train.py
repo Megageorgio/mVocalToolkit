@@ -1,4 +1,4 @@
-"""Single-speaker Qwen3-TTS fine-tuning using the official dataset and model."""
+"""Speaker-conditioned Qwen3-TTS fine-tuning using the official dataset and model."""
 import json
 import sys
 
@@ -55,11 +55,16 @@ def train(run, source, kind, requested, resume):
     loader = DataLoader(train_ds, batch_size=cfg["batch_size"], collate_fn=train_ds.collate_fn, num_workers=0)
     validation_loader = DataLoader(validation_ds, batch_size=1, collate_fn=validation_ds.collate_fn, num_workers=0)
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=cfg["learning_rate"], weight_decay=.01)
-    reference = train_ds[0]["ref_mel"].to(cfg["resolved_device"])
-    with torch.no_grad(): speaker = model.speaker_encoder(reference.to(model.dtype)).mean(dim=0).cpu()
+    train_rows = [json.loads(line) for line in (run / "train.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    speakers = {}
+    for index, row in enumerate(train_rows):
+        name = cfg["speaker_name"] if len(cfg.get("speaker_references", {})) <= 1 else row["speaker"].lower()
+        if name in speakers: continue
+        reference = train_ds[index]["ref_mel"].to(cfg["resolved_device"])
+        with torch.no_grad(): speakers[name] = model.speaker_encoder(reference.to(model.dtype)).mean(dim=0).cpu()
     def loss(batch): return codec_loss(model,batch)
     def validate():
         losses = [float(codec_loss(model,batch)[0]) for batch in validation_loader]
         return sum(losses)/len(losses), {"metric":"Held-out codec cross entropy", "recordings":len(losses)}
     fit(run,cfg,model,optimizer,None,loader,loss,validate,
-        metadata={"kind":kind,"speaker_embedding":speaker,"speaker_name":cfg["speaker_name"],"base_model":cfg["base_model"]}, resume=resume)
+        metadata={"kind":kind,"speaker_embedding":next(iter(speakers.values())),"speaker_embeddings":speakers,"speaker_name":cfg["speaker_name"],"base_model":cfg["base_model"]}, resume=resume)

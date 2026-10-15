@@ -101,6 +101,12 @@ def make_callback(run_dir: Path, log_interval: int, step_divisor: int = 1, sampl
 
     events = run_dir / "events.jsonl"
     stop_file = run_dir / "STOP"
+    import yaml
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_runtime"))
+    from mvt_early_stop import EarlyStop
+    config_path = run_dir / "config.yaml"
+    config = (yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}) if config_path.is_file() else {}
+    early = EarlyStop(run_dir, config.get("mvt_early_stopping") or {})
 
     class MvtEvents(pl.Callback):
         def __init__(self) -> None:
@@ -227,6 +233,11 @@ def make_callback(run_dir: Path, log_interval: int, step_divisor: int = 1, sampl
             if val_loss is not None and math.isfinite(val_loss) and val_loss < self.best_loss:
                 self.best_loss, self.best_step = val_loss, step
             self.pending_scan = True
+            if early.update(step, val_loss):
+                path = run_dir / f"model_ckpt_steps_{int(trainer.global_step)}.ckpt"
+                trainer.save_checkpoint(str(path))
+                trainer.should_stop = True
+                _write_event(events, "warning", kind="early_stopping", text=f"Stopped after {early.state['bad']} validation checks without the configured improvement")
 
         def on_train_end(self, trainer: Any, pl_module: Any) -> None:
             self._scan_checkpoints()

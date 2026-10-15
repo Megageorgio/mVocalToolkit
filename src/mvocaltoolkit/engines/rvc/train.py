@@ -65,6 +65,10 @@ def train(run: Path, device: str, resume: bool):
             stream.write(json.dumps({"event": event, "time": time.time(), **values}, allow_nan=False) + "\n")
 
     last = None
+    validation_loader = None
+    best_validation = float("inf")
+    if (run / "validation.json").is_file():
+        best_validation = json.loads((run / "validation.json").read_text(encoding="utf-8")).get("best", best_validation)
     def checkpoint(values, epoch_finished=False):
         step = namespace["global_step"]
         path = run / f"model_ckpt_steps_{step}.ckpt"
@@ -90,14 +94,40 @@ def train(run: Path, device: str, resume: bool):
         atomic_save(payload, path)
         emit("checkpoint", step=step, path=str(path), size=path.stat().st_size)
         for old in listing(run)[:-3]:
-            if not old["starred"]:
+            if not old["starred"] and Path(old["path"]).parent == run and not (run / "best" / Path(old["path"]).name).is_file():
                 Path(old["path"]).unlink(missing_ok=True)
                 emit("checkpoint_removed", step=old["step"])
 
     def sample(values):
+        nonlocal validation_loader, best_validation
         folder = run / "samples" / str(namespace["global_step"])
         folder.mkdir(parents=True, exist_ok=True)
         model = values["net_g"]
+        validation_file = run / "validation-filelist.txt"
+        if validation_file.is_file() and validation_file.read_text(encoding="utf-8").strip():
+            if validation_loader is None:
+                import copy
+                from data_utils import TextAudioLoaderMultiNSFsid, TextAudioCollateMultiNSFsid
+                data = copy.deepcopy(namespace["config"].data)
+                data.training_files = str(validation_file)
+                python_rng = random.getstate()
+                try:
+                    dataset = TextAudioLoaderMultiNSFsid(data)
+                finally: random.setstate(python_rng)
+                validation_loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=TextAudioCollateMultiNSFsid())
+            from heldout import evaluate
+            metrics, rendered = evaluate(model, validation_loader, folder, device, config["sample_rate"], config["seed"], lambda: (run / "STOP").exists())
+            files = [str(Path(p).relative_to(run)) for p in rendered]
+            score = metrics["heldout_log_spectral_l1"]
+            better = score < best_validation
+            best_validation = min(best_validation, score)
+            (run / "validation.json").write_text(json.dumps(dict(step=namespace["global_step"], score=score, best=best_validation, metrics=metrics)), encoding="utf-8")
+            emit("validation", step=namespace["global_step"], val_loss=score, metrics=metrics)
+            emit("samples", step=namespace["global_step"], files=files)
+            if better:
+                from checkpoint_store import retain_best
+                retain_best(run, namespace["global_step"])
+            return
         model.eval()
         with torch.random.fork_rng(devices=[torch.cuda.current_device()] if device.startswith("cuda") else []), torch.inference_mode():
             audio, *_ = model.infer(*values["reference"])

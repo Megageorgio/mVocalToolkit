@@ -47,6 +47,7 @@ def export_model(run: Path, out: Path, step=None):
     (out / "README.txt").write_text("RVC v2 / ContentVec / HiFi-GAN voice conversion model. Use speaker ID 0.\n"
         "voice.pth contains inference weights; voice.index is optional retrieval data.\n"
         "Use with a compatible RVC client such as Applio. This is not an OpenUtau DiffSinger voicebank.\n"
-        "The original/generated previews use a training example and do not measure held-out quality.\n"
+        "heldout-original/generated previews use recordings excluded from training when validation is enabled.\n"
+        "Other original/generated previews use training examples; spectral error does not measure perceived quality.\n"
         "Check the recording and selected base-model licenses before distribution.\n", encoding="utf-8")
     return {"out_dir": str(out), "files": [str(p) for p in out.iterdir() if p.is_file()]}

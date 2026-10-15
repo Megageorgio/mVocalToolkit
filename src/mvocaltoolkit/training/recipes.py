@@ -173,11 +173,12 @@ def scan(kind: str, config: dict) -> dict:
             except (OSError, ValueError, EOFError, wave.Error) as exc:
                 findings.append({"severity": "error", "code": "invalid_recording", "file": str(path), "detail": str(exc)})
     # Whole identical recordings cannot leak between train and validation, even across source folders/languages.
-    for lang in sorted({r["language"] for r in records}):
-        group = sorted([r for r in records if r["language"] == lang], key=lambda r: hashlib.sha256(f"{cfg['seed']}:{r['sha256']}".encode()).hexdigest())
+    partitions = {(r["language"], r["speaker"] if FAMILIES[kind]["input"] == "text" else "") for r in records}
+    for lang, speaker in sorted(partitions):
+        group = sorted([r for r in records if r["language"] == lang and (not speaker or r["speaker"] == speaker)], key=lambda r: hashlib.sha256(f"{cfg['seed']}:{r['sha256']}".encode()).hexdigest())
         count = max(1, round(len(group) * cfg["validation_fraction"]))
         if len(group) < 2:
-            findings.append({"severity": "error", "code": "no_split", "detail": lang})
+            findings.append({"severity": "error", "code": "no_split", "detail": lang + ("/" + speaker if speaker else "")})
         for i, record in enumerate(group):
             record["validation"] = i < count
     seconds = sum(r["seconds"] for r in records)
@@ -185,8 +186,10 @@ def scan(kind: str, config: dict) -> dict:
         findings.append({"severity": "error", "code": "no_audio"})
     if 0 < seconds < 600:
         findings.append({"severity": "warning", "code": "little_audio"})
-    if FAMILIES[kind]["input"] == "text" and len({r["speaker"] for r in records}) > 1:
-        findings.append({"severity": "error", "code": "one_speaker"})
+    if FAMILIES[kind]["input"] == "text":
+        speakers = sorted({r["speaker"] for r in records})
+        if len(speakers) > 32 or len({s.casefold() for s in speakers}) != len(speakers):
+            findings.append({"severity": "error", "code": "speaker_names", "detail": "Use at most 32 speaker names, distinct ignoring case"})
     dictionaries = {}
     if kind == "tifa_aligner":
         from .dictionaries import read_entries
